@@ -1,6 +1,42 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // The call screens: what the app shows and what the screens ask for (`act`).
 
+// One side of a call: the caller line (phone_rules::caller) and the avatar.
+export struct Party {
+    // the main line: the contact's name, the number, "Private number", ...
+    name: string,
+    // under it: the number under a name ("" = none) and its label in the contact ("Mobile"), shown "number · label"
+    line: string,
+    label: string,
+    // "" = no contact: a grey avatar with a # icon
+    initials: string,
+    tint: color,
+}
+
 export global CallState {
+    // "incoming" (9), "calling" (10), "active" (11), "waiting" (12), "two" (13), "ended" (15), "" none
+    in-out property <string> screen;
+    // the call the screen is about: the caller, our call, the active call, the summary's
+    in-out property <Party> main;
+    // the second caller (12), or the held call's bar (13)
+    in-out property <Party> other;
+    // their timers ("04:12") or states ("Calling…", "On hold · 04:40"), apart so a tick redraws only them
+    in-out property <string> main-time;
+    in-out property <string> other-time;
+    // the in-call buttons, from MODEMD's audio and the call's state
+    in-out property <bool> muted;
+    in-out property <bool> speaker;
+    in-out property <bool> held;
+    // the incoming call's ring is silenced
+    in-out property <bool> silenced;
+    // screen 14 over calling / active / two calls, and the tones typed so far
+    in-out property <bool> keypad;
+    in-out property <string> tones;
+    // the summary: the call's length
+    in-out property <string> duration;
+    // Reply with message / Message: no SMS yet
+    in-out property <bool> can-message;
+    // "answer", "reject", "silence", "message", "end", "mute", "speaker", "hold", "keypad", "add", "contacts",
+    // "dtmf" + key, "hold-answer", "end-answer", "reject-waiting", "swap", "merge", "call-again"
     callback act(string, string);
 }

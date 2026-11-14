@@ -1,13 +1,777 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// The call screens.
+// The call screens (mockups 9-15): incoming, calling, active, call waiting, two calls, the in-call keypad, the
+// summary, on the deep-blue call backdrop. The UI server's status bar and toolbar frame them (an empty black toolbar
+// on 9 and 12); CallState.screen picks the screen, CallState.keypad lays the keypad over a call.
 import { Theme } from "@neoui/theme.slint";
-import { Nav } from "../nav.slint";
-import { CallState } from "state.slint";
+import { Glyph } from "@neoui/components/frame.slint";
+import { PillButton, KeyGrid } from "../common.slint";
+import { Alphabets } from "@neoui/components/keyboard/glyphs.slint";
+import { CallState, Party } from "state.slint";
+
+// The caller's avatar: initials on the contact's colour, or a # on grey for a number without a contact. `ring`: the
+// pulsing ring of a call that rings.
+component CallAvatar inherits Rectangle {
+    in property <Party> party;
+    in property <length> size: Theme.avatar;
+    in property <bool> ring;
+    width: size;
+    height: size;
+    // the pulse: one ring grows and fades every 1.8 s (the mockup's CSS animation), a phase in so a still frame shows
+    // it; the app wakes the loop for it only while a call rings
+    property <float> t: ring ? mod(animation-tick() / 1800ms + 0.35, 1) : 0;
+    if ring: Rectangle {
+        width: root.size + 2 * 34 * Theme.dp * t;
+        height: self.width;
+        border-radius: self.width / 2;
+        background: Theme.accent.with-alpha(0.2 * (1 - t));
+    }
+    if ring: Rectangle {
+        width: root.size + 2 * 18 * Theme.dp * t;
+        height: self.width;
+        border-radius: self.width / 2;
+        background: Theme.accent.with-alpha(0.35 * (1 - t));
+    }
+    Rectangle {
+        border-radius: root.size / 2;
+        background: party.initials == "" ? #2b3038 : party.tint;
+        if party.initials != "": Text {
+            text: party.initials;
+            font-family: "DejaVu Sans";
+            color: white;
+            font-size: root.size * 0.365;
+            font-weight: 600;
+        }
+        if party.initials == "": Glyph {
+            source: @image-url("../icons/hash.svg");
+            size: root.size * 0.4;
+            colorize: Theme.text-secondary;
+        }
+    }
+}
+
+// Who: the avatar, the name, the line under it, and one more line (the state, or the timer).
+component Who inherits VerticalLayout {
+    in property <Party> party;
+    in property <length> avatar: 132 * Theme.dp;
+    in property <length> gap: 16 * Theme.dp;
+    in property <bool> ring;
+    in property <bool> line: true;
+    // the third line: the state ("Calling…") in grey, or a timer in light blue
+    in property <string> extra;
+    in property <bool> timer;
+    spacing: 6 * Theme.dp;
+    vertical-stretch: 0;
+    HorizontalLayout {
+        alignment: center;
+        CallAvatar {
+            party: root.party;
+            size: root.avatar;
+            ring: root.ring;
+        }
+    }
+
+    Rectangle {
+        height: root.gap - 6 * Theme.dp;
+    }
+
+    Text {
+        text: party.name;
+        font-family: "DejaVu Sans";
+        color: Theme.text;
+        font-size: 26 * Theme.dp;
+        font-weight: 600;
+        horizontal-alignment: center;
+        overflow: elide;
+    }
+
+    if line && party.line != "": Text {
+        text: party.line + (party.label != "" ? " · " + party.label : "");
+        color: Theme.text-secondary;
+        font-size: 15 * Theme.dp;
+        horizontal-alignment: center;
+        overflow: elide;
+    }
+    if extra != "": Text {
+        text: extra;
+        color: timer ? #cfe0ff : Theme.text-secondary;
+        font-size: timer ? 22 * Theme.dp : 15 * Theme.dp;
+        font-weight: timer ? 500 : 400;
+        horizontal-alignment: center;
+    }
+}
+
+// An in-call control: a round button with its label under it; `on` turns it white (Speaker on, Mute on).
+component CallButton inherits VerticalLayout {
+    in property <image> icon;
+    in property <string> text;
+    in property <bool> on;
+    callback clicked;
+    spacing: 6 * Theme.dp;
+    horizontal-stretch: 1;
+    HorizontalLayout {
+        alignment: center;
+        Rectangle {
+            width: 62 * Theme.dp;
+            height: self.width;
+            border-radius: self.width / 2;
+            background: on ? (touch.pressed ? #d0d4da : white) : (touch.pressed ? #ffffff30 : #ffffff17);
+            border-width: on ? 0 : max(1px, Theme.dp / 2);
+            border-color: #ffffff14;
+            Glyph {
+                source: root.icon;
+                size: 24 * Theme.dp;
+                colorize: on ? #0b1220 : Theme.text;
+            }
+
+            touch := TouchArea {
+                clicked => {
+                    root.clicked();
+                }
+            }
+        }
+    }
+
+    Text {
+        text: root.text;
+        color: Theme.text-secondary;
+        font-size: 13 * Theme.dp;
+        horizontal-alignment: center;
+    }
+}
+
+// The big round End (red) and Answer (green), with an optional label under.
+component BigButton inherits VerticalLayout {
+    in property <image> icon;
+    in property <color> color;
+    in property <string> text;
+    in property <length> size: 72 * Theme.dp;
+    callback clicked;
+    spacing: 7 * Theme.dp;
+    HorizontalLayout {
+        alignment: center;
+        Rectangle {
+            width: root.size;
+            height: self.width;
+            border-radius: self.width / 2;
+            // solid: the software renderer does not round a gradient's corners
+            background: touch.pressed ? root.color.darker(20%) : root.color;
+            Glyph {
+                source: root.icon;
+                size: 32 * Theme.dp;
+            }
+
+            touch := TouchArea {
+                clicked => {
+                    root.clicked();
+                }
+            }
+        }
+    }
+
+    if text != "": Text {
+        text: root.text;
+        color: Theme.text-secondary;
+        font-size: 13 * Theme.dp;
+        horizontal-alignment: center;
+    }
+}
+
+component EndButton inherits BigButton {
+    icon: @image-url("@neoui/icons/sys/end_call.svg");
+    color: Theme.danger;
+    clicked => {
+        CallState.act("end", "");
+    }
+}
+
+// A chip on the call backdrop (Silence, Reply with message, Swap, Conference, Hide keypad).
+component CallChip inherits Rectangle {
+    in property <string> text;
+    in property <image> icon;
+    in property <bool> has-icon: true;
+    in property <bool> on;
+    callback clicked;
+    height: 36 * Theme.dp;
+    width: row.preferred-width + 30 * Theme.dp;
+    border-radius: self.height / 2;
+    background: on ? Theme.accent : touch.pressed ? #ffffff30 : #ffffff17;
+    border-width: max(1px, Theme.dp / 2);
+    border-color: on ? Theme.accent : #ffffff1a;
+    row := HorizontalLayout {
+        alignment: center;
+        spacing: 7 * Theme.dp;
+        if has-icon: Glyph {
+            source: root.icon;
+            size: 18 * Theme.dp;
+            y: (parent.height - self.height) / 2;
+        }
+        Text {
+            text: root.text;
+            color: Theme.text;
+            font-size: 14 * Theme.dp;
+            font-weight: 500;
+            vertical-alignment: center;
+        }
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// Mute, Keypad, Speaker: the first row of controls on every call screen.
+component BasicButtons inherits HorizontalLayout {
+    padding-left: 34 * Theme.dp;
+    padding-right: 34 * Theme.dp;
+    spacing: 18 * Theme.dp;
+    CallButton {
+        icon: CallState.muted ? @image-url("@neoui/icons/sys/mic_off.svg") : @image-url("@neoui/icons/sys/mic.svg");
+        text: "Mute";
+        on: CallState.muted;
+        clicked => {
+            CallState.act("mute", "");
+        }
+    }
+
+    CallButton {
+        icon: @image-url("@neoui/icons/sys/keypad.svg");
+        text: "Keypad";
+        clicked => {
+            CallState.act("keypad", "");
+        }
+    }
+
+    CallButton {
+        icon: @image-url("@neoui/icons/sys/speaker.svg");
+        text: "Speaker";
+        on: CallState.speaker;
+        clicked => {
+            CallState.act("speaker", "");
+        }
+    }
+}
+
+component Fill inherits Rectangle {
+    vertical-stretch: 1;
+}
+
+component Gap inherits Rectangle {
+    in property <float> dp;
+    height: dp * Theme.dp;
+    vertical-stretch: 0;
+}
+
+// 9: a call rings.
+component Incoming inherits VerticalLayout {
+    Gap { dp: 34; }
+    Text {
+        text: "INCOMING CALL";
+        color: Theme.text-secondary;
+        font-size: 13 * Theme.dp;
+        font-weight: 600;
+        letter-spacing: 0.08 * 13 * Theme.dp;
+        horizontal-alignment: center;
+    }
+
+    Gap { dp: 34; }
+    Who {
+        party: CallState.main;
+        ring: true;
+    }
+
+    Fill { }
+
+    HorizontalLayout {
+        alignment: center;
+        spacing: 10 * Theme.dp;
+        CallChip {
+            text: CallState.silenced ? "Silenced" : "Silence";
+            icon: @image-url("@neoui/icons/sys/silent.svg");
+            on: CallState.silenced;
+            clicked => {
+                CallState.act("silence", "");
+            }
+        }
+
+        // no SMS yet
+        if CallState.can-message: CallChip {
+            text: "Reply with message";
+            icon: @image-url("@neoui/icons/sys/message.svg");
+            clicked => {
+                CallState.act("message", "");
+            }
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: 46 * Theme.dp;
+        padding-right: 46 * Theme.dp;
+        padding-top: 28 * Theme.dp;
+        // the mockup's 40 dp sit over the UI server's empty toolbar strip
+        padding-bottom: 6 * Theme.dp;
+        alignment: space-between;
+        BigButton {
+            icon: @image-url("@neoui/icons/sys/end_call.svg");
+            color: Theme.danger;
+            text: "Reject";
+            clicked => {
+                CallState.act("reject", "");
+            }
+        }
+
+        BigButton {
+            icon: @image-url("@neoui/icons/sys/call.svg");
+            color: Theme.ok;
+            text: "Answer";
+            clicked => {
+                CallState.act("answer", "");
+            }
+        }
+    }
+}
+
+// 10: our call, before the other side answers.
+component Calling inherits VerticalLayout {
+    Gap { dp: 60; }
+    Who {
+        party: CallState.main;
+        extra: CallState.main-time;
+    }
+
+    Fill { }
+
+    BasicButtons { }
+
+    Gap { dp: 30; }
+    EndButton { }
+
+    Gap { dp: 34; }
+}
+
+// 11: one call up.
+component Active inherits VerticalLayout {
+    Gap { dp: 36; }
+    Who {
+        party: CallState.main;
+        avatar: 104 * Theme.dp;
+        gap: 12 * Theme.dp;
+        extra: CallState.main-time;
+        timer: !CallState.held;
+    }
+
+    Fill { }
+
+    VerticalLayout {
+        spacing: 14 * Theme.dp;
+        BasicButtons { }
+
+        HorizontalLayout {
+            padding-left: 34 * Theme.dp;
+            padding-right: 34 * Theme.dp;
+            spacing: 18 * Theme.dp;
+            CallButton {
+                icon: @image-url("@neoui/icons/sys/pause.svg");
+                text: CallState.held ? "Resume" : "Hold";
+                on: CallState.held;
+                clicked => {
+                    CallState.act("hold", "");
+                }
+            }
+
+            CallButton {
+                icon: @image-url("@neoui/icons/sys/add.svg");
+                text: "Add call";
+                clicked => {
+                    CallState.act("add", "");
+                }
+            }
+
+            CallButton {
+                icon: @image-url("../icons/person.svg");
+                text: "Contacts";
+                clicked => {
+                    CallState.act("contacts", "");
+                }
+            }
+        }
+    }
+
+    Gap { dp: 26; }
+    EndButton { }
+
+    Gap { dp: 26; }
+}
+
+// 12: a second caller over the dimmed call.
+component Waiting inherits Rectangle {
+    VerticalLayout {
+        opacity: 0.45;
+        alignment: start;
+        Gap { dp: 36; }
+        Who {
+            party: CallState.main;
+            avatar: 104 * Theme.dp;
+            gap: 12 * Theme.dp;
+            line: false;
+            extra: CallState.main-time;
+            timer: !CallState.held;
+        }
+    }
+
+    Rectangle {
+        background: #00000073;
+    }
+
+    Rectangle {
+        x: 8 * Theme.dp;
+        width: parent.width - 16 * Theme.dp;
+        height: sheet.preferred-height;
+        y: parent.height - self.height - 8 * Theme.dp;
+        border-radius: 16 * Theme.dp;
+        background: #23272d;
+        border-width: max(1px, Theme.dp / 2);
+        border-color: #ffffff1a;
+        sheet := VerticalLayout {
+            padding-bottom: 14 * Theme.dp;
+            HorizontalLayout {
+                padding: 18 * Theme.dp;
+                padding-bottom: 14 * Theme.dp;
+                spacing: 12 * Theme.dp;
+                VerticalLayout {
+                    alignment: center;
+                    CallAvatar {
+                        party: CallState.other;
+                        ring: true;
+                    }
+                }
+
+                VerticalLayout {
+                    spacing: 2 * Theme.dp;
+                    alignment: center;
+                    Text {
+                        text: "ALSO CALLING";
+                        color: Theme.text-secondary;
+                        font-size: 13 * Theme.dp;
+                        font-weight: 600;
+                        letter-spacing: 0.05 * 13 * Theme.dp;
+                    }
+
+                    Text {
+                        text: CallState.other.name;
+                        font-family: "DejaVu Sans";
+                        color: Theme.text;
+                        font-size: 18 * Theme.dp;
+                        font-weight: 600;
+                        overflow: elide;
+                    }
+
+                    if CallState.other.line != "": Text {
+                        text: CallState.other.line + (CallState.other.label != "" ? " · " + CallState.other.label : "");
+                        color: Theme.text-secondary;
+                        font-size: 13.5 * Theme.dp;
+                        overflow: elide;
+                    }
+                }
+            }
+
+            VerticalLayout {
+                padding-left: 14 * Theme.dp;
+                padding-right: 14 * Theme.dp;
+                spacing: 10 * Theme.dp;
+                PillButton {
+                    text: "Hold & answer";
+                    icon: @image-url("@neoui/icons/sys/pause.svg");
+                    kind: "green";
+                    clicked => {
+                        CallState.act("hold-answer", "");
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 10 * Theme.dp;
+                    PillButton {
+                        text: "End & answer";
+                        icon: @image-url("@neoui/icons/sys/call.svg");
+                        horizontal-stretch: 1;
+                        clicked => {
+                            CallState.act("end-answer", "");
+                        }
+                    }
+
+                    PillButton {
+                        text: "Reject";
+                        icon: @image-url("@neoui/icons/sys/end_call.svg");
+                        kind: "red";
+                        horizontal-stretch: 1;
+                        clicked => {
+                            CallState.act("reject-waiting", "");
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// 13: two calls; the held one is a slim bar on top (tap: swap).
+component Two inherits VerticalLayout {
+    padding-top: 12 * Theme.dp;
+    HorizontalLayout {
+        padding-left: 12 * Theme.dp;
+        padding-right: 12 * Theme.dp;
+        Rectangle {
+            height: 56 * Theme.dp;
+            border-radius: 14 * Theme.dp;
+            background: bar.pressed ? #ffffff24 : #ffffff12;
+            border-width: max(1px, Theme.dp / 2);
+            border-color: #ffffff14;
+            HorizontalLayout {
+                padding-left: 12 * Theme.dp;
+                padding-right: 12 * Theme.dp;
+                spacing: 10 * Theme.dp;
+                VerticalLayout {
+                    alignment: center;
+                    CallAvatar {
+                        party: CallState.other;
+                        size: 34 * Theme.dp;
+                    }
+                }
+
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    Text {
+                        text: CallState.other.name;
+                        font-family: "DejaVu Sans";
+                        color: Theme.text;
+                        font-size: 15 * Theme.dp;
+                        font-weight: 600;
+                        overflow: elide;
+                    }
+
+                    Text {
+                        text: CallState.other-time;
+                        color: #f5b70b;
+                        font-size: 12.5 * Theme.dp;
+                    }
+                }
+
+                VerticalLayout {
+                    alignment: center;
+                    Glyph {
+                        source: @image-url("@neoui/icons/sys/pause.svg");
+                        size: 24 * Theme.dp;
+                        colorize: Theme.text-dim;
+                    }
+                }
+            }
+
+            bar := TouchArea {
+                clicked => {
+                    CallState.act("swap", "");
+                }
+            }
+        }
+    }
+
+    Gap { dp: 26; }
+    Who {
+        party: CallState.main;
+        avatar: 104 * Theme.dp;
+        gap: 12 * Theme.dp;
+        line: false;
+        extra: CallState.main-time;
+        timer: true;
+    }
+
+    Gap { dp: 22; }
+    HorizontalLayout {
+        alignment: center;
+        spacing: 10 * Theme.dp;
+        CallChip {
+            text: "Swap";
+            icon: @image-url("../icons/swap.svg");
+            clicked => {
+                CallState.act("swap", "");
+            }
+        }
+
+        CallChip {
+            text: "Conference";
+            icon: @image-url("../icons/merge.svg");
+            clicked => {
+                CallState.act("merge", "");
+            }
+        }
+    }
+
+    Fill { }
+
+    BasicButtons { }
+
+    Gap { dp: 22; }
+    EndButton { }
+
+    Gap { dp: 24; }
+}
+
+// 14: the keypad over a call: a compact header, the tones sent so far, Hide keypad and End.
+component Keypad inherits VerticalLayout {
+    HorizontalLayout {
+        padding-left: 16 * Theme.dp;
+        padding-right: 16 * Theme.dp;
+        padding-top: 12 * Theme.dp;
+        padding-bottom: 12 * Theme.dp;
+        spacing: 10 * Theme.dp;
+        CallAvatar {
+            party: CallState.main;
+            size: 34 * Theme.dp;
+        }
+
+        Text {
+            text: CallState.main.name;
+            font-family: "DejaVu Sans";
+            color: Theme.text;
+            font-size: 16 * Theme.dp;
+            font-weight: 600;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+        }
+
+        Text {
+            text: CallState.main-time;
+            color: #cfe0ff;
+            font-size: 16 * Theme.dp;
+            font-weight: 500;
+            vertical-alignment: center;
+        }
+    }
+
+    Text {
+        height: (26 + 42 + 18) * Theme.dp;
+        text: CallState.tones;
+        color: Theme.text;
+        font-size: 34 * Theme.dp;
+        letter-spacing: 0.12 * 34 * Theme.dp;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+
+    Fill { }
+
+    KeyGrid {
+        dtmf: true;
+        padding-top: 4 * Theme.dp;
+        padding-bottom: 6 * Theme.dp;
+        pressed(k) => {
+            CallState.act("dtmf", k);
+        }
+        long-pressed(k) => {
+            CallState.act("dtmf", k);
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: 40 * Theme.dp;
+        padding-right: 40 * Theme.dp;
+        padding-top: 12 * Theme.dp;
+        padding-bottom: 22 * Theme.dp;
+        alignment: space-between;
+        VerticalLayout {
+            alignment: center;
+            CallChip {
+                text: "Hide keypad";
+                has-icon: false;
+                clicked => {
+                    CallState.act("keypad", "");
+                }
+            }
+        }
+
+        EndButton {
+            size: 64 * Theme.dp;
+        }
+    }
+}
+
+// 15: after the last call, for about 2.5 s.
+component Summary inherits VerticalLayout {
+    Gap { dp: 90; }
+    Who {
+        party: CallState.main;
+        opacity: 0.85;
+        extra: "Call ended";
+        line: false;
+    }
+
+    Gap { dp: 14; }
+    Text {
+        text: "DURATION";
+        color: Theme.text-dim;
+        font-size: 12.5 * Theme.dp;
+        font-weight: 600;
+        letter-spacing: 0.08 * 12.5 * Theme.dp;
+        horizontal-alignment: center;
+    }
+
+    Gap { dp: 2; }
+    Text {
+        text: CallState.duration;
+        color: #cfe0ff;
+        font-size: 30 * Theme.dp;
+        font-weight: 500;
+        horizontal-alignment: center;
+    }
+
+    Fill { }
+
+    HorizontalLayout {
+        alignment: center;
+        HorizontalLayout {
+            width: 290 * Theme.dp;
+            spacing: 10 * Theme.dp;
+            PillButton {
+                text: "Call again";
+                icon: @image-url("@neoui/icons/sys/call.svg");
+                kind: "green";
+                horizontal-stretch: 1;
+                clicked => {
+                    CallState.act("call-again", "");
+                }
+            }
+
+            // no SMS yet
+            if CallState.can-message: PillButton {
+                text: "Message";
+                icon: @image-url("@neoui/icons/sys/message.svg");
+                horizontal-stretch: 1;
+                clicked => {
+                    CallState.act("message", "");
+                }
+            }
+        }
+    }
+
+    Gap { dp: 34; }
+}
 
 export component CallPage inherits Rectangle {
-    Text {
-        text: "The call screens";
-        color: Theme.text-dim;
-        font-size: Theme.font-body;
-    }
+    // the call backdrop: the mockup's radial glow as a vertical gradient (a per-pixel radial is too slow on the
+    // phone's soft-float CPU)
+    background: @linear-gradient(180deg, #13213a 0%, #1b2b45 18%, #0b1220 55%, #05070b 100%);
+    property <string> s: CallState.screen;
+    property <bool> pad: CallState.keypad && (s == "calling" || s == "active" || s == "two");
+    if s == "incoming": Incoming { }
+    if s == "calling" && !pad: Calling { }
+    if s == "active" && !pad: Active { }
+    if s == "waiting": Waiting { }
+    if s == "two" && !pad: Two { }
+    if pad: Keypad { }
+    if s == "ended": Summary { }
+    // the glyphs of names in any keyboard language (Armenian, Cyrillic)
+    Alphabets { }
 }
