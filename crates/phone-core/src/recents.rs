@@ -8,7 +8,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use contacts::recents::group;
 use contacts::{Contact, Label};
-use modem_ipc::{log, LogEntry};
+use modem_ipc::{LogEntry, log};
 use phone_rules::block::{self, List};
 use phone_rules::number;
 

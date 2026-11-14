@@ -5,7 +5,7 @@
 
 use alloc::string::String;
 use alloc::vec::Vec;
-use contacts::{t9, Book, Label, NameOrder};
+use contacts::{Book, Label, NameOrder, t9};
 
 /// A second `*` within this cycles the last character `* + p w` (Symbian^3).
 pub const STAR_CYCLE_MS: u64 = 1000;
