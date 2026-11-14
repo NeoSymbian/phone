@@ -1,6 +1,92 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Phone: the dialer, Recents, call details, speed dial: what the app shows and what the screens ask for (`act`).
 
+// A call-log row (the dialer's recent list, Recents). `kind`: modem_ipc::log (1 dialled, 2 received, 3 missed,
+// 4 rejected, 5 blocked). `line`: the second line ("Mobile · 21:03", "Prefix +1 900 · 10:12"). `tint` indexes
+// the avatar palette, -1 = a number without a contact (# glyph); `private` shows a person glyph instead.
+export struct LogRow {
+    id: int,
+    section: string,
+    title: string,
+    count: int,
+    kind: int,
+    line: string,
+    when: string,
+    initials: string,
+    tint: int,
+    private: bool,
+}
+
+// A smart-dial row: the name and number cut around the part the digits matched.
+export struct MatchRow {
+    id: int,
+    name-pre: string,
+    name-hit: string,
+    name-post: string,
+    label: string,
+    num-pre: string,
+    num-hit: string,
+    num-post: string,
+    initials: string,
+    tint: int,
+}
+
+// One call in the details: direction, "Today 21:03", "4:12".
+export struct DetailCall {
+    kind: int,
+    when: string,
+    duration: string,
+}
+
+// A speed-dial tile: key 1..9; `name` "" = unassigned.
+export struct SpeedTile {
+    key: int,
+    name: string,
+    initials: string,
+    tint: int,
+}
+
+// A contact's number in the speed-dial picker.
+export struct PickRow {
+    title: string,
+    number: string,
+}
+
 export global DialState {
+    // the dialer: the typed number; recent calls (empty number) or the smart matches
+    in property <string> number;
+    in property <[LogRow]> recent;
+    in property <[MatchRow]> matches;
+    // Recents: the chip (0 all, 1 missed, 2 received, 3 dialled, 4 blocked), the new missed calls, whether the
+    // Blocked chip shows and its count, the rows
+    in property <int> filter;
+    in property <int> missed-new;
+    in property <bool> has-blocked;
+    in property <int> blocked-count;
+    in property <[LogRow]> rows;
+    // call details
+    in property <string> detail-title;
+    in property <string> detail-number;
+    in property <string> detail-initials;
+    in property <int> detail-tint;
+    in property <bool> detail-private;
+    in property <bool> detail-known;
+    in property <bool> detail-blocked;
+    in property <bool> detail-can-call;
+    in property <[DetailCall]> detail-calls;
+    // speed dial: nine tiles
+    in property <[SpeedTile]> speed;
+    // a popup list over the view (a row's Block / Delete, a tile's Change / Remove)
+    in property <bool> sheet-open;
+    in property <string> sheet-heading;
+    in property <[string]> sheet-items;
+    // the speed-dial contact picker
+    in property <bool> pick-open;
+    in property <string> pick-heading;
+    in property <[PickRow]> pick;
+    // "key" | "key-long" + digit, "backspace", "clear", "match" + index, "add-contact", "recent" + id (call back),
+    // "filter" + index, "row" + id (details), "row-call" + id, "row-hold" + id, "detail-call", "detail-contact",
+    // "detail-block", "detail-delete", "speed" + key, "sheet" + item, "sheet-dismiss", "pick" + index,
+    // "pick-dismiss"
     callback act(string, string);
 }

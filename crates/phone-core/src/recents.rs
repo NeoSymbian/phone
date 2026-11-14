@@ -114,6 +114,14 @@ pub fn rows(log: &[LogEntry], filter: Filter, now_ms: i64, offset_s: i32) -> Vec
     out
 }
 
+/// The time on a Recents row: "21:03" under Today and Yesterday (the band says the day), else the date.
+pub fn row_when(utc_ms: i64, now_ms: i64, offset_s: i32) -> String {
+    if Section::of(utc_ms, now_ms, offset_s) == Section::Earlier || utc_ms == 0 {
+        return contacts::recents::when(utc_ms, now_ms, offset_s);
+    }
+    contacts::recents::when(utc_ms, utc_ms, offset_s)
+}
+
 /// The dialer's short list (mockup 3): one row per number over the whole log, blocked calls left out.
 pub fn recent(log: &[LogEntry]) -> Vec<(usize, u32)> {
     let shown: Vec<usize> = (0..log.len())
@@ -280,6 +288,8 @@ mod tests {
     #[test]
     fn missed_and_words() {
         let l = log();
+        assert_eq!(row_when(l[4].utc, NOW, 0), "15:03");
+        assert_eq!(row_when(l[6].utc, NOW, 0), "10 Nov");
         assert_eq!(new_missed(&l, 0), 1);
         assert_eq!(new_missed(&l, 8), 0);
         assert_eq!(newest(&l), 9);
