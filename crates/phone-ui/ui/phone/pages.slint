@@ -1,13 +1,879 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Phone: the dialer, Recents, call details, speed dial.
+// Phone (mockups 3-8, 27): the dialer with recent calls or smart matches above the keypad, Recents with filter
+// chips and day bands, call details, speed dial; a popup list and a contact picker over them.
 import { Theme } from "@neoui/theme.slint";
+import { NeoList } from "@neoui/components/scroll.slint";
 import { Nav } from "../nav.slint";
-import { DialState } from "state.slint";
+import { PageSwitch, Band, RowAction, PillButton, KeyGrid, Sheet, Avatar, Glyph } from "../common.slint";
+import { DialState, LogRow, MatchRow } from "state.slint";
+import { Alphabets } from "@neoui/components/keyboard/glyphs.slint";
+
+// Avatar tints (LogRow.tint, MatchRow.tint): stable per contact or number.
+global Tints {
+    out property <[color]> all: [#22b46a, #d6409f, #e8833a, #3d8bfd, #8e5cf0, #14a3a3, #d64545, #b8901a];
+}
+
+// A contact's initials on its tint, or a glyph on grey for a number without a contact (`tint` < 0).
+component Face inherits Rectangle {
+    in property <string> initials;
+    in property <int> tint: -1;
+    in property <bool> private;
+    in property <bool> dim;
+    in property <length> size: Theme.avatar;
+    width: size;
+    height: size;
+    if tint >= 0: Avatar {
+        initials: initials;
+        size: root.size;
+        tint: dim ? Tints.all[tint].mix(#3a3f47, 0.45) : Tints.all[tint];
+    }
+    if tint < 0: Rectangle {
+        border-radius: self.width / 2;
+        background: #2b3038;
+        Glyph {
+            source: private ? @image-url("../icons/person.svg") : @image-url("../icons/hash.svg");
+            size: root.size * 0.48;
+            colorize: Theme.text-secondary;
+        }
+    }
+}
+
+// The direction of a call (modem_ipc::log kind).
+component Direction inherits Glyph {
+    in property <int> kind;
+    source: kind == 1 ? @image-url("../icons/outgoing.svg")
+        : kind == 2 ? @image-url("../icons/incoming.svg")
+        : kind == 5 ? @image-url("../icons/block.svg")
+        : @image-url("@neoui/icons/sys/missed_call.svg");
+    colorize: kind == 3 || kind == 4 || kind == 5 ? Theme.danger : Theme.text-secondary;
+}
+
+// A row's touch: a tap, or a hold of 0.6 s (the keypad's long press).
+component Hold inherits TouchArea {
+    callback tapped;
+    callback held;
+    property <duration> down-at;
+    pointer-event(e) => {
+        if e.kind == PointerEventKind.down {
+            self.down-at = animation-tick();
+        }
+    }
+    clicked => {
+        if animation-tick() - self.down-at >= 600ms {
+            root.held();
+        } else {
+            root.tapped();
+        }
+    }
+}
+
+component Hairline inherits Rectangle {
+    in property <length> left;
+    Rectangle {
+        x: left;
+        y: parent.height - self.height;
+        width: parent.width - left;
+        height: max(1px, Theme.dp / 2);
+        background: Theme.hairline;
+    }
+}
+
+// Mockup 3: a recent call above the keypad (tap: call back).
+component RecentRow inherits Rectangle {
+    in property <LogRow> r;
+    in property <bool> divider: true;
+    height: 56 * Theme.dp;
+    background: t.pressed ? Theme.pressed : transparent;
+    t := TouchArea {
+        clicked => {
+            DialState.act("recent", r.id);
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: 14 * Theme.dp;
+        padding-right: 14 * Theme.dp;
+        spacing: 12 * Theme.dp;
+        Face {
+            y: (parent.height - self.height) / 2;
+            size: 34 * Theme.dp;
+            initials: r.initials;
+            tint: r.tint;
+            private: r.private;
+        }
+
+        Text {
+            text: r.title + (r.count > 1 ? " (" + r.count + ")" : "");
+            font-family: "DejaVu Sans";
+            color: r.kind == 3 ? Theme.danger : Theme.text;
+            font-size: Theme.font-body;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+        }
+
+        Direction {
+            y: (parent.height - self.height) / 2;
+            kind: r.kind;
+            size: 15 * Theme.dp;
+        }
+
+        Text {
+            text: r.when;
+            color: Theme.text-dim;
+            font-size: Theme.font-label;
+            vertical-alignment: center;
+        }
+    }
+
+    if divider: Hairline {
+        left: 60 * Theme.dp;
+    }
+}
+
+// Text with a lit middle part (smart dial's matched letters or digits).
+component Lit inherits HorizontalLayout {
+    in property <string> pre;
+    in property <string> hit;
+    in property <string> post;
+    in property <string> font;
+    in property <length> size;
+    in property <color> color;
+    Text {
+        text: pre;
+        font-family: font;
+        font-size: size;
+        color: color;
+    }
+
+    Text {
+        text: hit;
+        font-family: font;
+        font-size: size;
+        font-weight: 700;
+        color: Theme.accent;
+    }
+
+    Text {
+        text: post;
+        font-family: font;
+        font-size: size;
+        color: color;
+        overflow: elide;
+        horizontal-stretch: 1;
+    }
+}
+
+// Mockup 4: a contact the typed digits match (tap: call its number).
+component MatchLine inherits Rectangle {
+    in property <MatchRow> m;
+    in property <int> index;
+    height: 56 * Theme.dp;
+    background: t.pressed ? Theme.pressed : transparent;
+    t := TouchArea {
+        clicked => {
+            DialState.act("match", index);
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: 14 * Theme.dp;
+        padding-right: 14 * Theme.dp;
+        spacing: 12 * Theme.dp;
+        Face {
+            y: (parent.height - self.height) / 2;
+            size: 34 * Theme.dp;
+            initials: m.initials;
+            tint: m.tint;
+        }
+
+        VerticalLayout {
+            alignment: center;
+            spacing: 2 * Theme.dp;
+            horizontal-stretch: 1;
+            Lit {
+                pre: m.name-pre;
+                hit: m.name-hit;
+                post: m.name-post;
+                font: "DejaVu Sans";
+                size: Theme.font-body;
+                color: Theme.text;
+            }
+
+            Lit {
+                pre: m.label + " · " + m.num-pre;
+                hit: m.num-hit;
+                post: m.num-post;
+                size: Theme.font-label;
+                color: Theme.text-secondary;
+            }
+        }
+    }
+
+    Hairline {
+        left: 60 * Theme.dp;
+    }
+}
+
+// The number line between the list and the keypad: the number (or a hint) and backspace (hold: clear).
+component NumberLine inherits Rectangle {
+    height: 56 * Theme.dp;
+    background: Theme.bg-raised;
+    Rectangle {
+        y: 0;
+        height: max(1px, Theme.dp / 2);
+        background: Theme.hairline;
+    }
+
+    Rectangle {
+        y: parent.height - self.height;
+        height: max(1px, Theme.dp / 2);
+        background: Theme.hairline;
+    }
+
+    HorizontalLayout {
+        padding-left: 52 * Theme.dp;
+        padding-right: 10 * Theme.dp;
+        Text {
+            text: DialState.number == "" ? "Enter a number" : DialState.number;
+            color: DialState.number == "" ? Theme.text-dim : Theme.text;
+            font-size: DialState.number == "" ? Theme.font-body : (DialState.number.character-count > 13 ? 24 * Theme.dp : 32 * Theme.dp);
+            font-weight: DialState.number == "" ? 400 : 300;
+            letter-spacing: DialState.number == "" ? 0 : 1.2 * Theme.dp;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+        }
+
+        Rectangle {
+            width: 42 * Theme.dp;
+            opacity: DialState.number == "" ? 0.3 : 1;
+            background: bs.pressed ? Theme.pressed : transparent;
+            border-radius: 10 * Theme.dp;
+            Glyph {
+                source: @image-url("@neoui/icons/sys/backspace.svg");
+                size: 24 * Theme.dp;
+                colorize: Theme.text-secondary;
+            }
+
+            bs := Hold {
+                tapped => {
+                    DialState.act("backspace", "");
+                }
+                held => {
+                    DialState.act("clear", "");
+                }
+            }
+        }
+    }
+}
+
+// Mockups 3, 4: the dialer.
+component Dialer inherits VerticalLayout {
+    PageSwitch {
+        current: 0;
+        picked(i) => {
+            Nav.act("switch", i);
+        }
+    }
+
+    NeoList {
+        vertical-stretch: 1;
+        VerticalLayout {
+            alignment: start;
+            if DialState.number == "": VerticalLayout {
+                for r[i] in DialState.recent: RecentRow {
+                    r: r;
+                    divider: i < DialState.recent.length - 1;
+                }
+            }
+            if DialState.number != "": VerticalLayout {
+                for m[i] in DialState.matches: MatchLine {
+                    m: m;
+                    index: i;
+                }
+                Rectangle {
+                    height: 48 * Theme.dp;
+                    background: add.pressed ? Theme.pressed : transparent;
+                    HorizontalLayout {
+                        padding-left: 14 * Theme.dp;
+                        spacing: 6 * Theme.dp;
+                        alignment: start;
+                        Glyph {
+                            y: (parent.height - self.height) / 2;
+                            source: @image-url("@neoui/icons/sys/person_add.svg");
+                            size: 18 * Theme.dp;
+                            colorize: Theme.accent;
+                        }
+
+                        Text {
+                            text: "Add to contacts";
+                            color: Theme.accent;
+                            font-size: 15 * Theme.dp;
+                            font-weight: 500;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    add := TouchArea {
+                        clicked => {
+                            DialState.act("add-contact", "");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    NumberLine { }
+
+    KeyGrid {
+        padding-top: 4 * Theme.dp;
+        padding-bottom: 6 * Theme.dp;
+        pressed(k) => {
+            DialState.act("key", k);
+        }
+        long-pressed(k) => {
+            DialState.act("key-long", k);
+        }
+    }
+}
+
+// A Recents filter chip, with the new-missed count in red.
+component FilterChip inherits Rectangle {
+    in property <string> text;
+    in property <int> count;
+    in property <bool> on;
+    in property <color> on-color: Theme.accent;
+    callback clicked;
+    height: 32 * Theme.dp;
+    border-radius: self.height / 2;
+    background: on ? on-color : #ffffff17;
+    border-width: max(1px, Theme.dp / 2);
+    border-color: on ? on-color : #ffffff1a;
+    HorizontalLayout {
+        padding-left: 13 * Theme.dp;
+        padding-right: 13 * Theme.dp;
+        spacing: 5 * Theme.dp;
+        Text {
+            text: root.text;
+            color: Theme.text;
+            font-size: 14 * Theme.dp;
+            font-weight: 500;
+            vertical-alignment: center;
+        }
+
+        if count > 0: Text {
+            text: count;
+            color: on ? Theme.text : Theme.danger;
+            font-size: 14 * Theme.dp;
+            font-weight: 700;
+            vertical-alignment: center;
+        }
+    }
+
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// Mockups 5, 27: a Recents row (tap: details, hold: Block / Delete, the green button: call back).
+component LogLine inherits Rectangle {
+    in property <LogRow> r;
+    in property <bool> divider: true;
+    height: Theme.list-row-double-h;
+    background: t.pressed ? Theme.pressed : transparent;
+    t := Hold {
+        tapped => {
+            DialState.act("row", r.id);
+        }
+        held => {
+            DialState.act("row-hold", r.id);
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: 14 * Theme.dp;
+        padding-right: 14 * Theme.dp;
+        spacing: 12 * Theme.dp;
+        Face {
+            y: (parent.height - self.height) / 2;
+            initials: r.initials;
+            tint: r.tint;
+            private: r.private;
+            dim: r.kind == 5;
+        }
+
+        VerticalLayout {
+            alignment: center;
+            spacing: 2 * Theme.dp;
+            horizontal-stretch: 1;
+            Text {
+                text: r.title + (r.count > 1 ? " (" + r.count + ")" : "");
+                font-family: "DejaVu Sans";
+                color: r.kind == 3 ? Theme.danger : Theme.text;
+                font-size: Theme.font-body;
+                overflow: elide;
+            }
+
+            HorizontalLayout {
+                spacing: 5 * Theme.dp;
+                Direction {
+                    y: (parent.height - self.height) / 2;
+                    kind: r.kind;
+                    size: 15 * Theme.dp;
+                }
+
+                Text {
+                    text: r.line;
+                    color: r.kind == 3 ? Theme.danger : Theme.text-secondary;
+                    font-size: Theme.font-label;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                }
+            }
+        }
+
+        if r.kind != 5: RowAction {
+            y: (parent.height - self.height) / 2;
+            icon: @image-url("@neoui/icons/sys/call.svg");
+            clicked => {
+                DialState.act("row-call", r.id);
+            }
+        }
+    }
+
+    if divider: Hairline {
+        left: 70 * Theme.dp;
+    }
+}
+
+// Mockups 5, 27: Recent calls.
+component Recents inherits VerticalLayout {
+    // the chips scroll sideways when they don't fit; with Blocked on, its chip shows
+    Flickable {
+        height: 52 * Theme.dp;
+        content-width: chips.preferred-width;
+        content-height: self.height;
+        content-x: DialState.filter == 4 ? min(0px, self.width - chips.preferred-width) : 0px;
+        chips := HorizontalLayout {
+            padding: 10 * Theme.dp;
+            padding-left: 14 * Theme.dp;
+            padding-right: 14 * Theme.dp;
+            spacing: 8 * Theme.dp;
+            for c[i] in DialState.has-blocked ? ["All", "Missed", "Received", "Dialled", "Blocked"] : ["All", "Missed", "Received", "Dialled"]: FilterChip {
+                text: c;
+                count: i == 1 ? DialState.missed-new : i == 4 ? DialState.blocked-count : 0;
+                on: DialState.filter == i;
+                on-color: i == 4 ? Theme.danger : Theme.accent;
+                clicked => {
+                    DialState.act("filter", i);
+                }
+            }
+        }
+    }
+
+    NeoList {
+        vertical-stretch: 1;
+        VerticalLayout {
+            alignment: start;
+            for r[i] in DialState.rows: VerticalLayout {
+                if i == 0 || DialState.rows[i - 1].section != r.section: Band {
+                    text: r.section.to-uppercase();
+                }
+                LogLine {
+                    r: r;
+                    divider: i < DialState.rows.length - 1 && DialState.rows[i + 1].section == r.section;
+                }
+            }
+            if DialState.rows.length == 0: Text {
+                height: 120 * Theme.dp;
+                text: "No calls";
+                color: Theme.text-dim;
+                font-size: Theme.font-body;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+    }
+
+    if DialState.filter == 4: Text {
+        x: 14 * Theme.dp;
+        width: parent.width - 28 * Theme.dp;
+        height: 40 * Theme.dp;
+        text: "Blocked calls don't ring, vibrate or count as missed.";
+        color: Theme.text-secondary;
+        font-size: 13 * Theme.dp;
+        wrap: word-wrap;
+    }
+}
+
+// A details action row (Open contact, Block number, Delete from log).
+component ActionRow inherits Rectangle {
+    in property <string> text;
+    in property <image> icon;
+    in property <bool> danger;
+    in property <bool> chevron;
+    in property <bool> divider: true;
+    callback clicked;
+    height: Theme.list-row-h;
+    background: t.pressed ? Theme.pressed : transparent;
+    t := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: 14 * Theme.dp;
+        padding-right: 14 * Theme.dp;
+        spacing: 12 * Theme.dp;
+        Glyph {
+            y: (parent.height - self.height) / 2;
+            source: icon;
+            size: 24 * Theme.dp;
+            colorize: danger ? Theme.danger : Theme.text-secondary;
+        }
+
+        Text {
+            text: root.text;
+            color: danger ? Theme.danger : Theme.text;
+            font-size: Theme.font-body;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+
+        if chevron: Glyph {
+            y: (parent.height - self.height) / 2;
+            source: @image-url("@neoui/icons/sys/chevron_right.svg");
+            size: 24 * Theme.dp;
+            colorize: Theme.text-dim;
+        }
+    }
+
+    if divider: Hairline {
+        left: 14 * Theme.dp;
+    }
+}
+
+// Mockup 6: call details.
+component Details inherits VerticalLayout {
+    VerticalLayout {
+        padding-top: 18 * Theme.dp;
+        padding-bottom: 14 * Theme.dp;
+        spacing: 6 * Theme.dp;
+        HorizontalLayout {
+            alignment: center;
+            Face {
+                size: Theme.avatar-large;
+                initials: DialState.detail-initials;
+                tint: DialState.detail-tint;
+                private: DialState.detail-private;
+            }
+        }
+
+        Text {
+            text: DialState.detail-title;
+            font-family: "DejaVu Sans";
+            color: Theme.text;
+            font-size: 22 * Theme.dp;
+            font-weight: 600;
+            horizontal-alignment: center;
+            overflow: elide;
+        }
+
+        if DialState.detail-number != "": Text {
+            text: DialState.detail-number;
+            color: Theme.text-secondary;
+            font-size: 14 * Theme.dp;
+            horizontal-alignment: center;
+        }
+        if DialState.detail-can-call: HorizontalLayout {
+            padding-top: 10 * Theme.dp;
+            alignment: center;
+            // Message waits for SMS
+            PillButton {
+                width: 125 * Theme.dp;
+                text: "Call";
+                kind: "green";
+                icon: @image-url("@neoui/icons/sys/call.svg");
+                clicked => {
+                    DialState.act("detail-call", "");
+                }
+            }
+        }
+    }
+
+    Band {
+        text: "CALLS";
+    }
+
+    NeoList {
+        vertical-stretch: 1;
+        VerticalLayout {
+            alignment: start;
+            for c[i] in DialState.detail-calls: Rectangle {
+                height: Theme.list-row-h;
+                HorizontalLayout {
+                    padding-left: 14 * Theme.dp;
+                    padding-right: 14 * Theme.dp;
+                    spacing: 12 * Theme.dp;
+                    Rectangle {
+                        width: 22 * Theme.dp;
+                        Direction {
+                            kind: c.kind;
+                            size: 18 * Theme.dp;
+                        }
+                    }
+
+                    Text {
+                        text: c.kind == 1 ? "Dialled" : c.kind == 2 ? "Received" : c.kind == 4 ? "Rejected" : c.kind == 5 ? "Blocked" : "Missed";
+                        color: c.kind == 3 ? Theme.danger : Theme.text;
+                        font-size: 15 * Theme.dp;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                    }
+
+                    Text {
+                        text: c.when + (c.duration != "" ? " · " + c.duration : "");
+                        color: Theme.text-dim;
+                        font-size: Theme.font-label;
+                        vertical-alignment: center;
+                    }
+                }
+
+                if i < DialState.detail-calls.length - 1: Hairline {
+                    left: 14 * Theme.dp;
+                }
+            }
+        }
+    }
+
+    Band { }
+
+    if DialState.detail-can-call: ActionRow {
+        text: DialState.detail-known ? "Open contact" : "Save as contact";
+        icon: DialState.detail-known ? @image-url("../icons/person.svg") : @image-url("@neoui/icons/sys/person_add.svg");
+        chevron: true;
+        clicked => {
+            DialState.act("detail-contact", "");
+        }
+    }
+    if DialState.detail-can-call: ActionRow {
+        text: DialState.detail-blocked ? "Unblock number" : "Block number";
+        icon: @image-url("../icons/block.svg");
+        clicked => {
+            DialState.act("detail-block", "");
+        }
+    }
+    ActionRow {
+        text: "Delete from log";
+        icon: @image-url("@neoui/icons/sys/delete.svg");
+        danger: true;
+        divider: false;
+        clicked => {
+            DialState.act("detail-delete", "");
+        }
+    }
+}
+
+// Mockup 7: speed dial, keypad-shaped square tiles.
+component SpeedDial inherits Rectangle {
+    property <length> gap: 10 * Theme.dp;
+    property <length> side: (self.width - 28 * Theme.dp - 2 * gap) / 3;
+    for t[i] in DialState.speed: Rectangle {
+        x: 14 * Theme.dp + mod(i, 3) * (side + gap);
+        y: 14 * Theme.dp + floor(i / 3) * (side + gap);
+        width: side;
+        height: side;
+        border-radius: 14 * Theme.dp;
+        background: ta.pressed ? #22262c : Theme.card;
+        border-width: max(1px, Theme.dp / 2);
+        border-color: #ffffff12;
+        Text {
+            x: 9 * Theme.dp;
+            y: 6 * Theme.dp;
+            text: t.key;
+            color: Theme.text-dim;
+            font-size: 13 * Theme.dp;
+            font-weight: 600;
+        }
+
+        VerticalLayout {
+            alignment: center;
+            spacing: 6 * Theme.dp;
+            HorizontalLayout {
+                alignment: center;
+                if t.key == 1: Rectangle {
+                    width: 46 * Theme.dp;
+                    height: self.width;
+                    border-radius: self.width / 2;
+                    background: #1f3b66;
+                    Glyph {
+                        source: @image-url("@neoui/icons/sys/voicemail.svg");
+                        size: 24 * Theme.dp;
+                        colorize: #9cc2ff;
+                    }
+                }
+                if t.key != 1 && t.name != "": Face {
+                    size: 46 * Theme.dp;
+                    initials: t.initials;
+                    tint: t.tint;
+                }
+                if t.key != 1 && t.name == "": Rectangle {
+                    width: 46 * Theme.dp;
+                    height: self.width;
+                    border-radius: self.width / 2;
+                    border-width: 1.5 * Theme.dp;
+                    border-color: #ffffff40;
+                    Glyph {
+                        source: @image-url("@neoui/icons/sys/add.svg");
+                        size: 20 * Theme.dp;
+                        colorize: Theme.text-dim;
+                    }
+                }
+            }
+
+            Text {
+                text: t.key == 1 ? "Voicemail" : t.name == "" ? "Assign" : t.name;
+                font-family: t.key != 1 && t.name != "" ? "DejaVu Sans" : "Inter";
+                color: t.key == 1 || t.name != "" ? Theme.text : Theme.text-dim;
+                font-size: 12.5 * Theme.dp;
+                horizontal-alignment: center;
+                overflow: elide;
+            }
+        }
+
+        ta := TouchArea {
+            clicked => {
+                DialState.act("speed", t.key);
+            }
+        }
+    }
+
+    Text {
+        x: 14 * Theme.dp;
+        width: parent.width - 28 * Theme.dp;
+        y: parent.height - self.height - 18 * Theme.dp;
+        text: "Hold a digit in the dialer to call.";
+        color: Theme.text-secondary;
+        font-size: Theme.font-label;
+        horizontal-alignment: center;
+    }
+}
+
+// The speed-dial contact picker: a scrolling list of name · number over the dimmed page.
+component Picker inherits Rectangle {
+    visible: DialState.pick-open;
+    Rectangle {
+        background: Theme.scrim;
+        TouchArea {
+            clicked => {
+                DialState.act("pick-dismiss", "");
+            }
+        }
+    }
+
+    Rectangle {
+        x: 8 * Theme.dp;
+        width: parent.width - 16 * Theme.dp;
+        y: 40 * Theme.dp;
+        height: parent.height - 48 * Theme.dp;
+        border-radius: 16 * Theme.dp;
+        background: #23272d;
+        border-width: max(1px, Theme.dp / 2);
+        border-color: #ffffff1a;
+        clip: true;
+        TouchArea { }
+
+        VerticalLayout {
+            padding-top: 4 * Theme.dp;
+            Text {
+                height: 44 * Theme.dp;
+                x: 18 * Theme.dp;
+                text: DialState.pick-heading.to-uppercase();
+                color: Theme.text-dim;
+                font-size: 13 * Theme.dp;
+                font-weight: 600;
+                vertical-alignment: center;
+            }
+
+            NeoList {
+                vertical-stretch: 1;
+                VerticalLayout {
+                    alignment: start;
+                    for p[i] in DialState.pick: Rectangle {
+                        height: 60 * Theme.dp;
+                        background: pt.pressed ? Theme.pressed : transparent;
+                        Rectangle {
+                            y: 0;
+                            height: max(1px, Theme.dp / 2);
+                            background: #ffffff0f;
+                        }
+
+                        VerticalLayout {
+                            padding-left: 18 * Theme.dp;
+                            padding-right: 18 * Theme.dp;
+                            alignment: center;
+                            spacing: 2 * Theme.dp;
+                            Text {
+                                text: p.title;
+                                font-family: "DejaVu Sans";
+                                color: Theme.text;
+                                font-size: Theme.font-body;
+                                overflow: elide;
+                            }
+
+                            Text {
+                                text: p.number;
+                                color: Theme.text-secondary;
+                                font-size: Theme.font-label;
+                            }
+                        }
+
+                        pt := TouchArea {
+                            clicked => {
+                                DialState.act("pick", i);
+                            }
+                        }
+                    }
+                    if DialState.pick.length == 0: Text {
+                        height: 80 * Theme.dp;
+                        text: "No contacts with numbers";
+                        color: Theme.text-dim;
+                        font-size: Theme.font-body;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+    }
+}
 
 export component PhonePage inherits Rectangle {
-    Text {
-        text: "Phone: the dialer, Recents, call details, speed dial";
-        color: Theme.text-dim;
-        font-size: Theme.font-body;
+    // bakes the keyboard languages' letters into the binary: names are typed in any of them
+    Alphabets { }
+
+    if Nav.view == "": Dialer { }
+    if Nav.view == "recents": Recents { }
+    if Nav.view == "detail": Details { }
+    if Nav.view == "speed": SpeedDial { }
+    Sheet {
+        heading: DialState.sheet-heading;
+        items: DialState.sheet-items;
+        open: DialState.sheet-open;
+        dismissed => {
+            DialState.act("sheet-dismiss", "");
+        }
+        selected(i, item) => {
+            DialState.act("sheet", item);
+        }
     }
+
+    Picker { }
 }
