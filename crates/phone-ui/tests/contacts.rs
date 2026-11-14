@@ -301,6 +301,17 @@ fn contacts() {
     ]));
     tap(&s, 200.0 * dp, (52.0 + 14.0 + 22.0) * dp, true);
     s.shoot("contacts-edit");
+    // typing into a number writes it into the model the app reads on Save
+    tap(&s, 200.0 * dp, 348.0 * dp, true);
+    for ch in "5550199".chars() {
+        let text = SharedString::from(ch.encode_utf8(&mut [0; 4]) as &str);
+        s.ui.window()
+            .dispatch_event(WindowEvent::KeyPressed { text: text.clone() });
+        s.ui.window()
+            .dispatch_event(WindowEvent::KeyReleased { text });
+    }
+    assert_eq!(c.get_edit_numbers().row_data(1).unwrap().number, "5550199");
+    tap(&s, 200.0 * dp, (52.0 + 14.0 + 22.0) * dp, true);
 
     // 20: the number-type picker
     c.set_picking(0);
