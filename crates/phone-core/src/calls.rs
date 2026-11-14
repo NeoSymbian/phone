@@ -144,9 +144,12 @@ impl Tracker {
             .map(|(_, t)| (now.saturating_sub(*t) / 1000) as u32)
     }
 
-    /// A call is connected (its timer ticks).
-    pub fn timing(&self) -> bool {
-        !self.since.is_empty()
+    /// When the next timer turns a second (ms), while a call is connected.
+    pub fn next_tick(&self, now: u64) -> Option<u64> {
+        self.since
+            .iter()
+            .map(|(_, t)| now + 1000 - now.saturating_sub(*t) % 1000)
+            .min()
     }
 
     /// The screen for status `s` (`None`: no MODEMD yet).
@@ -326,10 +329,12 @@ mod tests {
         let dial = call(1, st::ORIGINATION, false);
         let u = t.update(&status(&[dial]), 1_000);
         assert!(u.appeared && !u.all_ended);
-        assert!(!t.timing());
+        assert_eq!(t.next_tick(1_500), None);
         let talk = call(1, st::CONVERSATION, false);
         assert_eq!(t.update(&status(&[talk]), 2_000), Update::default());
         assert_eq!(t.seconds(1, 6_500), Some(4));
+        assert_eq!(t.next_tick(6_500), Some(7_000));
+        assert_eq!(t.next_tick(7_000), Some(8_000));
         // a second caller appears
         let wait = call(2, st::WAITING, true);
         assert!(t.update(&status(&[talk, wait]), 3_000).appeared);
@@ -344,7 +349,7 @@ mod tests {
         assert_eq!((e.call.id, e.seconds, e.at), (1, Some(271), 273_000));
         assert!(e.summary());
         assert_eq!(t.screen(Some(&status(&[]))), Screen::Ended(e));
-        assert!(!t.timing());
+        assert_eq!(t.next_tick(273_000), None);
         // gone for good: nothing new
         assert_eq!(t.update(&status(&[]), 274_000), Update::default());
         t.close();
