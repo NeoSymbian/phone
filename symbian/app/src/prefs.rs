@@ -40,3 +40,14 @@ pub fn reload(_ctx: &Ctx) {}
 
 /// MODEMD's status changed (call waiting's answer).
 pub fn on_status(_ctx: &Ctx) {}
+
+/// Block `number` (calls and/or messages) in MODEMD's blocklist, with a note.
+pub fn block_number(_ctx: &Ctx, _number: &str, _calls: bool, _messages: bool) {}
+
+/// Remove every rule matching `number` exactly (Unblock on a card or a Recents row).
+pub fn unblock_number(_ctx: &Ctx, _number: &str) {}
+
+/// What blocks `number` (calls, messages), if a number rule does.
+pub fn blocked(_ctx: &Ctx, _number: &str) -> Option<(bool, bool)> {
+    None
+}
