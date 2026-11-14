@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The contacts model (docs/telephony.md C8): the store and its file, names and sorting, search, caller-name lookup
-//! ([`Book::lookup`]), smart dialling ([`t9`]) and vCard import/export ([`vcard`]). Pure logic, tested on the host;
+//! ([`Book::lookup`]), smart dialling ([`t9`]), the list's sections and side index ([`index`]) and vCard import/export
+//! ([`vcard`]). Pure logic, tested on the host;
 //! the shell (SYSSTART) keeps the book in `C:\private\e0002001\contacts.dat` and draws it.
 //! Field set and limits follow the Symbian^3 phonebook (docs/symbian-phone-sources.md §13).
 #![no_std]
 
 extern crate alloc;
 
+pub mod index;
 pub mod recents;
 pub mod t9;
 pub mod vcard;
