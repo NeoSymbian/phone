@@ -69,7 +69,7 @@ impl Dialer {
                 }
                 "1" => return Long::Voicemail,
                 k => {
-                    if let Some(k @ 2..=9) = k.parse::<usize>().ok() {
+                    if let Ok(k @ 2..=9) = k.parse::<usize>() {
                         return Long::Speed(k);
                     }
                 }
@@ -95,6 +95,54 @@ impl Dialer {
             [d @ b'2'..=b'9'] => Some(usize::from(d - b'0')),
             _ => None,
         }
+    }
+}
+
+/// A `p` in a dial string pauses this long (the GSM convention).
+pub const PAUSE_MS: u64 = 2500;
+/// Between two tones (MODEMD plays each for 200 ms).
+pub const TONE_GAP_MS: u64 = 300;
+
+/// The tones after a dialled number's `p`/`w`, sent once the call connects (docs/symbian-phone-sources.md §4).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Tones {
+    rest: String,
+    at: u64,
+}
+
+impl Tones {
+    pub fn new(rest: &str, now_ms: u64) -> Self {
+        Self {
+            rest: rest.into(),
+            at: now_ms + TONE_GAP_MS,
+        }
+    }
+
+    /// When the next step is due.
+    pub fn at(&self) -> u64 {
+        self.at
+    }
+
+    pub fn done(&self) -> bool {
+        self.rest.is_empty()
+    }
+
+    /// The tone to send at `now_ms`, if one is due; `p` and `w` pause.
+    // shortcut: `w` pauses like `p` instead of asking first; upgrade when the call screen can ask "Send tones?".
+    pub fn step(&mut self, now_ms: u64) -> Option<char> {
+        while now_ms >= self.at {
+            let c = self.rest.chars().next()?;
+            self.rest.remove(0);
+            match c {
+                'p' | 'w' => self.at = now_ms + PAUSE_MS,
+                '0'..='9' | '*' | '#' => {
+                    self.at = now_ms + TONE_GAP_MS;
+                    return Some(c);
+                }
+                _ => {}
+            }
+        }
+        None
     }
 }
 
@@ -253,6 +301,19 @@ mod tests {
         assert_eq!(d.single_key(), Some(7));
         d.key("7", 0);
         assert_eq!(d.single_key(), None);
+    }
+
+    #[test]
+    fn tones() {
+        let mut t = Tones::new("12p#", 0);
+        assert_eq!(t.step(100), None);
+        assert_eq!(t.step(300), Some('1'));
+        assert_eq!(t.step(400), None);
+        assert_eq!(t.step(600), Some('2'));
+        assert_eq!(t.step(900), None);
+        assert_eq!(t.at(), 900 + PAUSE_MS);
+        assert_eq!(t.step(900 + PAUSE_MS), Some('#'));
+        assert!(t.done());
     }
 
     #[test]
