@@ -8,8 +8,8 @@ members = ["app"]
 
 [workspace.dependencies]
 e32 = { git = "https://github.com/NeoSymbian/e32-rs", rev = "e97e2ebcb242f5365d1b3f9d520646603e1e9056", features = ["critical-section"] }
-neoui-proto = { git = "https://github.com/NeoSymbian/neoui", rev = "0802b52733d4c73ef9be788808688df948a1e10f" }
-neoapp = { git = "https://github.com/NeoSymbian/neoui", rev = "0802b52733d4c73ef9be788808688df948a1e10f" }
+neoui-proto = { git = "https://github.com/NeoSymbian/neoui", rev = "4dfdee8e2b9908c745c086541ac39aa0b59f8289" }
+neoapp = { git = "https://github.com/NeoSymbian/neoui", rev = "4dfdee8e2b9908c745c086541ac39aa0b59f8289" }
 slint = { version = "=1.18.1", default-features = false, features = ["compat-1-2", "unsafe-single-threaded", "libm", "renderer-software"] }
 modem-ipc = { git = "https://github.com/NeoSymbian/telephony", rev = "efc18d4af1851b9d5cfed4a9e7f4154441fd000e" }
 phone-rules = { git = "https://github.com/NeoSymbian/telephony", rev = "efc18d4af1851b9d5cfed4a9e7f4154441fd000e" }

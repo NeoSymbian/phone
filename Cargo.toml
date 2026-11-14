@@ -18,7 +18,7 @@ phone-ui = { path = "crates/phone-ui" }
 modem-ipc = { git = "https://github.com/NeoSymbian/telephony", rev = "efc18d4af1851b9d5cfed4a9e7f4154441fd000e" }
 phone-rules = { git = "https://github.com/NeoSymbian/telephony", rev = "efc18d4af1851b9d5cfed4a9e7f4154441fd000e" }
 # NeoSymbian/neoui: the app protocol and (DEP_NEOUI_UI) the shared theme, fonts and components
-neoui-proto = { git = "https://github.com/NeoSymbian/neoui", rev = "0802b52733d4c73ef9be788808688df948a1e10f" }
+neoui-proto = { git = "https://github.com/NeoSymbian/neoui", rev = "4dfdee8e2b9908c745c086541ac39aa0b59f8289" }
 # the same Slint as neoui (one copy in the ROM, no_std)
 slint = { version = "=1.18.1", default-features = false, features = ["compat-1-2", "unsafe-single-threaded", "libm", "renderer-software"] }
 slint-build = { version = "=1.18.1", features = ["sdf-fonts"] }

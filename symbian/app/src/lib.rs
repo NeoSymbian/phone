@@ -165,6 +165,13 @@ fn run() -> Result<(), i32> {
                 Some(AppEvent::Back) => {
                     ctx.back();
                 }
+                Some(AppEvent::Keyboard { h }) => {
+                    // 0 while a field still has the focus: the user put the keyboard away (the toolbar's key);
+                    // a tap on the field brings it back (it asks again through ctx.sync)
+                    let ui = ctx.ui();
+                    let kf = ui.global::<phone_ui::KeyboardFocus>();
+                    kf.set_dismissed(h == 0 && kf.get_open());
+                }
                 Some(AppEvent::Options) => ctx.options(),
                 Some(AppEvent::Action) => ctx.action(),
                 Some(AppEvent::Input(input)) => match input {

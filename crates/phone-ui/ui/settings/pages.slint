@@ -192,6 +192,7 @@ component Main inherits NeoList {
                     horizontal-stretch: 1;
                     text <=> SettingsState.draft;
                     placeholder: "Number";
+                    keys: 4;
                     autofocus: true;
                 }
             }
@@ -295,6 +296,7 @@ component Blocked inherits NeoList {
                 TextField {
                     text <=> SettingsState.add-text;
                     placeholder: "Number or prefix";
+                    keys: 4;
                     autofocus: true;
                 }
 

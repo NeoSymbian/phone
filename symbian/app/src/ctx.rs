@@ -79,7 +79,8 @@ pub struct Ctx {
     /// what the UI server shows for us now (sent only when it changes)
     chrome: RefCell<Option<Chrome>>,
     nav_claim: Cell<i32>,
-    keyboard: Cell<bool>,
+    /// the keyboard last asked of the UI server: (open, KeyboardFocus.seq, mode)
+    keyboard: Cell<(bool, i32, i32)>,
 }
 
 pub fn model<T: Clone + 'static>(items: Vec<T>) -> ModelRc<T> {
@@ -98,7 +99,7 @@ impl Ctx {
             m: RefCell::new(m),
             chrome: RefCell::new(None),
             nav_claim: Cell::new(-1),
-            keyboard: Cell::new(false),
+            keyboard: Cell::new((false, 0, 0)),
         }
     }
 
@@ -238,11 +239,15 @@ impl Ctx {
             self.nav_claim.set(claim);
             let _ = self.app.claim_nav(back, true);
         }
-        let kb = ui.global::<KeyboardFocus>().get_open();
-        if self.keyboard.get() != kb {
-            self.keyboard.set(kb);
-            let mode = if kb {
-                proto::KEYBOARD_TEXT
+        // a field took the focus (or was tapped after the keyboard was put away): ask for its keyboard (letters,
+        // number pad, phone pad); none focused: hide it
+        let kf = ui.global::<KeyboardFocus>();
+        let want = (kf.get_open(), kf.get_seq(), kf.get_mode());
+        let had = self.keyboard.get();
+        if want.0 != had.0 || (want.0 && (want.1, want.2) != (had.1, had.2)) {
+            self.keyboard.set(want);
+            let mode = if want.0 {
+                want.2.max(1)
             } else {
                 proto::KEYBOARD_HIDDEN
             };

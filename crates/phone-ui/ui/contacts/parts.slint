@@ -13,6 +13,10 @@ export component Field inherits Rectangle {
     in property <string> placeholder;
     in property <bool> search;
     in property <bool> clearable;
+    // the system keyboard it brings up (neoui ipc KEYBOARD: 1 letters, 3 number pad, 4 phone pad)
+    in property <int> keys: 1;
+    // KeyboardFocus.seq when this field took the focus (a later field's focus wins over this one letting go)
+    property <int> took;
     callback edited(string);
     height: 44 * Theme.dp;
     border-radius: 10 * Theme.dp;
@@ -27,6 +31,11 @@ export component Field inherits Rectangle {
         border-radius: 13 * Theme.dp;
         border-width: 3 * Theme.dp;
         border-color: Theme.accent.with-alpha(0.2);
+    }
+    function reopen() {
+        KeyboardFocus.seq += 1;
+        root.took = KeyboardFocus.seq;
+        KeyboardFocus.dismissed = false;
     }
     HorizontalLayout {
         padding-left: 12 * Theme.dp;
@@ -58,8 +67,15 @@ export component Field inherits Rectangle {
                 color: Theme.text;
                 vertical-alignment: center;
                 single-line: true;
+                input-type: root.keys == 3 ? InputType.number : InputType.text;
                 changed has-focus => {
-                    KeyboardFocus.open = self.has-focus;
+                    if self.has-focus {
+                        root.reopen();
+                        KeyboardFocus.mode = root.keys;
+                        KeyboardFocus.open = true;
+                    } else if root.took == KeyboardFocus.seq {
+                        KeyboardFocus.open = false;
+                    }
                 }
                 edited => {
                     root.edited(self.text);
@@ -81,6 +97,13 @@ export component Field inherits Rectangle {
                     root.edited("");
                 }
             }
+        }
+    }
+
+    // the keyboard was put away (the toolbar's key): a tap on the field brings it back, as neoui's TextField does
+    if KeyboardFocus.dismissed && input.has-focus: TouchArea {
+        clicked => {
+            root.reopen();
         }
     }
 }

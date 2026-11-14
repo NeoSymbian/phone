@@ -23,6 +23,26 @@ export { Theme, Scroll, KeyboardFocus, Nav, DialState, ContactsState, CallState,
 export component PhoneApp inherits Window {
     default-font-family: "Inter";
     background: Theme.bg;
+    // A tap that no row or button takes lands here, below the pages: the focus moves to `sink`, the field loses it
+    // and the keyboard closes. A page or view change does the same (a field removed with its `if` never reports
+    // losing focus).
+    sink := FocusScope { }
+    TouchArea {
+        clicked => {
+            root.leave-fields();
+        }
+    }
+
+    property <string> place: Nav.page + "/" + Nav.view;
+    changed place => {
+        root.leave-fields();
+    }
+
+    public function leave-fields() {
+        sink.focus();
+        KeyboardFocus.open = false;
+    }
+
     if Nav.page == 0: PhonePage { }
     if Nav.page == 1: ContactsPage { }
     if Nav.page == 3: CallPage { }
