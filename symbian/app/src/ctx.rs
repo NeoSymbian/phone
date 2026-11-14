@@ -257,7 +257,7 @@ impl Ctx {
             Page::Phone(_) => dial::wants_back(self),
             Page::Contacts(_) => people::wants_back(self),
             Page::Call => false,
-            Page::Settings(_) => false,
+            Page::Settings(_) => prefs::wants_back(self),
         }
     }
 

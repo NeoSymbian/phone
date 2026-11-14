@@ -1,13 +1,24 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! Settings: Phone & Contacts, Blocked numbers (to be written).
+//! Settings: Phone & Contacts (caller ID and call waiting go to MODEMD, the rest are `phone.*`/`contacts.*`
+//! settings), Blocked numbers (MODEMD's blocklist, edited through [`phone_core::blocking`]), and the blocking calls
+//! the other areas make.
+//!
+//! The screens keep their own open/closed state in `SettingsState` (the picker, the voicemail editor, the add row,
+//! the Remove all query); this module reads it for the toolbar and Back.
 
-use crate::ctx::{Chrome, Ctx};
+use crate::ctx::{Chrome, Ctx, model, strings};
+use alloc::format;
 use alloc::rc::Rc;
 use alloc::string::String;
 use alloc::vec::Vec;
-use neoui_proto::settings::{Bytes, keys};
-use phone_ui::{PhoneApp, SettingsState};
-use slint::ComponentHandle;
+use contacts::{Label, NameOrder};
+use neoui_proto::ipc as proto;
+use neoui_proto::settings::{Bytes, Key, Setting, keys};
+use phone_core::blocking::{self, Refusal};
+use phone_core::page::{Page, SettingsView};
+use phone_rules::block::List;
+use phone_ui::{BlockRow, KeyboardFocus, PhoneApp, SettingsState};
+use slint::{Color, ComponentHandle, SharedString};
 
 /// The `phone.*` and `contacts.*` settings every area reads (owned by this app since neoui 0bd19fa).
 pub struct State {
@@ -43,29 +54,317 @@ impl Default for State {
     }
 }
 
+/// The days "Keep call log" offers, in the picker's order.
+const LOG_DAYS: [i32; 4] = [0, 1, 10, 30];
+
 pub fn bind(ctx: &Rc<Ctx>, ui: &PhoneApp) {
     let ctx = Rc::downgrade(ctx);
-    ui.global::<SettingsState>().on_act(move |_action, _value| {
-        let Some(_ctx) = ctx.upgrade() else { return };
+    ui.global::<SettingsState>().on_act(move |action, value| {
+        let Some(ctx) = ctx.upgrade() else { return };
+        act(&ctx, &action, &value);
     });
 }
 
-pub fn show(_ctx: &Ctx) {}
-
-pub fn chrome(_ctx: &Ctx) -> Chrome {
-    Chrome::titled("Phone & Contacts")
+fn act(ctx: &Ctx, action: &str, value: &str) {
+    let on = value == "1";
+    let i: usize = value.parse().unwrap_or(0);
+    match action {
+        // the main view appeared (while it is drawn): nothing left open from the last visit, and ask the network
+        // about call waiting (the answer comes as Status::waiting)
+        "opened" => {
+            let ui = ctx.ui();
+            let s = ui.global::<SettingsState>();
+            s.set_picker(SharedString::new());
+            s.set_query(false);
+            close(ctx);
+            let _ = ctx.m.borrow_mut().modem.waiting(None);
+            return;
+        }
+        "clir" => {
+            save(ctx, keys::PHONE_CLIR, i.min(2) as i32);
+            send_call_settings(ctx);
+        }
+        "log" => {
+            save(ctx, keys::PHONE_LOG_DAYS, LOG_DAYS[i.min(3)]);
+            send_call_settings(ctx);
+        }
+        "order" => save(ctx, keys::CONTACTS_NAME_ORDER, i.min(1) as i32),
+        "label" => save(
+            ctx,
+            keys::CONTACTS_DEFAULT_LABEL,
+            i.min(Label::ALL.len() - 1) as i32,
+        ),
+        "summary" => save(ctx, keys::PHONE_SUMMARY, on),
+        "duration" => save(ctx, keys::PHONE_SHOW_DURATION, on),
+        "smart-dial" => save(ctx, keys::PHONE_SMART_DIAL, on),
+        "waiting" => {
+            let r = ctx.m.borrow_mut().modem.waiting(Some(on));
+            if r != 0 {
+                ctx.note(&format!("Call waiting: not available ({r})"));
+            }
+        }
+        "blocked" => ctx.go(Page::Settings(SettingsView::Blocked)),
+        "private" | "unknown" => {
+            edit_block(
+                ctx,
+                |l| {
+                    *(if action == "private" {
+                        &mut l.private
+                    } else {
+                        &mut l.unknown
+                    }) = on;
+                    Ok(())
+                },
+                "",
+            );
+        }
+        "remove" => {
+            edit_block(
+                ctx,
+                |l| {
+                    if i < l.rules.len() {
+                        l.rules.remove(i);
+                    }
+                    Ok(())
+                },
+                "Unblocked",
+            );
+        }
+        "remove-all" => {
+            edit_block(
+                ctx,
+                |l| {
+                    l.rules.clear();
+                    Ok(())
+                },
+                "Removed all",
+            );
+        }
+        _ => {}
+    }
+    ctx.show();
 }
 
-pub fn options(_ctx: &Ctx) -> Vec<&'static str> {
-    Vec::new()
+/// Write a setting and read them all back (a note if the UI server refused it).
+fn save<T: Setting>(ctx: &Ctx, key: Key<T>, value: T) {
+    if let Err(e) = ctx.app.set_setting(key, value) {
+        ctx.note(&format!("Not saved ({e})"));
+    }
+    reload(ctx);
 }
 
-pub fn option(_ctx: &Ctx, _item: &str) {}
+/// Caller ID and the log's days go to MODEMD as they change.
+fn send_call_settings(ctx: &Ctx) {
+    let r = {
+        let mut m = ctx.m.borrow_mut();
+        let (clir, days) = (m.prefs.clir, m.prefs.log_days);
+        m.modem.call_settings(clir, days)
+    };
+    if r != 0 {
+        ctx.note(&format!("Saved; the modem didn't take it ({r})"));
+    }
+}
 
-pub fn action(_ctx: &Ctx) {}
+/// Edit a copy of the blocklist and send it to MODEMD; the model keeps what MODEMD has (re-read after a failure).
+/// `done` is the note on success ("" none). False when refused or not sent.
+fn edit_block(ctx: &Ctx, edit: impl FnOnce(&mut List) -> Result<(), Refusal>, done: &str) -> bool {
+    let mut list = ctx.m.borrow().block.clone();
+    if let Err(r) = edit(&mut list) {
+        ctx.note(r.text());
+        return false;
+    }
+    let r = ctx.m.borrow_mut().modem.set_block_list(&list);
+    if r != 0 {
+        let now = ctx.m.borrow_mut().modem.block_list();
+        if let Ok(l) = now {
+            ctx.m.borrow_mut().block = l;
+        }
+        ctx.note(&format!("Not saved ({r})"));
+        return false;
+    }
+    ctx.m.borrow_mut().block = list;
+    if !done.is_empty() {
+        ctx.note(done);
+    }
+    true
+}
 
-pub fn back(_ctx: &Ctx) -> bool {
-    false
+/// "Ani Petrosyan" -> "AP".
+fn initials(name: &str) -> String {
+    name.split_whitespace()
+        .take(2)
+        .filter_map(|w| w.chars().next())
+        .flat_map(char::to_uppercase)
+        .collect()
+}
+
+// shortcut: a fixed palette by contact id (the mockups' colours); use the Contacts area's avatar colours once it has
+// them.
+const TINTS: [u32; 5] = [0x22b46a, 0xd6409f, 0xe8833a, 0x8b5cf6, 0x14a3a3];
+
+fn rows(ctx: &Ctx) -> Vec<BlockRow> {
+    let m = ctx.m.borrow();
+    m.block
+        .rules
+        .iter()
+        .map(|r| {
+            let what = blocking::summary(r);
+            let owner = if r.prefix {
+                None
+            } else {
+                m.book.lookup(&r.number)
+            };
+            match owner {
+                Some(c) => {
+                    let name = c.title(m.order);
+                    let t = TINTS[c.id as usize % TINTS.len()];
+                    BlockRow {
+                        initials: initials(&name).into(),
+                        title: name.into(),
+                        subtitle: format!("{} · {what}", r.number).into(),
+                        tint: Color::from_rgb_u8((t >> 16) as u8, (t >> 8) as u8, t as u8),
+                        kind: 0,
+                    }
+                }
+                None => BlockRow {
+                    title: blocking::title(r).into(),
+                    subtitle: what.into(),
+                    initials: SharedString::new(),
+                    tint: Color::default(),
+                    kind: if r.prefix { 2 } else { 1 },
+                },
+            }
+        })
+        .collect()
+}
+
+pub fn show(ctx: &Ctx) {
+    let ui = ctx.ui();
+    let s = ui.global::<SettingsState>();
+    let rows = rows(ctx);
+    let m = ctx.m.borrow();
+    let p = &m.prefs;
+    s.set_clir(p.clir.clamp(0, 2));
+    s.set_waiting(m.status.as_ref().map_or(0, |st| i32::from(st.waiting)));
+    s.set_summary(p.summary);
+    s.set_show_duration(p.show_duration);
+    s.set_voicemail(p.voicemail.as_str().into());
+    s.set_blocked_count(m.block.rules.len() as i32);
+    s.set_log_days(p.log_days);
+    s.set_name_order(i32::from(m.order == NameOrder::LastFirst));
+    s.set_smart_dial(p.smart_dial);
+    let labels: Vec<&str> = Label::ALL.iter().map(|l| l.text()).collect();
+    s.set_labels(strings(&labels));
+    s.set_default_label(i32::from(p.default_label).min(labels.len() as i32 - 1));
+    s.set_block_private(m.block.private);
+    s.set_block_unknown(m.block.unknown);
+    s.set_rules(model(rows));
+}
+
+pub fn chrome(ctx: &Ctx) -> Chrome {
+    let ui = ctx.ui();
+    let s = ui.global::<SettingsState>();
+    if ctx.page() == Page::Settings(SettingsView::Blocked) {
+        let c = Chrome::titled("Blocked numbers");
+        if s.get_adding() {
+            c.with(proto::TOOL_CHECK, proto::TOOLBAR_CANCEL, "Add")
+        } else {
+            c.with(proto::TOOL_ADD, 0, "Add")
+        }
+    } else {
+        let c = Chrome::titled("Phone & Contacts");
+        if s.get_editing() {
+            c.with(proto::TOOL_CHECK, proto::TOOLBAR_CANCEL, "Save")
+        } else {
+            c
+        }
+    }
+}
+
+pub fn options(ctx: &Ctx) -> Vec<&'static str> {
+    let blocked = ctx.page() == Page::Settings(SettingsView::Blocked);
+    if blocked && !ctx.m.borrow().block.rules.is_empty() {
+        alloc::vec!["Remove all"]
+    } else {
+        Vec::new()
+    }
+}
+
+pub fn option(ctx: &Ctx, item: &str) {
+    if item == "Remove all" {
+        ctx.ui().global::<SettingsState>().set_query(true);
+    }
+}
+
+/// The toolbar's middle button: Save (the voicemail number), Add (open the add row), Add (the typed number).
+pub fn action(ctx: &Ctx) {
+    let ui = ctx.ui();
+    let s = ui.global::<SettingsState>();
+    if ctx.page() == Page::Settings(SettingsView::Blocked) {
+        if !s.get_adding() {
+            s.set_add_text(SharedString::new());
+            s.set_add_prefix(false);
+            s.set_adding(true);
+            return;
+        }
+        let text = s.get_add_text();
+        let prefix = s.get_add_prefix();
+        let done = format!("Blocked {}", text.trim());
+        if edit_block(ctx, |l| blocking::add(l, &text, prefix, true, true), &done) {
+            close(ctx);
+        }
+    } else if s.get_editing() {
+        let v = s.get_draft();
+        let v = v.trim();
+        if !v
+            .chars()
+            .all(|c| c.is_ascii_digit() || " +*#pw-".contains(c))
+        {
+            ctx.note("Use digits and + * #");
+            return;
+        }
+        match ctx.app.set_setting(keys::PHONE_VOICEMAIL, String::from(v)) {
+            Ok(()) => {
+                close(ctx);
+                ctx.note("Saved");
+            }
+            Err(e) => ctx.note(&format!("Not saved ({e})")),
+        }
+        reload(ctx);
+    }
+    ctx.show();
+}
+
+/// Close the voicemail editor and the add row (and the keyboard they opened).
+fn close(ctx: &Ctx) {
+    let ui = ctx.ui();
+    let s = ui.global::<SettingsState>();
+    s.set_editing(false);
+    s.set_adding(false);
+    ui.global::<KeyboardFocus>().set_open(false);
+}
+
+/// Back closes a picker, the query, the editor or the add row first.
+pub fn back(ctx: &Ctx) -> bool {
+    let ui = ctx.ui();
+    let s = ui.global::<SettingsState>();
+    if !s.get_picker().is_empty() {
+        s.set_picker(SharedString::new());
+    } else if s.get_query() {
+        s.set_query(false);
+    } else if s.get_editing() || s.get_adding() {
+        close(ctx);
+    } else {
+        return false;
+    }
+    true
+}
+
+/// Something is open that Back closes (Back is claimed even on the main view).
+pub fn wants_back(ctx: &Ctx) -> bool {
+    let ui = ctx.ui();
+    let s = ui.global::<SettingsState>();
+    !s.get_picker().is_empty() || s.get_query() || s.get_editing() || s.get_adding()
 }
 
 /// Read the settings (`phone.*`, `contacts.*`) into the model.
@@ -115,16 +414,41 @@ pub fn save_speed(ctx: &Ctx, speed: &[String; 8]) -> Result<(), i32> {
     Ok(())
 }
 
-/// MODEMD's status changed (call waiting's answer).
-pub fn on_status(_ctx: &Ctx) {}
+/// MODEMD's status changed: the Call waiting row follows the network's answer.
+pub fn on_status(ctx: &Ctx) {
+    let w = ctx
+        .m
+        .borrow()
+        .status
+        .as_ref()
+        .map_or(0, |s| i32::from(s.waiting));
+    ctx.ui().global::<SettingsState>().set_waiting(w);
+}
 
 /// Block `number` (calls and/or messages) in MODEMD's blocklist, with a note.
-pub fn block_number(_ctx: &Ctx, _number: &str, _calls: bool, _messages: bool) {}
+pub fn block_number(ctx: &Ctx, number: &str, calls: bool, messages: bool) {
+    edit_block(
+        ctx,
+        |l| blocking::block(l, number, calls, messages),
+        &format!("Blocked {number}"),
+    );
+}
 
 /// Remove every rule matching `number` exactly (Unblock on a card or a Recents row).
-pub fn unblock_number(_ctx: &Ctx, _number: &str) {}
+pub fn unblock_number(ctx: &Ctx, number: &str) {
+    if blocked(ctx, number).is_some() {
+        edit_block(
+            ctx,
+            |l| {
+                blocking::remove_number(l, number);
+                Ok(())
+            },
+            "Unblocked",
+        );
+    }
+}
 
 /// What blocks `number` (calls, messages), if a number rule does.
-pub fn blocked(_ctx: &Ctx, _number: &str) -> Option<(bool, bool)> {
-    None
+pub fn blocked(ctx: &Ctx, number: &str) -> Option<(bool, bool)> {
+    blocking::lookup(&ctx.m.borrow().block, number)
 }
