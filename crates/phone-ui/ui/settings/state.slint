@@ -1,6 +1,51 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Phone & Contacts settings, Blocked numbers: what the app shows and what the screens ask for (`act`).
 
+// One row of Blocked numbers. `kind`: 0 a contact's number (avatar), 1 a number (#), 2 a prefix (block glyph).
+export struct BlockRow {
+    title: string,
+    subtitle: string,
+    initials: string,
+    tint: color,
+    kind: int,
+}
+
 export global SettingsState {
+    // Calls: caller ID (modem_ipc::clir 0 network, 1 hide, 2 show), call waiting (modem_ipc::waiting: 0 unknown,
+    // 1 busy, 2 on, 3 off, 4 error), the local switches, the voicemail number
+    in property <int> clir;
+    in property <int> waiting;
+    in property <bool> summary;
+    in property <bool> show-duration;
+    in property <string> voicemail;
+    in property <int> blocked-count;
+    // Log: days kept (0, 1, 10, 30)
+    in property <int> log-days: 30;
+    // Contacts: 0 First Last, 1 Last First; the default number type, as an index into `labels`
+    in property <int> name-order;
+    in property <bool> smart-dial;
+    in property <[string]> labels: ["Mobile"];
+    in property <int> default-label;
+
+    // the open picker: "" none, "clir", "log", "order", "label"
+    in-out property <string> picker;
+    // the voicemail number being edited (Save/Cancel in the toolbar)
+    in-out property <bool> editing;
+    in-out property <string> draft;
+
+    // Blocked numbers
+    in property <bool> block-private;
+    in property <bool> block-unknown;
+    in property <[BlockRow]> rules;
+    // the add row (Add/Cancel in the toolbar): the typed number, "Whole prefix"
+    in-out property <bool> adding;
+    in-out property <string> add-text;
+    in-out property <bool> add-prefix;
+    // Options ▸ Remove all: the confirmation
+    in-out property <bool> query;
+
+    // "opened" (the page appeared: ask the network about call waiting), "clir" | "log" | "order" | "label" + the
+    // picked index, "waiting" | "summary" | "duration" | "smart-dial" | "private" | "unknown" + "1" | "0",
+    // "blocked" (open Blocked numbers), "remove" + the row index, "remove-all"
     callback act(string, string);
 }
