@@ -5,7 +5,7 @@
 
 use alloc::format;
 use alloc::string::String;
-use phone_rules::block::{List, Rule, MAX_RULES, MAX_TEXT};
+use phone_rules::block::{List, MAX_RULES, MAX_TEXT, Rule};
 use phone_rules::{emergency, number};
 
 /// Why a number can't be blocked.

@@ -44,8 +44,8 @@ export global SettingsState {
     // Options ▸ Remove all: the confirmation
     in-out property <bool> query;
 
-    // "opened" (the page appeared: ask the network about call waiting), "clir" | "log" | "order" | "label" + the
-    // picked index, "waiting" | "summary" | "duration" | "smart-dial" | "private" | "unknown" + "1" | "0",
-    // "blocked" (open Blocked numbers), "remove" + the row index, "remove-all"
+    // "opened" (the main view appeared: close what was left open, ask the network about call waiting),
+    // "clir" | "log" | "order" | "label" + the picked index, "waiting" | "summary" | "duration" | "smart-dial" |
+    // "private" | "unknown" + "1" | "0", "blocked" (open Blocked numbers), "remove" + the row index, "remove-all"
     callback act(string, string);
 }
