@@ -83,4 +83,7 @@ fn call() {
     c.set_screen("ended".into());
     c.set_duration("4:31".into());
     s.shoot("call-summary");
+    // Show call duration off
+    c.set_duration("".into());
+    s.shoot("call-summary-no-duration");
 }

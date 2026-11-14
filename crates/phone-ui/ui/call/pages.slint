@@ -59,11 +59,13 @@ component Who inherits VerticalLayout {
     // the third line: the state ("Calling…") in grey, or a timer in light blue
     in property <string> extra;
     in property <bool> timer;
+    in property <float> avatar-opacity: 1;
     spacing: 6 * Theme.dp;
     vertical-stretch: 0;
     HorizontalLayout {
         alignment: center;
         CallAvatar {
+            opacity: root.avatar-opacity;
             party: root.party;
             size: root.avatar;
             ring: root.ring;
@@ -703,28 +705,31 @@ component Summary inherits VerticalLayout {
     Gap { dp: 90; }
     Who {
         party: CallState.main;
-        opacity: 0.85;
+        avatar-opacity: 0.85;
         extra: "Call ended";
         line: false;
     }
 
-    Gap { dp: 14; }
-    Text {
-        text: "DURATION";
-        color: Theme.text-dim;
-        font-size: 12.5 * Theme.dp;
-        font-weight: 600;
-        letter-spacing: 0.08 * 12.5 * Theme.dp;
-        horizontal-alignment: center;
-    }
+    // the length, when Settings ▸ Show call duration is on
+    if CallState.duration != "": VerticalLayout {
+        padding-top: 14 * Theme.dp;
+        spacing: 2 * Theme.dp;
+        Text {
+            text: "DURATION";
+            color: Theme.text-dim;
+            font-size: 12.5 * Theme.dp;
+            font-weight: 600;
+            letter-spacing: 0.08 * 12.5 * Theme.dp;
+            horizontal-alignment: center;
+        }
 
-    Gap { dp: 2; }
-    Text {
-        text: CallState.duration;
-        color: #cfe0ff;
-        font-size: 30 * Theme.dp;
-        font-weight: 500;
-        horizontal-alignment: center;
+        Text {
+            text: CallState.duration;
+            color: #cfe0ff;
+            font-size: 30 * Theme.dp;
+            font-weight: 500;
+            horizontal-alignment: center;
+        }
     }
 
     Fill { }
