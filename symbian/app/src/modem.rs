@@ -176,9 +176,6 @@ impl Modem {
     pub fn speaker(&mut self, on: bool) -> i32 {
         self.ints(op::SPEAKER, i32::from(on), 0)
     }
-    pub fn volume(&mut self, v: u8) -> i32 {
-        self.ints(op::VOLUME, i32::from(v.min(10)), 0)
-    }
     /// A DTMF tone for `key` (`0-9*#`; MODEMD stops it after 200 ms).
     pub fn dtmf(&mut self, key: u8) -> i32 {
         self.ints(op::DTMF, i32::from(key), 0)
@@ -208,8 +205,10 @@ impl Modem {
     /// The call log, newest first.
     pub fn log(&mut self) -> Result<Vec<LogEntry>, i32> {
         let b = self.read(op::CALL_LOG, MAX_LOG * LogEntry::SIZE)?;
-        Ok(b.chunks_exact(LogEntry::SIZE)
-            .filter_map(LogEntry::from_bytes)
+        Ok(b.as_chunks::<{ LogEntry::SIZE }>()
+            .0
+            .iter()
+            .filter_map(|e| LogEntry::from_bytes(e))
             .collect())
     }
     /// Delete entry `id` (0 = all) of `kind` (0 = any).
