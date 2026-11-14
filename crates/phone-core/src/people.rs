@@ -43,19 +43,6 @@ pub fn desaturate(rgb: u32) -> u32 {
     mix(r) << 16 | mix(g) << 8 | mix(b)
 }
 
-/// The editor's label chip (the picker shows [`Label::text`]).
-pub fn short_label(l: Label) -> &'static str {
-    match l {
-        Label::Mobile => "Mobile",
-        Label::MobileHome => "Home",
-        Label::MobileWork => "Work",
-        Label::Telephone => "Phone",
-        Label::TelephoneHome => "Home tel.",
-        Label::TelephoneWork => "Work tel.",
-        Label::Fax => "Fax",
-    }
-}
-
 /// Where each section's band starts below the first one (dp).
 pub fn tops(sections: &[Section]) -> Vec<f32> {
     let mut y = 0.0;
@@ -354,6 +341,5 @@ mod tests {
         assert!(k.windows(2).all(|w| w[0] < w[1]));
         assert_eq!(block_text(true, true), "Calls and messages");
         assert_eq!(block_text(true, false), "Calls");
-        assert_eq!(short_label(Label::MobileWork), "Work");
     }
 }
