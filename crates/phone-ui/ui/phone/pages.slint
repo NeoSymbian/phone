@@ -1,0 +1,13 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Phone: the dialer, Recents, call details, speed dial.
+import { Theme } from "@neoui/theme.slint";
+import { Nav } from "../nav.slint";
+import { DialState } from "state.slint";
+
+export component PhonePage inherits Rectangle {
+    Text {
+        text: "Phone: the dialer, Recents, call details, speed dial";
+        color: Theme.text-dim;
+        font-size: Theme.font-body;
+    }
+}

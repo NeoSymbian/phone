@@ -1,0 +1,46 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// NeoPhone (NEOPHONE.EXE): Phone and Contacts as one app behind two home icons, plus the call screens and their
+// settings. Drawn by its own process into the surface the UI server shows between its status bar and toolbar; the
+// title and the toolbar's middle button are the app's (neoui ipc 1.4), set from Rust per page and view.
+import "@neoui/fonts/Inter-VariableFont.ttf";
+import "@neoui/fonts/DejaVuSans.ttf";
+import { Theme } from "@neoui/theme.slint";
+import { Scroll } from "@neoui/components/scroll.slint";
+import { KeyboardFocus } from "@neoui/components/keyboard/focus.slint";
+import { Nav } from "nav.slint";
+import { Sheet, Note } from "common.slint";
+import { DialState } from "phone/state.slint";
+import { PhonePage } from "phone/pages.slint";
+import { ContactsState } from "contacts/state.slint";
+import { ContactsPage } from "contacts/pages.slint";
+import { CallState } from "call/state.slint";
+import { CallPage } from "call/pages.slint";
+import { SettingsState } from "settings/state.slint";
+import { SettingsPage } from "settings/pages.slint";
+
+export { Theme, Scroll, KeyboardFocus, Nav, DialState, ContactsState, CallState, SettingsState }
+
+export component PhoneApp inherits Window {
+    default-font-family: "Inter";
+    background: Theme.bg;
+    if Nav.page == 0: PhonePage { }
+    if Nav.page == 1: ContactsPage { }
+    if Nav.page == 3: CallPage { }
+    if Nav.page == 4: SettingsPage { }
+    Sheet {
+        items: Nav.options;
+        open: Nav.options-open;
+        dismissed => {
+            Nav.act("dismiss-options", "");
+        }
+        selected(i, item) => {
+            Nav.act("option", item);
+        }
+    }
+
+    Note {
+        x: (parent.width - self.width) / 2;
+        y: parent.height - self.height - 16 * Theme.dp;
+        text: Nav.note;
+    }
+}

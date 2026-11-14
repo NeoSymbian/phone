@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "phone-core"
+description = "NeoPhone's behaviour without UI or OS: pages, the dialer, Recents, the call screens, speed dial, the blocklist"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+contacts = { workspace = true }
+modem-ipc = { workspace = true }
+phone-rules = { workspace = true }

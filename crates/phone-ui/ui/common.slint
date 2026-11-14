@@ -1,0 +1,498 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// NeoPhone's shared pieces, in the "Belle, modernised" look of the approved mockups (artifact 286acb93): the page
+// switch, the glossy title strip, rows, chips, round actions, the keypad, the popup sheets and the query dialog.
+// Sizes are neoui's dp tokens (@neoui/theme.slint); the status bar and the toolbar belong to the UI server.
+import { Theme } from "@neoui/theme.slint";
+import { Glyph } from "@neoui/components/frame.slint";
+import { Avatar } from "@neoui/components/lists.slint";
+
+export { Avatar, Glyph }
+
+// The Belle title strip, its gloss softened. `trailing` shows an icon at the right (the card's favourite star).
+export component TitleStrip inherits Rectangle {
+    in property <string> title;
+    in property <image> trailing;
+    in property <bool> has-trailing;
+    in property <color> trailing-tint: Theme.text-secondary;
+    callback trailing-clicked;
+    height: Theme.title-h;
+    background: @linear-gradient(180deg, #22262c 0%, #111317 55%, #0b0c0e 100%);
+    Rectangle {
+        y: 0;
+        height: max(1px, Theme.dp / 2);
+        background: #ffffff14;
+    }
+
+    Rectangle {
+        y: parent.height - self.height;
+        height: max(1px, Theme.dp / 2);
+        background: #ffffff12;
+    }
+
+    HorizontalLayout {
+        padding-left: 14 * Theme.dp;
+        padding-right: 6 * Theme.dp;
+        Text {
+            text: title;
+            color: Theme.text;
+            font-size: Theme.font-title;
+            font-weight: 600;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+        }
+
+        if has-trailing: Rectangle {
+            width: 48 * Theme.dp;
+            Glyph {
+                source: trailing;
+                colorize: trailing-tint;
+            }
+
+            TouchArea {
+                clicked => {
+                    root.trailing-clicked();
+                }
+            }
+        }
+    }
+}
+
+// Phone | Contacts: the two halves of the app, in the title strip of their main views (mockup 2).
+export component PageSwitch inherits Rectangle {
+    in property <int> current;
+    callback picked(int);
+    height: Theme.title-h;
+    background: @linear-gradient(180deg, #22262c 0%, #111317 55%, #0b0c0e 100%);
+    Rectangle {
+        y: parent.height - self.height;
+        height: max(1px, Theme.dp / 2);
+        background: #ffffff12;
+    }
+
+    Rectangle {
+        x: 14 * Theme.dp;
+        width: parent.width - 28 * Theme.dp;
+        height: 40 * Theme.dp;
+        border-radius: 12 * Theme.dp;
+        background: #0a0b0d;
+        border-width: max(1px, Theme.dp / 2);
+        border-color: #ffffff1a;
+        HorizontalLayout {
+            padding: 3 * Theme.dp;
+            spacing: 3 * Theme.dp;
+            for label[i] in ["Phone", "Contacts"]: Rectangle {
+                border-radius: 9 * Theme.dp;
+                background: i == current ? #33383f : transparent;
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 7 * Theme.dp;
+                    Glyph {
+                        source: i == 0 ? @image-url("@neoui/icons/sys/call.svg") : @image-url("icons/person.svg");
+                        size: 18 * Theme.dp;
+                        colorize: i == current ? Theme.text : Theme.text-dim;
+                        y: (parent.height - self.height) / 2;
+                    }
+
+                    Text {
+                        text: label;
+                        color: i == current ? Theme.text : Theme.text-dim;
+                        font-size: 15 * Theme.dp;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                    }
+                }
+
+                TouchArea {
+                    clicked => {
+                        root.picked(i);
+                    }
+                }
+            }
+        }
+    }
+}
+
+// A section band ("TODAY", "FAVOURITES", "A").
+export component Band inherits Rectangle {
+    in property <string> text;
+    in property <string> font-family;
+    height: 30 * Theme.dp;
+    background: #121417;
+    Text {
+        x: 14 * Theme.dp;
+        text: root.text;
+        font-family: root.font-family;
+        color: Theme.text-dim;
+        font-size: 12.5 * Theme.dp;
+        font-weight: 600;
+        letter-spacing: 0.06 * 12.5 * Theme.dp;
+        vertical-alignment: center;
+    }
+}
+
+// A round icon action in a row: green Call, blue Message / Email.
+export component RowAction inherits Rectangle {
+    in property <image> icon;
+    in property <color> tint: Theme.ok;
+    callback clicked;
+    width: 40 * Theme.dp;
+    height: 40 * Theme.dp;
+    border-radius: self.width / 2;
+    background: touch.pressed ? tint.with-alpha(0.3) : tint.with-alpha(0.12);
+    Glyph {
+        source: icon;
+        size: 20 * Theme.dp;
+        colorize: tint;
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// A filter chip (Recents: All / Missed / Received / Dialled / Blocked).
+export component Chip inherits Rectangle {
+    in property <string> text;
+    in property <bool> on;
+    in property <color> on-color: Theme.accent;
+    callback clicked;
+    height: 32 * Theme.dp;
+    width: label.preferred-width + 26 * Theme.dp;
+    border-radius: self.height / 2;
+    background: on ? on-color : #ffffff17;
+    border-width: max(1px, Theme.dp / 2);
+    border-color: on ? on-color : #ffffff1a;
+    label := Text {
+        text: root.text;
+        color: Theme.text;
+        font-size: 14 * Theme.dp;
+        font-weight: 500;
+        vertical-alignment: center;
+        horizontal-alignment: center;
+    }
+
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// A pill button with an icon (the call screens' Silence, Swap; dialogs' actions). `kind`: "" grey, "green", "red",
+// "blue".
+export component PillButton inherits Rectangle {
+    in property <string> text;
+    in property <image> icon;
+    in property <bool> has-icon: true;
+    in property <string> kind;
+    in property <bool> enabled: true;
+    callback clicked;
+    height: 44 * Theme.dp;
+    min-width: row.preferred-width + 30 * Theme.dp;
+    border-radius: 12 * Theme.dp;
+    opacity: enabled ? 1 : 0.4;
+    background: kind == "green" ? (touch.pressed ? Theme.ok.darker(20%) : Theme.ok)
+        : kind == "red" ? (touch.pressed ? Theme.danger.darker(20%) : Theme.danger)
+        : kind == "blue" ? (touch.pressed ? Theme.accent.darker(20%) : Theme.accent)
+        : (touch.pressed ? #4a505a : #353a42);
+    row := HorizontalLayout {
+        alignment: center;
+        spacing: 8 * Theme.dp;
+        if has-icon: Glyph {
+            source: icon;
+            size: 19 * Theme.dp;
+            y: (parent.height - self.height) / 2;
+        }
+        Text {
+            text: root.text;
+            color: Theme.text;
+            font-size: 15 * Theme.dp;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// The dialer's keypad (3 x 4): a tap types, a hold of 0.6 s (Symbian^3) is a long press (1 voicemail, 2..9 speed
+// dial, 0 "+"). `dtmf`: the in-call keypad (no letters under * and 0).
+export component KeyGrid inherits GridLayout {
+    in property <bool> dtmf;
+    in property <length> key-h: 58 * Theme.dp;
+    callback pressed(string);
+    callback long-pressed(string);
+    property <[{d: string, l: string}]> keys: [
+        { d: "1", l: "∞" }, { d: "2", l: "ABC" }, { d: "3", l: "DEF" },
+        { d: "4", l: "GHI" }, { d: "5", l: "JKL" }, { d: "6", l: "MNO" },
+        { d: "7", l: "PQRS" }, { d: "8", l: "TUV" }, { d: "9", l: "WXYZ" },
+        { d: "*", l: dtmf ? "" : "+" }, { d: "0", l: dtmf ? "+" : "␣" }, { d: "#", l: "" },
+    ];
+    padding-left: 10 * Theme.dp;
+    padding-right: 10 * Theme.dp;
+    for k[i] in keys: Rectangle {
+        row: i / 3;
+        col: mod(i, 3);
+        height: key-h;
+        border-radius: 12 * Theme.dp;
+        background: t.pressed ? Theme.pressed : transparent;
+        property <duration> down-at;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: k.d;
+                color: Theme.text;
+                font-size: 30 * Theme.dp;
+                font-weight: 400;
+                horizontal-alignment: center;
+            }
+
+            Text {
+                text: k.l;
+                color: Theme.text-dim;
+                font-size: 10.5 * Theme.dp;
+                letter-spacing: 1.5 * Theme.dp;
+                horizontal-alignment: center;
+                height: 13 * Theme.dp;
+            }
+        }
+
+        t := TouchArea {
+            pointer-event(e) => {
+                if e.kind == PointerEventKind.down {
+                    parent.down-at = animation-tick();
+                }
+            }
+            clicked => {
+                if animation-tick() - parent.down-at >= 600ms {
+                    root.long-pressed(k.d);
+                } else {
+                    root.pressed(k.d);
+                }
+            }
+        }
+    }
+}
+
+// A Belle popup list rising from the toolbar over the dimmed page: the Options menu, the number-type picker. `marked`
+// >= 0 shows radio marks with that item chosen.
+export component Sheet inherits Rectangle {
+    in property <string> heading;
+    in property <[string]> items;
+    in property <int> marked: -1;
+    in property <bool> open;
+    callback dismissed;
+    callback selected(int, string);
+    visible: self.opacity > 0.01;
+    opacity: open ? 1 : 0;
+    animate opacity { duration: Theme.popup; easing: ease-out-quad; }
+    Rectangle {
+        background: Theme.scrim;
+        TouchArea {
+            clicked => {
+                root.dismissed();
+            }
+        }
+    }
+
+    Rectangle {
+        x: 8 * Theme.dp;
+        width: parent.width - 16 * Theme.dp;
+        height: items.length * 52 * Theme.dp + (heading != "" ? 40 * Theme.dp : 0) + 8 * Theme.dp;
+        y: parent.height - self.height - 8 * Theme.dp + (open ? 0 : 24 * Theme.dp);
+        animate y { duration: Theme.popup; easing: ease-out-quad; }
+        border-radius: 16 * Theme.dp;
+        background: #23272d;
+        border-width: max(1px, Theme.dp / 2);
+        border-color: #ffffff1a;
+        clip: true;
+        TouchArea { }
+
+        VerticalLayout {
+            padding-top: 4 * Theme.dp;
+            if heading != "": Text {
+                height: 40 * Theme.dp;
+                x: 18 * Theme.dp;
+                text: heading.to-uppercase();
+                color: Theme.text-dim;
+                font-size: 13 * Theme.dp;
+                font-weight: 600;
+                vertical-alignment: center;
+            }
+            for item[i] in items: Rectangle {
+                height: 52 * Theme.dp;
+                background: t.pressed ? Theme.pressed : transparent;
+                Rectangle {
+                    y: 0;
+                    height: max(1px, Theme.dp / 2);
+                    background: i == 0 && heading == "" ? transparent : #ffffff0f;
+                }
+
+                Text {
+                    x: 18 * Theme.dp;
+                    text: item;
+                    color: Theme.text;
+                    font-size: Theme.font-body;
+                    vertical-alignment: center;
+                }
+
+                if marked >= 0: Rectangle {
+                    x: parent.width - self.width - 18 * Theme.dp;
+                    width: 20 * Theme.dp;
+                    height: self.width;
+                    border-radius: self.width / 2;
+                    border-width: 2 * Theme.dp;
+                    border-color: i == marked ? Theme.accent : Theme.text-dim;
+                    Rectangle {
+                        width: 10 * Theme.dp;
+                        height: self.width;
+                        border-radius: self.width / 2;
+                        background: i == marked ? Theme.accent : transparent;
+                    }
+                }
+
+                t := TouchArea {
+                    clicked => {
+                        root.selected(i, item);
+                    }
+                }
+            }
+        }
+    }
+}
+
+// A Belle query over the dimmed page: a question, an optional detail, up to two check boxes, and two buttons (the
+// first can be red, as Delete and Block are).
+export component Query inherits Rectangle {
+    in property <bool> open;
+    in property <string> question;
+    in property <string> detail;
+    in property <string> confirm: "OK";
+    in property <bool> danger;
+    in property <string> cancel: "Cancel";
+    in property <[string]> checks;
+    in-out property <[bool]> checked;
+    callback confirmed;
+    callback cancelled;
+    callback toggled(int);
+    visible: open;
+    Rectangle {
+        background: Theme.scrim;
+        TouchArea {
+            clicked => {
+                root.cancelled();
+            }
+        }
+    }
+
+    Rectangle {
+        x: 22 * Theme.dp;
+        width: parent.width - 44 * Theme.dp;
+        y: (parent.height - self.height) / 2;
+        height: box.preferred-height;
+        border-radius: 16 * Theme.dp;
+        background: #23272d;
+        border-width: max(1px, Theme.dp / 2);
+        border-color: #ffffff1f;
+        TouchArea { }
+
+        box := VerticalLayout {
+            padding: 20 * Theme.dp;
+            padding-top: 22 * Theme.dp;
+            spacing: 14 * Theme.dp;
+            Text {
+                text: question;
+                font-family: "DejaVu Sans";
+                color: Theme.text;
+                font-size: 17 * Theme.dp;
+                wrap: word-wrap;
+            }
+
+            if detail != "": Text {
+                text: detail;
+                color: Theme.text-secondary;
+                font-size: 13.5 * Theme.dp;
+                wrap: word-wrap;
+            }
+            for c[i] in checks: Rectangle {
+                height: 40 * Theme.dp;
+                HorizontalLayout {
+                    spacing: 12 * Theme.dp;
+                    Rectangle {
+                        width: 22 * Theme.dp;
+                        height: 22 * Theme.dp;
+                        y: (parent.height - self.height) / 2;
+                        border-radius: 6 * Theme.dp;
+                        background: checked[i] ? Theme.accent : transparent;
+                        border-width: checked[i] ? 0 : 2 * Theme.dp;
+                        border-color: Theme.text-dim;
+                        if checked[i]: Glyph {
+                            source: @image-url("@neoui/icons/sys/check.svg");
+                            size: 16 * Theme.dp;
+                        }
+                    }
+
+                    Text {
+                        text: c;
+                        color: Theme.text;
+                        font-size: Theme.font-body;
+                        vertical-alignment: center;
+                    }
+                }
+
+                TouchArea {
+                    clicked => {
+                        root.toggled(i);
+                    }
+                }
+            }
+            HorizontalLayout {
+                spacing: 10 * Theme.dp;
+                PillButton {
+                    text: confirm;
+                    has-icon: false;
+                    kind: danger ? "red" : "blue";
+                    horizontal-stretch: 1;
+                    clicked => {
+                        root.confirmed();
+                    }
+                }
+
+                PillButton {
+                    text: cancel;
+                    has-icon: false;
+                    horizontal-stretch: 1;
+                    clicked => {
+                        root.cancelled();
+                    }
+                }
+            }
+        }
+    }
+}
+
+// A short note over the page's bottom ("Saved", "Blocked"), shown while Nav.note is set.
+export component Note inherits Rectangle {
+    in property <string> text;
+    visible: text != "";
+    height: 44 * Theme.dp;
+    width: label.preferred-width + 36 * Theme.dp;
+    border-radius: self.height / 2;
+    background: #2b3038f0;
+    label := Text {
+        text: root.text;
+        font-family: "DejaVu Sans";
+        color: Theme.text;
+        font-size: 14.5 * Theme.dp;
+        vertical-alignment: center;
+        horizontal-alignment: center;
+    }
+}

@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# NEOPHONE.EXE: built only for armv5te-none-eabi with a pinned nightly (build-std), like neoui/symbian. GPL-3.0
+# because it links Slint under GPL-3.0 (NeoSymbian decision 2026-11-06). The pins must match neoui's: one e32 (it
+# defines the global allocator) and one Slint in the ROM.
+[workspace]
+resolver = "3"
+members = ["app"]
+
+[workspace.dependencies]
+e32 = { git = "https://github.com/NeoSymbian/e32-rs", rev = "e97e2ebcb242f5365d1b3f9d520646603e1e9056", features = ["critical-section"] }
+neoui-proto = { git = "https://github.com/NeoSymbian/neoui", rev = "0802b52733d4c73ef9be788808688df948a1e10f" }
+neoapp = { git = "https://github.com/NeoSymbian/neoui", rev = "0802b52733d4c73ef9be788808688df948a1e10f" }
+slint = { version = "=1.18.1", default-features = false, features = ["compat-1-2", "unsafe-single-threaded", "libm", "renderer-software"] }
+modem-ipc = { git = "https://github.com/NeoSymbian/telephony", rev = "efc18d4af1851b9d5cfed4a9e7f4154441fd000e" }
+phone-rules = { git = "https://github.com/NeoSymbian/telephony", rev = "efc18d4af1851b9d5cfed4a9e7f4154441fd000e" }
+contacts = { path = "../crates/contacts" }
+phone-core = { path = "../crates/phone-core" }
+phone-ui = { path = "../crates/phone-ui" }
+
+[profile.release]
+panic = "abort"
+opt-level = 3
+codegen-units = 1
+lto = true
+
+[profile.dev]
+panic = "abort"

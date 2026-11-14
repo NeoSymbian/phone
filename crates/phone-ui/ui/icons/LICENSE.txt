@@ -1,0 +1,1 @@
+SPDX-FileCopyrightText: The NeoSymbian Authors (2026), original artwork. SPDX-License-Identifier: Apache-2.0

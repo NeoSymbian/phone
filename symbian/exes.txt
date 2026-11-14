@@ -1,0 +1,3 @@
+# For NeoSymbian/build rust/exes.txt: copy the line and target/armv5te-none-eabi/release/libneophone.a into build/rust/.
+# The UI server (neoui SYSSTART) starts it hidden at boot and keeps it running (host::RESIDENT).
+NEOPHONE.EXE   0xE0005001  libneophone.a

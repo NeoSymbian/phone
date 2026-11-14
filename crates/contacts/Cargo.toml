@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "contacts"
+description = "NeoPhone's contacts model: the store, caller-name lookup, smart dialling (T9), the A-Z index per script, vCard import/export"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+# NeoSymbian/telephony: caller-name number matching (docs/symbian-phone-sources.md §13)
+phone-rules = { workspace = true }

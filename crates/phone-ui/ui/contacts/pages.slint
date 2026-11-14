@@ -1,0 +1,13 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Contacts: the list, search, the card, the editor.
+import { Theme } from "@neoui/theme.slint";
+import { Nav } from "../nav.slint";
+import { ContactsState } from "state.slint";
+
+export component ContactsPage inherits Rectangle {
+    Text {
+        text: "Contacts: the list, search, the card, the editor";
+        color: Theme.text-dim;
+        font-size: Theme.font-body;
+    }
+}

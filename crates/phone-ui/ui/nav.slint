@@ -1,0 +1,19 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Where the app is. The app (src/lib.rs in symbian/app) owns the truth and mirrors it here; the screens ask for moves
+// through `act`.
+
+export global Nav {
+    // 0 Phone, 1 Contacts, 3 the call screens, 4 Settings (the UI server's page numbers; 2 Recents and 5 Speed dial
+    // are views of Phone)
+    in-out property <int> page;
+    // the page's sub-view: Phone "" | "recents" | "detail" | "speed"; Contacts "" | "card" | "edit" | "mark";
+    // Settings "" | "blocked"
+    in-out property <string> view;
+    // the Options sheet over the page, and its items (the app fills them per page and view)
+    in-out property <bool> options-open;
+    in-out property <[string]> options;
+    // a short note over the page ("Saved", "Blocked +1 555 0199"), "" = none
+    in-out property <string> note;
+    // "switch" + "0" | "1" (the Phone | Contacts switch), "option" + item, "dismiss-options"
+    callback act(string, string);
+}

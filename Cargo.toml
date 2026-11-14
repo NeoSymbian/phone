@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: Apache-2.0
+# NeoPhone's host workspace: the pure parts (contacts, phone-core: Apache-2.0) and the Slint UI (phone-ui: GPL-3.0,
+# it links Slint), tested on the host. The app EXE is the separate symbian/ workspace (armv5te, nightly build-std).
+[workspace]
+resolver = "3"
+members = ["crates/contacts", "crates/phone-core", "crates/phone-ui"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+
+[workspace.dependencies]
+contacts = { path = "crates/contacts" }
+phone-core = { path = "crates/phone-core" }
+phone-ui = { path = "crates/phone-ui" }
+# NeoSymbian/telephony (Apache-2.0): the NeoModem contract, dial rules, number matching, the blocklist
+modem-ipc = { git = "https://github.com/NeoSymbian/telephony", rev = "efc18d4af1851b9d5cfed4a9e7f4154441fd000e" }
+phone-rules = { git = "https://github.com/NeoSymbian/telephony", rev = "efc18d4af1851b9d5cfed4a9e7f4154441fd000e" }
+# NeoSymbian/neoui: the app protocol and (DEP_NEOUI_UI) the shared theme, fonts and components
+neoui-proto = { git = "https://github.com/NeoSymbian/neoui", rev = "0802b52733d4c73ef9be788808688df948a1e10f" }
+# the same Slint as neoui (one copy in the ROM, no_std)
+slint = { version = "=1.18.1", default-features = false, features = ["compat-1-2", "unsafe-single-threaded", "libm", "renderer-software"] }
+slint-build = { version = "=1.18.1", features = ["sdf-fonts"] }
+png = "=0.18.1"

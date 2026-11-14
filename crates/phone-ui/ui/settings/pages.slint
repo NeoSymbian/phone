@@ -1,0 +1,13 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Phone & Contacts settings, Blocked numbers.
+import { Theme } from "@neoui/theme.slint";
+import { Nav } from "../nav.slint";
+import { SettingsState } from "state.slint";
+
+export component SettingsPage inherits Rectangle {
+    Text {
+        text: "Phone & Contacts settings, Blocked numbers";
+        color: Theme.text-dim;
+        font-size: Theme.font-body;
+    }
+}

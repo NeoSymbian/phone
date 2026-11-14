@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: GPL-3.0-only
+[package]
+name = "neophone"
+description = "NEOPHONE.EXE: Phone and Contacts as one neoui app process (NeoSymbian)"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+publish = false
+
+[lib]
+crate-type = ["staticlib"]
+test = false
+
+[dependencies]
+e32.workspace = true
+neoui-proto.workspace = true
+neoapp.workspace = true
+slint.workspace = true
+modem-ipc.workspace = true
+phone-rules.workspace = true
+contacts.workspace = true
+phone-core.workspace = true
+phone-ui.workspace = true
