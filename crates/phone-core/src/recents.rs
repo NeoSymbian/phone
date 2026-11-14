@@ -1,2 +1,313 @@
 // SPDX-License-Identifier: Apache-2.0
-//! (to be written)
+//! Recents (mockups 3, 5, 6, 27): the call log's rows for a filter chip, in day sections (Today, Yesterday,
+//! Earlier) with repeated calls from one number folded into one row; new missed calls; why a call was blocked; a
+//! row's calls for the details; the avatar's initials and tint.
+
+use alloc::format;
+use alloc::string::String;
+use alloc::vec::Vec;
+use contacts::recents::group;
+use contacts::{Contact, Label};
+use modem_ipc::{log, LogEntry};
+use phone_rules::block::{self, List};
+use phone_rules::number;
+
+/// The filter chips.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Filter {
+    #[default]
+    All,
+    Missed,
+    Received,
+    Dialled,
+    Blocked,
+}
+
+impl Filter {
+    pub const ALL: [Filter; 5] = [
+        Filter::All,
+        Filter::Missed,
+        Filter::Received,
+        Filter::Dialled,
+        Filter::Blocked,
+    ];
+
+    pub fn from_index(i: i32) -> Self {
+        usize::try_from(i)
+            .ok()
+            .and_then(|i| Self::ALL.get(i))
+            .copied()
+            .unwrap_or_default()
+    }
+
+    pub fn index(self) -> i32 {
+        self as i32
+    }
+
+    /// The log kinds the chip shows (and Clear deletes): blocked calls only under Blocked, rejected with missed.
+    pub fn kinds(self) -> &'static [u8] {
+        match self {
+            Filter::All => &[log::DIALLED, log::RECEIVED, log::MISSED, log::REJECTED],
+            Filter::Missed => &[log::MISSED, log::REJECTED],
+            Filter::Received => &[log::RECEIVED],
+            Filter::Dialled => &[log::DIALLED],
+            Filter::Blocked => &[log::BLOCKED],
+        }
+    }
+}
+
+/// A day band.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Section {
+    Today,
+    Yesterday,
+    Earlier,
+}
+
+impl Section {
+    pub fn of(utc_ms: i64, now_ms: i64, offset_s: i32) -> Self {
+        let day = |ms: i64| (ms.div_euclid(1000) + i64::from(offset_s)).div_euclid(86_400);
+        match day(now_ms) - day(utc_ms) {
+            i64::MIN..=0 => Section::Today,
+            1 => Section::Yesterday,
+            _ => Section::Earlier,
+        }
+    }
+
+    pub fn text(self) -> &'static str {
+        match self {
+            Section::Today => "Today",
+            Section::Yesterday => "Yesterday",
+            Section::Earlier => "Earlier",
+        }
+    }
+}
+
+/// One row: `log[first]` is its newest call, `count` calls from that number in the section.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Row {
+    pub first: usize,
+    pub count: u32,
+    pub section: Section,
+}
+
+/// The rows of `log` (newest first) under `filter`, folded per number inside each day section.
+pub fn rows(log: &[LogEntry], filter: Filter, now_ms: i64, offset_s: i32) -> Vec<Row> {
+    let shown: Vec<usize> = (0..log.len())
+        .filter(|&i| filter.kinds().contains(&log[i].kind))
+        .collect();
+    let mut out = Vec::new();
+    for section in [Section::Today, Section::Yesterday, Section::Earlier] {
+        let part: Vec<usize> = shown
+            .iter()
+            .copied()
+            .filter(|&i| Section::of(log[i].utc, now_ms, offset_s) == section)
+            .collect();
+        for (i, count) in group(part.iter().map(|&i| log[i].number.as_str())) {
+            out.push(Row {
+                first: part[i],
+                count,
+                section,
+            });
+        }
+    }
+    out
+}
+
+/// The dialer's short list (mockup 3): one row per number over the whole log, blocked calls left out.
+pub fn recent(log: &[LogEntry]) -> Vec<(usize, u32)> {
+    let shown: Vec<usize> = (0..log.len())
+        .filter(|&i| log[i].kind != log::BLOCKED)
+        .collect();
+    group(shown.iter().map(|&i| log[i].number.as_str()))
+        .into_iter()
+        .map(|(i, c)| (shown[i], c))
+        .collect()
+}
+
+/// Missed calls newer than `seen` (the Missed chip's count).
+pub fn new_missed(log: &[LogEntry], seen: u32) -> u32 {
+    log.iter()
+        .filter(|e| e.kind == log::MISSED && e.id > seen)
+        .count() as u32
+}
+
+/// The newest entry's id (seeing Recents marks the missed calls up to it as seen).
+pub fn newest(log: &[LogEntry]) -> u32 {
+    log.iter().map(|e| e.id).max().unwrap_or(0)
+}
+
+/// Every call of the row `id` belongs to (the same number), newest first: the details' list.
+pub fn calls_of(log: &[LogEntry], id: u32) -> Vec<usize> {
+    let Some(e) = log.iter().find(|e| e.id == id) else {
+        return Vec::new();
+    };
+    let digits = number::digits(e.number.as_str());
+    if digits.is_empty() {
+        return log.iter().position(|x| x.id == id).into_iter().collect();
+    }
+    (0..log.len())
+        .filter(|&i| number::digits(log[i].number.as_str()) == digits)
+        .collect()
+}
+
+/// The direction's word.
+pub fn kind_text(kind: u8) -> &'static str {
+    match kind {
+        log::DIALLED => "Dialled",
+        log::RECEIVED => "Received",
+        log::REJECTED => "Rejected",
+        log::BLOCKED => "Blocked",
+        _ => "Missed",
+    }
+}
+
+/// The label of `contact`'s number `n` ("Mobile", "Work"), if it has one that matches.
+pub fn label_of(contact: &Contact, n: &str) -> Option<Label> {
+    contact
+        .numbers
+        .iter()
+        .find(|(_, x)| number::matches(x, n))
+        .map(|(l, _)| *l)
+}
+
+/// The second line's word: missed, rejected and dialled calls say so, a received call its number's label.
+pub fn second_line(e: &LogEntry, label: Option<Label>) -> String {
+    match (e.kind, label) {
+        (log::RECEIVED, Some(l)) => l.text().into(),
+        (k, _) => kind_text(k).into(),
+    }
+}
+
+/// Why a blocked call was blocked (mockup 27): the rule that matched.
+pub fn why_text(e: &LogEntry, list: &List, known: bool) -> String {
+    match e.why {
+        block::why::NUMBER if known => "Blocked contact".into(),
+        block::why::NUMBER => "Blocked number".into(),
+        block::why::PREFIX => {
+            let digits = number::digits(e.number.as_str());
+            list.rules
+                .iter()
+                .filter(|r| r.prefix)
+                .find(|r| {
+                    let p = number::digits(&r.number);
+                    !p.is_empty() && digits.starts_with(&p)
+                })
+                .map_or_else(|| "Prefix".into(), |r| format!("Prefix {}", r.number))
+        }
+        block::why::PRIVATE => "Private numbers".into(),
+        block::why::UNKNOWN => "Unknown numbers".into(),
+        _ => "Blocked".into(),
+    }
+}
+
+/// Up to two initials of a name ("Ava Lindqvist" → "AL", "Անի Պետրոսյան" → "ԱՊ"); "" for a number.
+pub fn initials(name: &str) -> String {
+    let mut out = String::new();
+    for w in name.split_whitespace().take(2) {
+        if let Some(c) = w.chars().next().filter(|c| c.is_alphabetic()) {
+            out.extend(c.to_uppercase());
+        }
+    }
+    out
+}
+
+/// A stable tint index (0..`n`) for a contact id or, without one, a number's digits.
+pub fn tint(contact: Option<u32>, n: &str, count: u32) -> i32 {
+    let h = match contact {
+        Some(id) => id,
+        None => number::digits(n)
+            .bytes()
+            .fold(7u32, |h, b| h.wrapping_mul(31).wrapping_add(u32::from(b))),
+    };
+    (h % count.max(1)) as i32
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use modem_ipc::Text;
+
+    const NOW: i64 = 1_794_690_180_000; // 2026-11-14 21:03 UTC
+    const H: i64 = 3_600_000;
+
+    fn e(id: u32, kind: u8, n: &str, ago_h: i64) -> LogEntry {
+        LogEntry {
+            id,
+            utc: NOW - ago_h * H,
+            kind,
+            number: Text::new(n),
+            ..LogEntry::default()
+        }
+    }
+
+    fn log() -> Vec<LogEntry> {
+        alloc::vec![
+            e(9, log::RECEIVED, "+15550142", 0),
+            e(8, log::MISSED, "+15550171", 1),
+            e(7, log::RECEIVED, "+15550142", 2),
+            e(6, log::BLOCKED, "+19005550101", 3),
+            e(5, log::DIALLED, "+15550123", 30),
+            e(4, log::RECEIVED, "+15550142", 30),
+            e(3, log::RECEIVED, "+15550188", 100),
+        ]
+    }
+
+    #[test]
+    fn folded_per_section() {
+        let l = log();
+        let r = rows(&l, Filter::All, NOW, 0);
+        let shape: Vec<(u32, u32, Section)> = r
+            .iter()
+            .map(|r| (l[r.first].id, r.count, r.section))
+            .collect();
+        assert_eq!(
+            shape,
+            [
+                (9, 2, Section::Today),
+                (8, 1, Section::Today),
+                (5, 1, Section::Yesterday),
+                (4, 1, Section::Yesterday),
+                (3, 1, Section::Earlier),
+            ]
+        );
+        assert_eq!(rows(&l, Filter::Blocked, NOW, 0).len(), 1);
+        assert_eq!(rows(&l, Filter::Missed, NOW, 0).len(), 1);
+        assert_eq!(recent(&l)[0], (0, 3));
+        assert_eq!(calls_of(&l, 7), [0, 2, 5]);
+    }
+
+    #[test]
+    fn missed_and_words() {
+        let l = log();
+        assert_eq!(new_missed(&l, 0), 1);
+        assert_eq!(new_missed(&l, 8), 0);
+        assert_eq!(newest(&l), 9);
+        assert_eq!(initials("Ava Lindqvist"), "AL");
+        assert_eq!(initials("Անի Պետրոսյան"), "ԱՊ");
+        assert_eq!(initials("+1 555"), "");
+        assert_eq!(second_line(&l[0], Some(Label::Mobile)), "Mobile");
+        assert_eq!(second_line(&l[1], Some(Label::Mobile)), "Missed");
+        assert_eq!(tint(None, "+15550142", 8), tint(None, "15550142", 8));
+    }
+
+    #[test]
+    fn why_blocked() {
+        let list = List {
+            rules: alloc::vec![block::Rule {
+                prefix: true,
+                calls: true,
+                messages: false,
+                number: "+1 900".into(),
+            }],
+            ..List::default()
+        };
+        let mut b = e(1, log::BLOCKED, "+19005550101", 0);
+        b.why = block::why::PREFIX;
+        assert_eq!(why_text(&b, &list, false), "Prefix +1 900");
+        b.why = block::why::PRIVATE;
+        assert_eq!(why_text(&b, &list, false), "Private numbers");
+        b.why = block::why::NUMBER;
+        assert_eq!(why_text(&b, &list, true), "Blocked contact");
+    }
+}
