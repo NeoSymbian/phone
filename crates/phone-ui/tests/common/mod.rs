@@ -17,12 +17,17 @@ pub const H: u32 = 1902;
 
 struct Host(Rc<MinimalSoftwareWindow>);
 
+thread_local! {
+    /// The test clock: each shot moves it a second on, so animations (a sheet opening or closing) have finished.
+    static NOW: std::cell::Cell<core::time::Duration> = const { std::cell::Cell::new(core::time::Duration::ZERO) };
+}
+
 impl Platform for Host {
     fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, slint::PlatformError> {
         Ok(self.0.clone())
     }
     fn duration_since_start(&self) -> core::time::Duration {
-        core::time::Duration::from_millis(0)
+        NOW.get()
     }
 }
 
@@ -60,6 +65,7 @@ pub fn app() -> Shot {
 impl Shot {
     /// Draw and save `snapshots/<name>.png`; returns the pixels for checks.
     pub fn shoot(&self, name: &str) -> Vec<u32> {
+        NOW.set(NOW.get() + core::time::Duration::from_secs(1));
         slint::platform::update_timers_and_animations();
         self.window.request_redraw();
         let mut px = vec![Px(0); (W * H) as usize];
