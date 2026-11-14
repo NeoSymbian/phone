@@ -62,5 +62,7 @@ pub fn place_call(ctx: &Ctx, number: &str) {
 /// Contacts -> "Speed dial" on a card: Speed dial opens with `number` waiting for a key.
 pub fn start_assign(ctx: &Ctx, number: &str) {
     let _ = number;
-    ctx.go(phone_core::page::Page::Phone(phone_core::page::PhoneView::Speed));
+    ctx.go(phone_core::page::Page::Phone(
+        phone_core::page::PhoneView::Speed,
+    ));
 }

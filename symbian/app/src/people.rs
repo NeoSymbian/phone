@@ -49,7 +49,9 @@ pub fn open_for_number(_ctx: &Ctx, _number: &str) -> bool {
 
 /// A new contact with `number` filled in (Recents / call details -> Save as contact, dialer -> Add to contacts).
 pub fn new_with_number(ctx: &Ctx, _number: &str) {
-    ctx.go(phone_core::page::Page::Contacts(phone_core::page::ContactsView::Edit));
+    ctx.go(phone_core::page::Page::Contacts(
+        phone_core::page::ContactsView::Edit,
+    ));
 }
 
 /// The name `number` shows under (exactly one contact matches), for Recents and the call screens.
