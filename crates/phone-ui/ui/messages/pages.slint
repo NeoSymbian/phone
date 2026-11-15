@@ -1,0 +1,791 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Messages (mockups 28-36): the conversations (""), a thread ("thread") with the composer, a new message ("new"), the
+// blocked messages ("blocked"); the held bubble's sheet, the details, the queries. While the keyboard is up the page
+// ends above it (KeyboardFocus.text-h), so the composer stays in view.
+import { Theme } from "@neoui/theme.slint";
+import { NeoList } from "@neoui/components/scroll.slint";
+import { KeyboardFocus } from "@neoui/components/keyboard/focus.slint";
+import { Alphabets } from "@neoui/components/keyboard/glyphs.slint";
+import { Nav } from "../nav.slint";
+import { Avatar, Band, Glyph, Query, Sheet, TitleStrip } from "../common.slint";
+import { Field } from "../contacts/parts.slint";
+import { MessagesState } from "state.slint";
+
+// An avatar: a contact's initials, else a grey disc with a # (or the block glyph).
+component Face inherits Rectangle {
+    in property <bool> known;
+    in property <string> initials;
+    in property <color> tint;
+    in property <bool> block;
+    width: Theme.avatar;
+    height: self.width;
+    if known: Avatar {
+        initials: initials;
+        tint: tint;
+    }
+    if !known: Rectangle {
+        border-radius: self.width / 2;
+        background: #2b3038;
+        Glyph {
+            source: block ? @image-url("../icons/block.svg") : @image-url("../icons/hash.svg");
+            size: 22 * Theme.dp;
+            colorize: Theme.text-secondary;
+        }
+    }
+}
+
+// The unread count.
+component Badge inherits Rectangle {
+    in property <int> count;
+    height: 20 * Theme.dp;
+    width: max(self.height, n.preferred-width + 12 * Theme.dp);
+    border-radius: self.height / 2;
+    background: Theme.accent;
+    n := Text {
+        text: count;
+        color: Theme.text;
+        font-size: 12 * Theme.dp;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+// A conversation row (mockup 28).
+component ThreadLine inherits Rectangle {
+    in property <string> name;
+    in property <string> initials;
+    in property <color> tint;
+    in property <bool> known;
+    in property <string> snippet;
+    in property <string> when;
+    in property <int> unread;
+    in property <bool> failed;
+    in property <bool> divider;
+    callback clicked;
+    height: 72 * Theme.dp;
+    background: t.pressed ? Theme.pressed : transparent;
+    if divider: Rectangle {
+        x: 70 * Theme.dp;
+        y: 0;
+        width: parent.width - self.x;
+        height: max(1px, Theme.dp / 2);
+        background: Theme.hairline;
+    }
+    HorizontalLayout {
+        padding-left: 14 * Theme.dp;
+        padding-right: 14 * Theme.dp;
+        spacing: 12 * Theme.dp;
+        Face {
+            y: (parent.height - self.height) / 2;
+            known: known;
+            initials: initials;
+            tint: tint;
+        }
+
+        VerticalLayout {
+            alignment: center;
+            spacing: 2 * Theme.dp;
+            horizontal-stretch: 1;
+            Text {
+                text: name;
+                font-family: "DejaVu Sans";
+                color: Theme.text;
+                font-size: 16 * Theme.dp;
+                font-weight: unread > 0 ? 700 : 400;
+                overflow: elide;
+            }
+
+            Text {
+                text: failed ? "⚠ Not sent · tap to retry" : snippet;
+                font-family: "DejaVu Sans";
+                color: failed ? Theme.danger : unread > 0 ? Theme.text : Theme.text-secondary;
+                font-size: 13.5 * Theme.dp;
+                overflow: elide;
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            spacing: 6 * Theme.dp;
+            Text {
+                text: when;
+                color: unread > 0 ? Theme.accent : Theme.text-dim;
+                font-size: 13.5 * Theme.dp;
+                font-weight: unread > 0 ? 600 : 400;
+                horizontal-alignment: right;
+            }
+
+            if unread > 0: HorizontalLayout {
+                alignment: end;
+                Badge {
+                    count: unread;
+                }
+            }
+        }
+    }
+
+    t := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// The conversations (mockup 28).
+component ListView inherits VerticalLayout {
+    TitleStrip {
+        title: "Messages";
+    }
+
+    Rectangle {
+        height: 64 * Theme.dp;
+        Field {
+            x: 14 * Theme.dp;
+            width: parent.width - 28 * Theme.dp;
+            search: true;
+            clearable: true;
+            placeholder: "Search messages";
+            text <=> MessagesState.search;
+            edited(t) => {
+                MessagesState.act("search", t);
+            }
+        }
+    }
+
+    if MessagesState.empty: Text {
+        height: 140 * Theme.dp;
+        text: "No messages yet\nTap New to write one";
+        color: Theme.text-dim;
+        font-size: 15 * Theme.dp;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        wrap: word-wrap;
+    }
+    NeoList {
+        vertical-stretch: 1;
+        VerticalLayout {
+            alignment: start;
+            for t[i] in MessagesState.threads: ThreadLine {
+                name: t.name;
+                initials: t.initials;
+                tint: t.tint;
+                known: t.known;
+                snippet: t.snippet;
+                when: t.when;
+                unread: t.unread;
+                failed: t.failed;
+                divider: i > 0;
+                clicked => {
+                    MessagesState.act("open", i);
+                }
+            }
+        }
+    }
+}
+
+// One bubble with its day band: ours blue on the right with ✓ sent / ✓✓ delivered, theirs grey on the left. A tap on
+// a failed one or a hold of 0.6 s opens its sheet. Placed by hand in its row (no layout), so its width follows the
+// row's without a binding loop.
+component BubbleLine inherits VerticalLayout {
+    in property <string> text;
+    in property <bool> mine;
+    in property <string> time;
+    in property <int> state;
+    in property <string> band;
+    callback held;
+    callback tapped;
+    property <duration> down-at;
+    property <length> pad: 12 * Theme.dp;
+    if band != "": Text {
+        height: 26 * Theme.dp;
+        text: band;
+        color: Theme.text-dim;
+        font-size: 12 * Theme.dp;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    Rectangle {
+        height: bubble.height;
+        bubble := Rectangle {
+            width: min(max(body.preferred-width, meta.preferred-width) + 2 * root.pad, parent.width * 0.76);
+            height: inner.preferred-height;
+            x: root.mine ? parent.width - self.width : 0;
+            border-radius: 18 * Theme.dp;
+            background: root.state == 4 ? #3a2326 : root.mine ? Theme.bubble-out : Theme.bubble-in;
+            border-width: root.state == 4 ? max(1px, Theme.dp / 2) : 0;
+            border-color: Theme.danger.with-alpha(0.5);
+            inner := VerticalLayout {
+                padding-left: root.pad;
+                padding-right: root.pad;
+                padding-top: 8 * Theme.dp;
+                padding-bottom: 6 * Theme.dp;
+                spacing: 2 * Theme.dp;
+                body := Text {
+                    text: root.text;
+                    font-family: "DejaVu Sans";
+                    color: Theme.text;
+                    font-size: 15.5 * Theme.dp;
+                    wrap: word-wrap;
+                }
+
+                meta := Text {
+                    text: root.state == 4 ? "⚠ Not sent · tap" : root.state == 1 ? root.time + " · Sending"
+                        : root.state == 3 ? root.time + "  ✓✓" : root.state == 2 ? root.time + "  ✓" : root.time;
+                    font-family: "DejaVu Sans";
+                    color: root.state == 4 ? #ff8a8d : #ffffff9e;
+                    font-size: 11.5 * Theme.dp;
+                    horizontal-alignment: right;
+                }
+            }
+
+            TouchArea {
+                pointer-event(e) => {
+                    if e.kind == PointerEventKind.down {
+                        root.down-at = animation-tick();
+                    }
+                }
+                clicked => {
+                    if animation-tick() - root.down-at >= 600ms {
+                        root.held();
+                    } else {
+                        root.tapped();
+                    }
+                }
+            }
+        }
+    }
+}
+
+// The composer: grows to four lines; Send is blue once there is something to send.
+component Composer inherits Rectangle {
+    // KeyboardFocus.seq when the input took the focus
+    property <int> took;
+    height: row.preferred-height;
+    function reopen() {
+        KeyboardFocus.seq += 1;
+        root.took = KeyboardFocus.seq;
+        KeyboardFocus.dismissed = false;
+    }
+    init => {
+        if MessagesState.autofocus {
+            MessagesState.autofocus = false;
+            input.focus();
+        }
+    }
+    Rectangle {
+        y: 0;
+        height: max(1px, Theme.dp / 2);
+        background: #ffffff0f;
+    }
+
+    row := HorizontalLayout {
+        padding-left: 12 * Theme.dp;
+        padding-right: 12 * Theme.dp;
+        padding-top: 8 * Theme.dp;
+        padding-bottom: 4 * Theme.dp;
+        spacing: 10 * Theme.dp;
+        alignment: stretch;
+        Rectangle {
+            horizontal-stretch: 1;
+            height: max(44 * Theme.dp, min(input.preferred-height + 20 * Theme.dp, 120 * Theme.dp));
+            border-radius: 22 * Theme.dp;
+            background: Theme.field;
+            border-width: max(1px, Theme.dp / 2);
+            border-color: input.has-focus ? Theme.accent : #ffffff0f;
+            clip: true;
+            if MessagesState.draft == "": Text {
+                x: 16 * Theme.dp;
+                text: "Text message";
+                color: Theme.text-dim;
+                font-size: 15.5 * Theme.dp;
+                vertical-alignment: center;
+            }
+            input := TextInput {
+                x: 16 * Theme.dp;
+                y: 10 * Theme.dp;
+                width: parent.width - 32 * Theme.dp;
+                height: parent.height - 20 * Theme.dp;
+                text <=> MessagesState.draft;
+                font-family: "DejaVu Sans";
+                font-size: 15.5 * Theme.dp;
+                color: Theme.text;
+                single-line: false;
+                wrap: word-wrap;
+                changed has-focus => {
+                    if self.has-focus {
+                        root.reopen();
+                        KeyboardFocus.mode = 1;
+                        KeyboardFocus.open = true;
+                    } else if root.took == KeyboardFocus.seq {
+                        KeyboardFocus.open = false;
+                    }
+                }
+                edited => {
+                    MessagesState.act("draft", self.text);
+                }
+            }
+
+            if KeyboardFocus.dismissed && input.has-focus: TouchArea {
+                clicked => {
+                    root.reopen();
+                }
+            }
+        }
+
+        VerticalLayout {
+            alignment: end;
+            Rectangle {
+                width: 44 * Theme.dp;
+                height: self.width;
+                border-radius: self.width / 2;
+                background: send.pressed ? Theme.accent.darker(20%) : Theme.accent;
+                opacity: MessagesState.can-send ? 1 : 0.4;
+                Glyph {
+                    source: @image-url("@neoui/icons/sys/send.svg");
+                    size: 20 * Theme.dp;
+                }
+
+                send := TouchArea {
+                    enabled: MessagesState.can-send;
+                    clicked => {
+                        MessagesState.act("send", "");
+                    }
+                }
+            }
+        }
+    }
+}
+
+// The counter under the composer while typing.
+component Counter inherits Text {
+    text: MessagesState.counter;
+    height: MessagesState.counter == "" ? 4 * Theme.dp : 22 * Theme.dp;
+    color: MessagesState.counter == "Too long" ? Theme.danger : Theme.text-dim;
+    font-size: 12 * Theme.dp;
+    horizontal-alignment: right;
+    vertical-alignment: top;
+}
+
+// A thread (mockup 29): the bubbles, newest at the bottom, then the composer.
+component ThreadView inherits VerticalLayout {
+    in property <string> title;
+    TitleStrip {
+        title: root.title;
+    }
+
+    list := NeoList {
+        vertical-stretch: 1;
+        init => {
+            self.content-y = min(0px, self.height - self.content-height);
+        }
+        changed content-height => {
+            self.content-y = min(0px, self.height - self.content-height);
+        }
+        changed height => {
+            self.content-y = min(0px, self.height - self.content-height);
+        }
+        VerticalLayout {
+            alignment: end;
+            min-height: list.height;
+            padding-left: 12 * Theme.dp;
+            padding-right: 12 * Theme.dp;
+            padding-top: 6 * Theme.dp;
+            padding-bottom: 10 * Theme.dp;
+            spacing: 6 * Theme.dp;
+            for b in MessagesState.bubbles: BubbleLine {
+                text: b.text;
+                mine: b.mine;
+                time: b.time;
+                state: b.state;
+                band: b.band;
+                held => {
+                    MessagesState.act("hold", b.id);
+                }
+                tapped => {
+                    MessagesState.act("tap", b.id);
+                }
+            }
+        }
+    }
+
+    Composer { }
+
+    HorizontalLayout {
+        padding-right: 18 * Theme.dp;
+        Counter { }
+    }
+}
+
+// A chosen recipient in To.
+component RecipientChip inherits Rectangle {
+    in property <string> text;
+    callback removed;
+    height: 30 * Theme.dp;
+    width: row.preferred-width;
+    border-radius: self.height / 2;
+    background: Theme.accent.with-alpha(0.22);
+    row := HorizontalLayout {
+        padding-left: 10 * Theme.dp;
+        padding-right: 6 * Theme.dp;
+        spacing: 4 * Theme.dp;
+        Text {
+            text: root.text;
+            font-family: "DejaVu Sans";
+            color: #cfe0ff;
+            font-size: 14 * Theme.dp;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+
+        Glyph {
+            source: @image-url("@neoui/icons/sys/close.svg");
+            size: 15 * Theme.dp;
+            colorize: #cfe0ff;
+            y: (parent.height - self.height) / 2;
+        }
+    }
+
+    TouchArea {
+        clicked => {
+            root.removed();
+        }
+    }
+}
+
+// A new message (mockup 32): To with the chosen recipients and the matching contacts, then the composer.
+component NewView inherits VerticalLayout {
+    TitleStrip {
+        title: "New message";
+    }
+
+    HorizontalLayout {
+        padding-left: 14 * Theme.dp;
+        padding-right: 14 * Theme.dp;
+        padding-top: 10 * Theme.dp;
+        padding-bottom: 6 * Theme.dp;
+        spacing: 10 * Theme.dp;
+        Text {
+            text: "To";
+            color: Theme.text-dim;
+            font-size: 15 * Theme.dp;
+            vertical-alignment: center;
+        }
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 6 * Theme.dp;
+            if MessagesState.recipients.length > 0: Flickable {
+                height: 30 * Theme.dp;
+                content-width: max(self.width, chips.preferred-width);
+                chips := HorizontalLayout {
+                    spacing: 6 * Theme.dp;
+                    alignment: start;
+                    for r[i] in MessagesState.recipients: RecipientChip {
+                        text: r;
+                        removed => {
+                            MessagesState.act("unpick", i);
+                        }
+                    }
+                }
+            }
+            Field {
+                placeholder: MessagesState.recipients.length > 0 ? "Add another" : "Name or number";
+                text <=> MessagesState.to-text;
+                edited(t) => {
+                    MessagesState.act("to", t);
+                }
+            }
+        }
+    }
+
+    NeoList {
+        vertical-stretch: 1;
+        VerticalLayout {
+            alignment: start;
+            for s[i] in MessagesState.suggestions: Rectangle {
+                height: 72 * Theme.dp;
+                background: st.pressed ? Theme.pressed : transparent;
+                if i > 0: Rectangle {
+                    x: 70 * Theme.dp;
+                    y: 0;
+                    width: parent.width - self.x;
+                    height: max(1px, Theme.dp / 2);
+                    background: Theme.hairline;
+                }
+                HorizontalLayout {
+                    padding-left: 14 * Theme.dp;
+                    padding-right: 14 * Theme.dp;
+                    spacing: 12 * Theme.dp;
+                    Avatar {
+                        y: (parent.height - self.height) / 2;
+                        initials: s.initials;
+                        tint: s.tint;
+                    }
+
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 2 * Theme.dp;
+                        Text {
+                            text: s.name;
+                            font-family: "DejaVu Sans";
+                            color: Theme.text;
+                            font-size: 16 * Theme.dp;
+                            overflow: elide;
+                        }
+
+                        Text {
+                            text: s.detail;
+                            color: Theme.text-secondary;
+                            font-size: 13.5 * Theme.dp;
+                            overflow: elide;
+                        }
+                    }
+                }
+
+                st := TouchArea {
+                    clicked => {
+                        MessagesState.act("pick", i);
+                    }
+                }
+            }
+        }
+    }
+
+    Composer { }
+
+    HorizontalLayout {
+        padding-right: 18 * Theme.dp;
+        Counter { }
+    }
+}
+
+// The blocked messages (mockup 35), kept 7 days.
+component BlockedView inherits VerticalLayout {
+    TitleStrip {
+        title: "Blocked messages";
+    }
+
+    NeoList {
+        vertical-stretch: 1;
+        VerticalLayout {
+            alignment: start;
+            if MessagesState.blocked.length == 0: Text {
+                height: 140 * Theme.dp;
+                text: "No blocked messages";
+                color: Theme.text-dim;
+                font-size: 15 * Theme.dp;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+            for b[i] in MessagesState.blocked: VerticalLayout {
+                if b.band != "": Band {
+                    text: b.band.to-uppercase();
+                }
+                Rectangle {
+                    height: 84 * Theme.dp;
+                    background: bt.pressed ? Theme.pressed : transparent;
+                    HorizontalLayout {
+                        padding-left: 14 * Theme.dp;
+                        padding-right: 14 * Theme.dp;
+                        spacing: 12 * Theme.dp;
+                        Face {
+                            y: (parent.height - self.height) / 2;
+                            known: b.known;
+                            initials: b.initials;
+                            tint: b.tint;
+                            block: true;
+                        }
+
+                        VerticalLayout {
+                            alignment: center;
+                            spacing: 2 * Theme.dp;
+                            horizontal-stretch: 1;
+                            Text {
+                                text: b.title;
+                                font-family: "DejaVu Sans";
+                                color: Theme.text;
+                                font-size: 16 * Theme.dp;
+                                overflow: elide;
+                            }
+
+                            Text {
+                                text: b.snippet;
+                                font-family: "DejaVu Sans";
+                                color: Theme.text-secondary;
+                                font-size: 13.5 * Theme.dp;
+                                overflow: elide;
+                            }
+
+                            HorizontalLayout {
+                                spacing: 5 * Theme.dp;
+                                Glyph {
+                                    source: @image-url("../icons/block.svg");
+                                    size: 15 * Theme.dp;
+                                    colorize: Theme.danger;
+                                    y: (parent.height - self.height) / 2;
+                                }
+
+                                Text {
+                                    text: b.why;
+                                    color: Theme.text-secondary;
+                                    font-size: 13.5 * Theme.dp;
+                                    horizontal-stretch: 1;
+                                }
+                            }
+                        }
+
+                        Text {
+                            text: b.when;
+                            color: Theme.text-dim;
+                            font-size: 13.5 * Theme.dp;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    bt := TouchArea {
+                        clicked => {
+                            MessagesState.act("blocked", b.id);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: 14 * Theme.dp;
+        padding-right: 14 * Theme.dp;
+        padding-bottom: 14 * Theme.dp;
+        Text {
+            text: "Blocked messages never alert and are deleted after 7 days.";
+            color: Theme.text-secondary;
+            font-size: 13 * Theme.dp;
+            wrap: word-wrap;
+        }
+    }
+}
+
+// A message's details (mockup 31).
+component Details inherits Rectangle {
+    Rectangle {
+        background: Theme.scrim;
+        TouchArea {
+            clicked => {
+                MessagesState.act("details-close", "");
+            }
+        }
+    }
+
+    Rectangle {
+        x: 22 * Theme.dp;
+        width: parent.width - 44 * Theme.dp;
+        y: (parent.height - self.height) / 2;
+        height: box.preferred-height;
+        border-radius: 16 * Theme.dp;
+        background: #23272d;
+        border-width: max(1px, Theme.dp / 2);
+        border-color: #ffffff1f;
+        TouchArea { }
+
+        box := VerticalLayout {
+            padding: 20 * Theme.dp;
+            spacing: 10 * Theme.dp;
+            Text {
+                text: "Message details";
+                color: Theme.text;
+                font-size: 17 * Theme.dp;
+            }
+
+            for k[i] in MessagesState.details-keys: HorizontalLayout {
+                spacing: 14 * Theme.dp;
+                Text {
+                    width: 82 * Theme.dp;
+                    text: k;
+                    color: Theme.text-secondary;
+                    font-size: 14 * Theme.dp;
+                }
+
+                Text {
+                    text: MessagesState.details-values[i];
+                    font-family: "DejaVu Sans";
+                    color: Theme.text;
+                    font-size: 14 * Theme.dp;
+                    wrap: word-wrap;
+                    horizontal-stretch: 1;
+                }
+            }
+            Rectangle {
+                height: 44 * Theme.dp;
+                border-radius: 12 * Theme.dp;
+                background: close.pressed ? #4a505a : #353a42;
+                Text {
+                    text: "Close";
+                    color: Theme.text;
+                    font-size: 15 * Theme.dp;
+                    font-weight: 600;
+                }
+
+                close := TouchArea {
+                    clicked => {
+                        MessagesState.act("details-close", "");
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component MessagesPage inherits Rectangle {
+    // the page ends above the keyboard while it is up
+    property <length> kb: KeyboardFocus.open && !KeyboardFocus.dismissed ? KeyboardFocus.text-h : 0;
+    // bakes in the glyphs of names and texts in any keyboard language (Armenian, Cyrillic)
+    Alphabets { }
+    Rectangle {
+        y: 0;
+        height: parent.height - root.kb;
+        if Nav.view == "": ListView { }
+        if Nav.view == "thread": ThreadView {
+            title: MessagesState.title;
+        }
+        if Nav.view == "new": NewView { }
+        if Nav.view == "blocked": BlockedView { }
+    }
+
+    Sheet {
+        items: MessagesState.bubble-items;
+        open: MessagesState.bubble-open;
+        dismissed => {
+            MessagesState.act("dismiss", "");
+        }
+        selected(i, item) => {
+            MessagesState.act("bubble", item);
+        }
+    }
+
+    Sheet {
+        items: ["Unblock sender", "Delete"];
+        open: MessagesState.blocked-open;
+        dismissed => {
+            MessagesState.act("dismiss", "");
+        }
+        selected(i, item) => {
+            MessagesState.act("blocked-item", item);
+        }
+    }
+
+    if MessagesState.details-open: Details { }
+    Query {
+        open: MessagesState.query != "";
+        question: MessagesState.query;
+        detail: MessagesState.query-detail;
+        confirm: MessagesState.query-confirm;
+        danger: true;
+        confirmed => {
+            MessagesState.act("confirm", "");
+        }
+        cancelled => {
+            MessagesState.act("cancel", "");
+        }
+    }
+}

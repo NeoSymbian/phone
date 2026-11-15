@@ -226,7 +226,8 @@ fn act(ctx: &Ctx, action: &str, value: &str) {
             }
             ctx.show();
         }
-        // "message", "email": no Messaging or Email app yet (their buttons are hidden)
+        "message" => crate::msgs::open_thread(ctx, value, false),
+        // "email": no Email app yet (its button is hidden)
         _ => {}
     }
 }
@@ -677,6 +678,7 @@ fn show_card(ctx: &Ctx) {
     ));
     st.set_card_email(c.email.as_str().into());
     st.set_card_note(c.note.as_str().into());
+    st.set_can_message(true);
     st.set_card_speed(speed.map_or(0, i32::from));
     st.set_card_blocked(blocked.map_or("", |(a, b)| logic::block_text(a, b)).into());
 }

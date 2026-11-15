@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! NEOPHONE.EXE: Phone and Contacts as one neoui app process (NeoSymbian/phone). The UI server starts it hidden at
+//! NEOPHONE.EXE: Phone, Contacts and Messages as one neoui app process (NeoSymbian/phone). The UI server starts it hidden at
 //! boot and keeps it running (neoui `host::RESIDENT`), opens its pages from the Phone and Contacts icons, the call
 //! notification and Settings (`AppEvent::Page`), and shows its surface between the status bar and the toolbar,
 //! with the title and middle button this app sets (neoui ipc 1.4).
 //!
 //! - [`ctx`]: the state and the shared moves; [`modem`]: MODEMD's client; [`store`]: the contacts file and vCards
-//! - areas: [`dial`] (Phone), [`people`] (Contacts), [`call`] (the call screens), [`prefs`] (Settings, blocking)
+//! - areas: [`dial`] (Phone), [`people`] (Contacts), [`call`] (the call screens), [`prefs`] (Settings, blocking),
+//!   [`msgs`] (Messages)
 //! - this file: connecting, loading, and the event loop (input, pages, MODEMD's status, time)
 #![no_std]
 
@@ -15,6 +16,7 @@ mod call;
 mod ctx;
 mod dial;
 mod modem;
+mod msgs;
 mod people;
 mod prefs;
 mod store;
@@ -81,11 +83,14 @@ fn run() -> Result<(), i32> {
         people: Default::default(),
         call: Default::default(),
         prefs: Default::default(),
+        msgs: Default::default(),
         note_until: 0,
         visible: false,
     };
     let ctx = Rc::new(Ctx::new(app, &ui, model));
     prefs::reload(&ctx);
+    msgs::load(&ctx);
+    msgs::sync(&ctx);
     people::send_known(&ctx);
     let nav = ui.global::<Nav>();
     {
@@ -108,6 +113,7 @@ fn run() -> Result<(), i32> {
     people::bind(&ctx, &ui);
     call::bind(&ctx, &ui);
     prefs::bind(&ctx, &ui);
+    msgs::bind(&ctx, &ui);
     ctx.go(Page::Phone(PhoneView::Dial));
     ctx.sync()?;
 
@@ -171,6 +177,7 @@ fn run() -> Result<(), i32> {
                     let ui = ctx.ui();
                     let kf = ui.global::<phone_ui::KeyboardFocus>();
                     kf.set_dismissed(h == 0 && kf.get_open());
+                    kf.set_text_h(h as f32);
                 }
                 Some(AppEvent::Options) => ctx.options(),
                 Some(AppEvent::Action) => ctx.action(),

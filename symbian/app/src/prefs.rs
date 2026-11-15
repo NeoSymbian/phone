@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! Settings: Phone & Contacts (caller ID and call waiting go to MODEMD, the rest are `phone.*`/`contacts.*`
-//! settings), Blocked numbers (MODEMD's blocklist, edited through [`phone_core::blocking`]), and the blocking calls
+//! Settings: Phone & Contacts (caller ID, call waiting and the message settings go to MODEMD, the rest are
+//! `phone.*`/`contacts.*` settings), Quick replies (a file of ours, crate::store), Blocked numbers (MODEMD's blocklist, edited through [`phone_core::blocking`]), and the blocking calls
 //! the other areas make.
 //!
 //! The screens keep their own open/closed state in `SettingsState` (the picker, the voicemail editor, the add row,
@@ -78,6 +78,8 @@ fn act(ctx: &Ctx, action: &str, value: &str) {
             s.set_query(false);
             close(ctx);
             let _ = ctx.m.borrow_mut().modem.waiting(None);
+            // the message centre may have come from the SIM since
+            crate::msgs::load(ctx);
             return;
         }
         "clir" => {
@@ -104,6 +106,23 @@ fn act(ctx: &Ctx, action: &str, value: &str) {
             }
         }
         "blocked" => ctx.go(Page::Settings(SettingsView::Blocked)),
+        "replies" => ctx.go(Page::Settings(SettingsView::Replies)),
+        "reports" | "alert" => {
+            let mut s = ctx.m.borrow().msgs.settings;
+            if action == "reports" {
+                s.reports = on;
+            } else {
+                s.alert = i.min(2) as u8;
+            }
+            send_sms_settings(ctx, s);
+        }
+        "remove-reply" => {
+            let mut replies = ctx.m.borrow().msgs.replies.clone();
+            if i < replies.len() {
+                replies.remove(i);
+                save_replies(ctx, replies);
+            }
+        }
         "private" | "unknown" => {
             edit_block(
                 ctx,
@@ -151,6 +170,23 @@ fn save<T: Setting>(ctx: &Ctx, key: Key<T>, value: T) {
         ctx.note(&format!("Not saved ({e})"));
     }
     reload(ctx);
+}
+
+/// The message settings go to MODEMD (it keeps them); the model keeps what it took.
+fn send_sms_settings(ctx: &Ctx, s: modem_ipc::SmsSettings) {
+    let r = ctx.m.borrow_mut().modem.set_sms_settings(&s);
+    if r != 0 {
+        ctx.note(&format!("Not saved ({r})"));
+        return;
+    }
+    ctx.m.borrow_mut().msgs.settings = s;
+}
+
+fn save_replies(ctx: &Ctx, replies: Vec<String>) {
+    match crate::store::save_replies(&replies) {
+        Ok(()) => ctx.m.borrow_mut().msgs.replies = replies,
+        Err(e) => ctx.note(&format!("Not saved ({e})")),
+    }
 }
 
 /// Caller ID and the log's days go to MODEMD as they change.
@@ -259,21 +295,39 @@ pub fn show(ctx: &Ctx) {
     s.set_block_private(m.block.private);
     s.set_block_unknown(m.block.unknown);
     s.set_rules(model(rows));
+    let sms = &m.msgs.settings;
+    s.set_sms_reports(sms.reports);
+    s.set_sms_alert(i32::from(sms.alert.min(2)));
+    s.set_smsc(sms.smsc.as_str().into());
+    let replies: Vec<&str> = m.msgs.replies.iter().map(String::as_str).collect();
+    s.set_replies(strings(&replies));
 }
 
 pub fn chrome(ctx: &Ctx) -> Chrome {
     let ui = ctx.ui();
     let s = ui.global::<SettingsState>();
-    if ctx.page() == Page::Settings(SettingsView::Blocked) {
-        let c = Chrome::titled("Blocked numbers");
+    let page = ctx.page();
+    if matches!(
+        page,
+        Page::Settings(SettingsView::Blocked | SettingsView::Replies)
+    ) {
+        let c = Chrome::titled(if page == Page::Settings(SettingsView::Replies) {
+            "Quick replies"
+        } else {
+            "Blocked numbers"
+        });
+        let full = page == Page::Settings(SettingsView::Replies)
+            && ctx.m.borrow().msgs.replies.len() >= crate::store::MAX_REPLIES;
         if s.get_adding() {
             c.with(proto::TOOL_CHECK, proto::TOOLBAR_CANCEL, "Add")
+        } else if full {
+            c
         } else {
             c.with(proto::TOOL_ADD, 0, "Add")
         }
     } else {
         let c = Chrome::titled("Phone & Contacts");
-        if s.get_editing() {
+        if s.get_editing() || s.get_editing_smsc() {
             c.with(proto::TOOL_CHECK, proto::TOOLBAR_CANCEL, "Save")
         } else {
             c
@@ -300,7 +354,32 @@ pub fn option(ctx: &Ctx, item: &str) {
 pub fn action(ctx: &Ctx) {
     let ui = ctx.ui();
     let s = ui.global::<SettingsState>();
-    if ctx.page() == Page::Settings(SettingsView::Blocked) {
+    if ctx.page() == Page::Settings(SettingsView::Replies) {
+        if !s.get_adding() {
+            s.set_add_text(SharedString::new());
+            s.set_adding(true);
+            return;
+        }
+        let text = String::from(s.get_add_text().trim());
+        if !text.is_empty() {
+            let mut replies = ctx.m.borrow().msgs.replies.clone();
+            replies.truncate(crate::store::MAX_REPLIES - 1);
+            replies.push(text.replace('\n', " "));
+            save_replies(ctx, replies);
+        }
+        close(ctx);
+    } else if s.get_editing_smsc() {
+        let v = String::from(s.get_draft().trim());
+        if v.is_empty() || !v.chars().all(|c| c.is_ascii_digit() || " +-".contains(c)) {
+            ctx.note("Use digits and +");
+            return;
+        }
+        let mut sms = ctx.m.borrow().msgs.settings;
+        sms.smsc = modem_ipc::Text::new(&v);
+        send_sms_settings(ctx, sms);
+        close(ctx);
+        ctx.note("Saved");
+    } else if ctx.page() == Page::Settings(SettingsView::Blocked) {
         if !s.get_adding() {
             s.set_add_text(SharedString::new());
             s.set_add_prefix(false);
@@ -340,6 +419,7 @@ fn close(ctx: &Ctx) {
     let ui = ctx.ui();
     let s = ui.global::<SettingsState>();
     s.set_editing(false);
+    s.set_editing_smsc(false);
     s.set_adding(false);
     ui.global::<KeyboardFocus>().set_open(false);
 }
@@ -352,7 +432,7 @@ pub fn back(ctx: &Ctx) -> bool {
         s.set_picker(SharedString::new());
     } else if s.get_query() {
         s.set_query(false);
-    } else if s.get_editing() || s.get_adding() {
+    } else if s.get_editing() || s.get_editing_smsc() || s.get_adding() {
         close(ctx);
     } else {
         return false;
@@ -364,7 +444,11 @@ pub fn back(ctx: &Ctx) -> bool {
 pub fn wants_back(ctx: &Ctx) -> bool {
     let ui = ctx.ui();
     let s = ui.global::<SettingsState>();
-    !s.get_picker().is_empty() || s.get_query() || s.get_editing() || s.get_adding()
+    !s.get_picker().is_empty()
+        || s.get_query()
+        || s.get_editing()
+        || s.get_editing_smsc()
+        || s.get_adding()
 }
 
 /// Read the settings (`phone.*`, `contacts.*`) into the model.

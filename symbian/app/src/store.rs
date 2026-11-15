@@ -17,6 +17,16 @@ const DIR: &str = "C:\\private\\e0005001\\";
 const PATH: &str = "C:\\private\\e0005001\\contacts.dat";
 const NEW_PATH: &str = "C:\\private\\e0005001\\contacts.new";
 const BAD_PATH: &str = "C:\\private\\e0005001\\contacts.bad";
+/// Reply with message's quick replies, one per line.
+const REPLIES_PATH: &str = "C:\\private\\e0005001\\replies.txt";
+/// The most quick replies.
+pub const MAX_REPLIES: usize = 6;
+/// What a phone starts with.
+const DEFAULT_REPLIES: [&str; 3] = [
+    "Can't talk now. I'll call you later.",
+    "I'm in a meeting.",
+    "I'm driving. I'll call you back.",
+];
 /// Where neoui's shell kept the book (C8, before NEOPHONE).
 const SHELL_PATH: &str = "C:\\private\\e0002001\\contacts.dat";
 pub const EXPORT_DIR: &str = "C:\\Data\\";
@@ -129,6 +139,27 @@ pub fn vcards() -> Vec<(String, Vec<u8>)> {
         }
     }
     out
+}
+
+/// The quick replies (the defaults until the user changes them).
+pub fn replies() -> Vec<String> {
+    let saved = Fs::connect().and_then(|fs| read(&fs, REPLIES_PATH));
+    match saved {
+        Ok(b) => String::from_utf8_lossy(&b)
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .take(MAX_REPLIES)
+            .map(String::from)
+            .collect(),
+        Err(_) => DEFAULT_REPLIES.iter().map(|s| String::from(*s)).collect(),
+    }
+}
+
+pub fn save_replies(replies: &[String]) -> Result<(), i32> {
+    let fs = Fs::connect()?;
+    mkdirs(&fs, &["C:\\private\\", DIR])?;
+    File::replace(&fs, REPLIES_PATH, mode::SHARE_EXCLUSIVE)?.write(replies.join("\n").as_bytes())
 }
 
 /// Write `text` as `C:\Data\contacts.vcf`.

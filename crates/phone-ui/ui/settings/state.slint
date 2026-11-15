@@ -26,18 +26,26 @@ export global SettingsState {
     in property <bool> smart-dial;
     in property <[string]> labels: ["Mobile"];
     in property <int> default-label;
+    // Messages: delivery reports, the message centre (from the SIM), the alert (modem_ipc::sms ALERT_*: 0 tone +
+    // vibrate, 1 vibrate, 2 silent), the quick replies
+    in property <bool> sms-reports: true;
+    in property <string> smsc;
+    in property <int> sms-alert;
+    in property <[string]> replies;
 
-    // the open picker: "" none, "clir", "log", "order", "label"
+    // the open picker: "" none, "clir", "log", "order", "label", "alert"
     in-out property <string> picker;
-    // the voicemail number being edited (Save/Cancel in the toolbar)
+    // the voicemail number (or, with `editing-smsc`, the message centre) being edited (Save/Cancel in the toolbar)
     in-out property <bool> editing;
+    in-out property <bool> editing-smsc;
     in-out property <string> draft;
 
     // Blocked numbers
     in property <bool> block-private;
     in property <bool> block-unknown;
     in property <[BlockRow]> rules;
-    // the add row (Add/Cancel in the toolbar): the typed number, "Whole prefix"
+    // the add row (Add/Cancel in the toolbar) of Blocked numbers and of Quick replies: the typed number or reply,
+    // "Whole prefix"
     in-out property <bool> adding;
     in-out property <string> add-text;
     in-out property <bool> add-prefix;
@@ -46,6 +54,7 @@ export global SettingsState {
 
     // "opened" (the main view appeared: close what was left open, ask the network about call waiting),
     // "clir" | "log" | "order" | "label" + the picked index, "waiting" | "summary" | "duration" | "smart-dial" |
-    // "private" | "unknown" + "1" | "0", "blocked" (open Blocked numbers), "remove" + the row index, "remove-all"
+    // "private" | "unknown" | "reports" + "1" | "0", "blocked" (open Blocked numbers), "remove" + the row index,
+    // "remove-all", "alert" + the picked index, "replies" (open Quick replies), "remove-reply" + index
     callback act(string, string);
 }

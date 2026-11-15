@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Phone & Contacts settings (mockup 23) and Blocked numbers (mockup 25), with the pickers, the voicemail editor, the
-// add row and the Remove all query.
+// Phone & Contacts settings (mockups 23, 34) and Blocked numbers (mockup 25), with the pickers, the voicemail and
+// message centre editors, the add row and the Remove all query; Quick replies.
 import { Theme } from "@neoui/theme.slint";
 import { NeoList } from "@neoui/components/scroll.slint";
 import { TextField } from "@neoui/components/controls.slint";
@@ -242,6 +242,144 @@ component Main inherits NeoList {
                 SettingsState.picker = "label";
             }
         }
+
+        // mockup 34
+        Band { text: "MESSAGES"; }
+        Row {
+            height: 60 * Theme.dp;
+            title: "Delivery reports";
+            subtitle: "Shows ✓✓ when a message arrives";
+            toggle: true;
+            on: SettingsState.sms-reports;
+            first: true;
+            toggled(v) => {
+                SettingsState.act("reports", v ? "1" : "0");
+            }
+        }
+
+        if !SettingsState.editing-smsc: Row {
+            height: 60 * Theme.dp;
+            title: "Message centre";
+            subtitle: "From the SIM";
+            value: SettingsState.smsc == "" ? "Unknown" : SettingsState.smsc;
+            clicked => {
+                SettingsState.draft = SettingsState.smsc;
+                SettingsState.editing = false;
+                SettingsState.editing-smsc = true;
+            }
+        }
+        if SettingsState.editing-smsc: Rectangle {
+            height: 64 * Theme.dp;
+            background: Theme.bg-raised;
+            HorizontalLayout {
+                padding-left: 14 * Theme.dp;
+                padding-right: 14 * Theme.dp;
+                spacing: 12 * Theme.dp;
+                Text {
+                    text: "Centre";
+                    color: Theme.text;
+                    font-size: Theme.font-body;
+                    vertical-alignment: center;
+                }
+
+                TextField {
+                    y: (parent.height - self.height) / 2;
+                    horizontal-stretch: 1;
+                    text <=> SettingsState.draft;
+                    placeholder: "Number";
+                    keys: 4;
+                    autofocus: true;
+                }
+            }
+        }
+        Row {
+            title: "Quick replies";
+            value: SettingsState.replies.length;
+            clicked => {
+                SettingsState.act("replies", "");
+            }
+        }
+
+        Row {
+            title: "New message alert";
+            value: SettingsState.sms-alert == 1 ? "Vibrate" : SettingsState.sms-alert == 2 ? "Silent" : "Tone + vibrate";
+            clicked => {
+                SettingsState.picker = "alert";
+            }
+        }
+
+        HorizontalLayout {
+            padding: 14 * Theme.dp;
+            Text {
+                text: "Blocked numbers apply to messages when their Messages box is ticked.";
+                color: Theme.text-secondary;
+                font-size: 13 * Theme.dp;
+                wrap: word-wrap;
+            }
+        }
+    }
+}
+
+// Quick replies: the texts Reply with message offers (up to 6), the add row on top.
+component Replies inherits NeoList {
+    VerticalLayout {
+        alignment: start;
+        if SettingsState.adding: Rectangle {
+            background: Theme.bg-raised;
+            VerticalLayout {
+                padding: 14 * Theme.dp;
+                padding-top: 12 * Theme.dp;
+                TextField {
+                    text <=> SettingsState.add-text;
+                    placeholder: "A short reply";
+                    autofocus: true;
+                }
+            }
+        }
+        Band { text: "REPLY WITH MESSAGE · \{SettingsState.replies.length}"; }
+        for r[i] in SettingsState.replies: Rectangle {
+            height: 56 * Theme.dp;
+            if i > 0: Rectangle {
+                x: 14 * Theme.dp;
+                y: 0;
+                width: parent.width - self.x;
+                height: max(1px, Theme.dp / 2);
+                background: Theme.hairline;
+            }
+            HorizontalLayout {
+                padding-left: 14 * Theme.dp;
+                padding-right: 14 * Theme.dp;
+                spacing: 12 * Theme.dp;
+                Text {
+                    text: r;
+                    font-family: "DejaVu Sans";
+                    color: Theme.text;
+                    font-size: Theme.font-body;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                }
+
+                Rectangle {
+                    y: (parent.height - self.height) / 2;
+                    width: 34 * Theme.dp;
+                    height: self.width;
+                    border-radius: self.width / 2;
+                    background: rm.pressed ? Theme.danger.with-alpha(0.35) : Theme.danger.with-alpha(0.15);
+                    Glyph {
+                        source: @image-url("@neoui/icons/sys/close.svg");
+                        size: 16 * Theme.dp;
+                        colorize: Theme.danger;
+                    }
+
+                    rm := TouchArea {
+                        clicked => {
+                            SettingsState.act("remove-reply", i);
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -430,24 +568,27 @@ export component SettingsPage inherits Rectangle {
     Alphabets { }
     VerticalLayout {
         TitleStrip {
-            title: Nav.view == "blocked" ? "Blocked numbers" : "Phone & Contacts";
+            title: Nav.view == "blocked" ? "Blocked numbers" : Nav.view == "replies" ? "Quick replies" : "Phone & Contacts";
         }
 
         if Nav.view == "": Main { }
         if Nav.view == "blocked": Blocked { }
+        if Nav.view == "replies": Replies { }
     }
 
     Sheet {
         open: picker != "";
         heading: picker == "clir" ? "Send my caller ID" : picker == "log" ? "Keep call log"
-            : picker == "order" ? "Name display" : "Default number type";
+            : picker == "order" ? "Name display" : picker == "alert" ? "New message alert" : "Default number type";
         items: picker == "clir" ? ["Network", "Hidden", "Shown"]
             : picker == "log" ? ["Don't keep", "1 day", "10 days", "30 days"]
-            : picker == "order" ? ["First Last", "Last First"] : SettingsState.labels;
+            : picker == "order" ? ["First Last", "Last First"]
+            : picker == "alert" ? ["Tone + vibrate", "Vibrate", "Silent"] : SettingsState.labels;
         marked: picker == "clir" ? SettingsState.clir
             : picker == "log" ? (SettingsState.log-days == 0 ? 0 : SettingsState.log-days == 1 ? 1
                 : SettingsState.log-days == 10 ? 2 : 3)
-            : picker == "order" ? SettingsState.name-order : SettingsState.default-label;
+            : picker == "order" ? SettingsState.name-order
+            : picker == "alert" ? SettingsState.sms-alert : SettingsState.default-label;
         dismissed => {
             SettingsState.picker = "";
         }

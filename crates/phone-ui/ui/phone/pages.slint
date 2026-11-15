@@ -595,7 +595,7 @@ component Details inherits VerticalLayout {
         if DialState.detail-can-call: HorizontalLayout {
             padding-top: 10 * Theme.dp;
             alignment: center;
-            // Message waits for SMS
+            spacing: 10 * Theme.dp;
             PillButton {
                 width: 125 * Theme.dp;
                 text: "Call";
@@ -603,6 +603,15 @@ component Details inherits VerticalLayout {
                 icon: @image-url("@neoui/icons/sys/call.svg");
                 clicked => {
                     DialState.act("detail-call", "");
+                }
+            }
+
+            PillButton {
+                width: 125 * Theme.dp;
+                text: "Message";
+                icon: @image-url("@neoui/icons/sys/message.svg");
+                clicked => {
+                    DialState.act("detail-message", "");
                 }
             }
         }

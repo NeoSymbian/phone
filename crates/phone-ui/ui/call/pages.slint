@@ -4,7 +4,7 @@
 // on 9 and 12); CallState.screen picks the screen, CallState.keypad lays the keypad over a call.
 import { Theme } from "@neoui/theme.slint";
 import { Glyph } from "@neoui/components/frame.slint";
-import { PillButton, KeyGrid } from "../common.slint";
+import { PillButton, KeyGrid, Sheet } from "../common.slint";
 import { Alphabets } from "@neoui/components/keyboard/glyphs.slint";
 import { CallState, Party } from "state.slint";
 
@@ -297,7 +297,6 @@ component Incoming inherits VerticalLayout {
             }
         }
 
-        // no SMS yet
         if CallState.can-message: CallChip {
             text: "Reply with message";
             icon: @image-url("@neoui/icons/sys/message.svg");
@@ -749,7 +748,6 @@ component Summary inherits VerticalLayout {
                 }
             }
 
-            // no SMS yet
             if CallState.can-message: PillButton {
                 text: "Message";
                 icon: @image-url("@neoui/icons/sys/message.svg");
@@ -777,6 +775,18 @@ export component CallPage inherits Rectangle {
     if s == "two" && !pad: Two { }
     if pad: Keypad { }
     if s == "ended": Summary { }
+    // Reply with message (mockup 33): a quick reply rejects the call as busy and sends it
+    Sheet {
+        heading: "Reply with message";
+        items: CallState.replies;
+        open: CallState.replying && s == "incoming";
+        dismissed => {
+            CallState.act("reply-cancel", "");
+        }
+        selected(i, item) => {
+            CallState.act("reply", i);
+        }
+    }
     // the glyphs of names in any keyboard language (Armenian, Cyrillic)
     Alphabets { }
 }

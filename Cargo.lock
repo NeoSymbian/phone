@@ -2417,7 +2417,7 @@ dependencies = [
 [[package]]
 name = "modem-ipc"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/telephony?rev=efc18d4af1851b9d5cfed4a9e7f4154441fd000e#efc18d4af1851b9d5cfed4a9e7f4154441fd000e"
+source = "git+https://github.com/NeoSymbian/telephony?rev=b50763850b47373083e7cea82a3d30f40feb9cea#b50763850b47373083e7cea82a3d30f40feb9cea"
 
 [[package]]
 name = "moxcms"
@@ -3108,12 +3108,13 @@ dependencies = [
  "contacts",
  "modem-ipc",
  "phone-rules",
+ "sms",
 ]
 
 [[package]]
 name = "phone-rules"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/telephony?rev=efc18d4af1851b9d5cfed4a9e7f4154441fd000e#efc18d4af1851b9d5cfed4a9e7f4154441fd000e"
+source = "git+https://github.com/NeoSymbian/telephony?rev=b50763850b47373083e7cea82a3d30f40feb9cea#b50763850b47373083e7cea82a3d30f40feb9cea"
 
 [[package]]
 name = "phone-ui"
@@ -3869,6 +3870,11 @@ dependencies = [
  "borsh",
  "serde_core",
 ]
+
+[[package]]
+name = "sms"
+version = "0.1.0"
+source = "git+https://github.com/NeoSymbian/telephony?rev=b50763850b47373083e7cea82a3d30f40feb9cea#b50763850b47373083e7cea82a3d30f40feb9cea"
 
 [[package]]
 name = "snafu"

@@ -10,15 +10,17 @@ pub mod number {
     pub const CALL: u16 = 3;
     pub const SETTINGS: u16 = 4;
     pub const SPEED: u16 = 5;
+    pub const MESSAGES: u16 = 6;
 }
 
-/// What the app shows: `Nav.page` (0 Phone, 1 Contacts, 3 call, 4 Settings) and `Nav.view`.
+/// What the app shows: `Nav.page` (0 Phone, 1 Contacts, 3 call, 4 Settings, 6 Messages) and `Nav.view`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Page {
     Phone(PhoneView),
     Contacts(ContactsView),
     Call,
     Settings(SettingsView),
+    Messages(MessagesView),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -41,6 +43,16 @@ pub enum ContactsView {
 pub enum SettingsView {
     Main,
     Blocked,
+    /// the quick replies of "Reply with message"
+    Replies,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MessagesView {
+    List,
+    Thread,
+    New,
+    Blocked,
 }
 
 impl Page {
@@ -53,6 +65,7 @@ impl Page {
             number::CALL => Page::Call,
             number::SETTINGS => Page::Settings(SettingsView::Main),
             number::SPEED => Page::Phone(PhoneView::Speed),
+            number::MESSAGES => Page::Messages(MessagesView::List),
             _ => return None,
         })
     }
@@ -84,6 +97,16 @@ impl Page {
                 match v {
                     SettingsView::Main => "",
                     SettingsView::Blocked => "blocked",
+                    SettingsView::Replies => "replies",
+                },
+            ),
+            Page::Messages(v) => (
+                6,
+                match v {
+                    MessagesView::List => "",
+                    MessagesView::Thread => "thread",
+                    MessagesView::New => "new",
+                    MessagesView::Blocked => "blocked",
                 },
             ),
         }
@@ -97,8 +120,12 @@ impl Page {
             Page::Phone(_) => Some(Page::Phone(PhoneView::Dial)),
             Page::Contacts(ContactsView::Edit) => Some(Page::Contacts(ContactsView::Card)),
             Page::Contacts(_) => Some(Page::Contacts(ContactsView::List)),
-            Page::Settings(SettingsView::Blocked) => Some(Page::Settings(SettingsView::Main)),
+            Page::Settings(SettingsView::Blocked | SettingsView::Replies) => {
+                Some(Page::Settings(SettingsView::Main))
+            }
             Page::Settings(SettingsView::Main) => None,
+            Page::Messages(MessagesView::List) => None,
+            Page::Messages(_) => Some(Page::Messages(MessagesView::List)),
         }
     }
 }
@@ -120,5 +147,10 @@ mod tests {
             Some(Page::Phone(PhoneView::Recents))
         );
         assert_eq!(Page::Phone(PhoneView::Dial).back(), None);
+        assert_eq!(Page::from_number(6).unwrap().nav(), (6, ""));
+        assert_eq!(
+            Page::Messages(MessagesView::Thread).back(),
+            Some(Page::Messages(MessagesView::List))
+        );
     }
 }

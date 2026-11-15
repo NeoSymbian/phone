@@ -3,11 +3,11 @@
 // through `act`.
 
 export global Nav {
-    // 0 Phone, 1 Contacts, 3 the call screens, 4 Settings (the UI server's page numbers; 2 Recents and 5 Speed dial
-    // are views of Phone)
+    // 0 Phone, 1 Contacts, 3 the call screens, 4 Settings, 6 Messages (the UI server's page numbers; 2 Recents and
+    // 5 Speed dial are views of Phone)
     in-out property <int> page;
     // the page's sub-view: Phone "" | "recents" | "detail" | "speed"; Contacts "" | "card" | "edit" | "mark";
-    // Settings "" | "blocked"
+    // Settings "" | "blocked" | "replies"; Messages "" | "thread" | "new" | "blocked"
     in-out property <string> view;
     // the Options sheet over the page, and its items (the app fills them per page and view)
     in-out property <bool> options-open;

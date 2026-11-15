@@ -34,9 +34,13 @@ export global CallState {
     in-out property <string> tones;
     // the summary: the call's length ("" = not shown: Settings ▸ Show call duration is off)
     in-out property <string> duration;
-    // Reply with message / Message: no SMS yet
+    // Reply with message (the incoming call's chip) and Message (the summary)
     in-out property <bool> can-message;
+    // the Reply with message sheet: open, and the quick replies it offers ("Write your own…" follows them)
+    in-out property <bool> replying;
+    in-out property <[string]> replies;
     // "answer", "reject", "silence", "message", "end", "mute", "speaker", "hold", "keypad", "add", "contacts",
-    // "dtmf" + key, "hold-answer", "end-answer", "reject-waiting", "swap", "merge", "call-again"
+    // "dtmf" + key, "hold-answer", "end-answer", "reject-waiting", "swap", "merge", "call-again", "reply" + index
+    // (the quick reply; its count = Write your own), "reply-cancel"
     callback act(string, string);
 }

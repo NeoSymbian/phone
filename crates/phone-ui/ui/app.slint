@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// NeoPhone (NEOPHONE.EXE): Phone and Contacts as one app behind two home icons, plus the call screens and their
+// NeoPhone (NEOPHONE.EXE): Phone, Contacts and Messages as one app behind three home icons, plus the call screens and their
 // settings. Drawn by its own process into the surface the UI server shows between its status bar and toolbar; the
 // title and the toolbar's middle button are the app's (neoui ipc 1.4), set from Rust per page and view.
 import "@neoui/fonts/Inter-VariableFont.ttf";
@@ -17,8 +17,10 @@ import { CallState } from "call/state.slint";
 import { CallPage } from "call/pages.slint";
 import { SettingsState } from "settings/state.slint";
 import { SettingsPage } from "settings/pages.slint";
+import { MessagesState } from "messages/state.slint";
+import { MessagesPage } from "messages/pages.slint";
 
-export { Theme, Scroll, KeyboardFocus, Nav, DialState, ContactsState, CallState, SettingsState }
+export { Theme, Scroll, KeyboardFocus, Nav, DialState, ContactsState, CallState, SettingsState, MessagesState }
 
 export component PhoneApp inherits Window {
     default-font-family: "Inter";
@@ -47,6 +49,7 @@ export component PhoneApp inherits Window {
     if Nav.page == 1: ContactsPage { }
     if Nav.page == 3: CallPage { }
     if Nav.page == 4: SettingsPage { }
+    if Nav.page == 6: MessagesPage { }
     Sheet {
         items: Nav.options;
         open: Nav.options-open;

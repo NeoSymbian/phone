@@ -15,8 +15,9 @@ contacts = { path = "crates/contacts" }
 phone-core = { path = "crates/phone-core" }
 phone-ui = { path = "crates/phone-ui" }
 # NeoSymbian/telephony (Apache-2.0): the NeoModem contract, dial rules, number matching, the blocklist
-modem-ipc = { git = "https://github.com/NeoSymbian/telephony", rev = "efc18d4af1851b9d5cfed4a9e7f4154441fd000e" }
-phone-rules = { git = "https://github.com/NeoSymbian/telephony", rev = "efc18d4af1851b9d5cfed4a9e7f4154441fd000e" }
+modem-ipc = { git = "https://github.com/NeoSymbian/telephony", rev = "b50763850b47373083e7cea82a3d30f40feb9cea" }
+phone-rules = { git = "https://github.com/NeoSymbian/telephony", rev = "b50763850b47373083e7cea82a3d30f40feb9cea" }
+sms = { git = "https://github.com/NeoSymbian/telephony", rev = "b50763850b47373083e7cea82a3d30f40feb9cea" }
 # NeoSymbian/neoui: the app protocol and (DEP_NEOUI_UI) the shared theme, fonts and components
 neoui-proto = { git = "https://github.com/NeoSymbian/neoui", rev = "4dfdee8e2b9908c745c086541ac39aa0b59f8289" }
 # the same Slint as neoui (one copy in the ROM, no_std)

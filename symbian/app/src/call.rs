@@ -14,7 +14,7 @@ use neoui_proto::ipc as proto;
 use phone_core::calls::{self, Screen, Tracker};
 use phone_core::page::{ContactsView, Page, PhoneView};
 use phone_ui::{CallState, Party, PhoneApp};
-use slint::{Color, ComponentHandle};
+use slint::{Color, ComponentHandle, SharedString};
 
 /// How long the summary stays.
 const SUMMARY_MS: u64 = 2500;
@@ -64,6 +64,42 @@ fn act(ctx: &Ctx, action: &str, value: &str) {
     match action {
         "add" => return ctx.go(Page::Phone(PhoneView::Dial)),
         "contacts" => return ctx.go(Page::Contacts(ContactsView::List)),
+        // Reply with message (mockup 33) on the incoming call; Message on the summary opens the thread
+        "message" => {
+            let number = main.map(|c| String::from(c.number.as_str()));
+            let Some(n) = number.filter(|n| !n.is_empty()) else {
+                return ctx.note("No number to message");
+            };
+            if matches!(screen(ctx), Screen::Incoming(_)) {
+                ctx.ui().global::<CallState>().set_replying(true);
+                return show(ctx);
+            }
+            close(ctx);
+            return crate::msgs::open_thread(ctx, &n, true);
+        }
+        "reply-cancel" => {
+            ctx.ui().global::<CallState>().set_replying(false);
+            return;
+        }
+        "reply" => {
+            ctx.ui().global::<CallState>().set_replying(false);
+            let Some(c) = main.filter(|c| !c.number.as_str().is_empty()) else {
+                return;
+            };
+            let n = String::from(c.number.as_str());
+            // reject as busy first, so the caller hears busy before the text arrives
+            let r = ctx.m.borrow_mut().modem.hangup(c.id);
+            if r < 0 {
+                ctx.note(&format!("Action failed ({r})"));
+            }
+            let replies = ctx.m.borrow().msgs.replies.clone();
+            let i: usize = value.parse().unwrap_or(usize::MAX);
+            match replies.get(i) {
+                Some(text) => crate::msgs::quick_reply(ctx, &n, text),
+                None => crate::msgs::open_thread(ctx, &n, true),
+            }
+            return;
+        }
         "call-again" => {
             let number = main.map(|c| String::from(c.number.as_str()));
             close(ctx);
@@ -259,6 +295,20 @@ pub fn show(ctx: &Ctx) {
     g.set_keypad(keypad);
     g.set_tones(tones.into());
     g.set_duration(duration.into());
+    g.set_can_message(true);
+    let mut replies: Vec<SharedString> = ctx
+        .m
+        .borrow()
+        .msgs
+        .replies
+        .iter()
+        .map(|r| r.as_str().into())
+        .collect();
+    replies.push("Write your own…".into());
+    g.set_replies(crate::ctx::model(replies));
+    if name != "incoming" {
+        g.set_replying(false);
+    }
 }
 
 pub fn chrome(ctx: &Ctx) -> Chrome {

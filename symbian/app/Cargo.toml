@@ -18,6 +18,7 @@ neoapp.workspace = true
 slint.workspace = true
 modem-ipc.workspace = true
 phone-rules.workspace = true
+sms.workspace = true
 contacts.workspace = true
 phone-core.workspace = true
 phone-ui.workspace = true

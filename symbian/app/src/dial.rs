@@ -114,6 +114,13 @@ fn act(ctx: &Ctx, action: &str, value: &str) {
             let id = ctx.m.borrow().dial.detail;
             call_entry(ctx, id);
         }
+        "detail-message" => {
+            let n = entry(ctx, ctx.m.borrow().dial.detail).map(|e| String::from(e.number.as_str()));
+            if let Some(n) = n.filter(|n| !n.is_empty()) {
+                crate::msgs::open_thread(ctx, &n, true);
+            }
+            return;
+        }
         "detail-contact" => {
             let n = entry(ctx, ctx.m.borrow().dial.detail).map(|e| String::from(e.number.as_str()));
             if let Some(n) = n.filter(|n| !n.is_empty()) {

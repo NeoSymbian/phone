@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! MODEMD's client (NeoModem, modem-ipc 2.2): [`Watch`] keeps a NOTIFY outstanding for status changes (owned, so it
+//! MODEMD's client (NeoModem, modem-ipc 2.3): [`Watch`] keeps a NOTIFY outstanding for status changes (owned, so it
 //! can sit in the event loop's select), [`Modem`] sends commands on its own session. Moved from neoui's shell
 //! (symbian/src/phone.rs) when Phone became this app.
 
@@ -7,7 +7,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use e32::ipc::{Session, TIpcArgs, TVersion};
 use e32::sys::{TPtr8, TPtrC8};
-use modem_ipc::{LogEntry, MAX_LOG, Status, manage, op, waiting};
+use modem_ipc::{LogEntry, MAX_LOG, SmsSettings, Status, manage, op, sms, waiting};
 
 /// KErrNotReady: no MODEMD (QEMU/CI) or no session.
 pub const NOT_READY: i32 = -18;
@@ -223,6 +223,64 @@ impl Modem {
     pub fn set_block_list(&mut self, list: &phone_rules::block::List) -> i32 {
         self.bytes(op::BLOCK_SET, &list.encode(false))
     }
+    /// Send `text` to `to`: the new message's id (> 0) or an error (KErrArgument: a number or text it can't send).
+    pub fn sms_send(&mut self, to: &str, text: &str) -> i32 {
+        let (t, x) = (TPtrC8::new(to.as_bytes()), TPtrC8::new(text.as_bytes()));
+        let mut args = TIpcArgs::new();
+        args.desc8(0, &t);
+        args.desc8(1, &x);
+        self.send(op::SMS_SEND, &args)
+    }
+
+    /// The messages changed since revision `since` (whole SmsEntry records; empty when up to date). KErrNotFound:
+    /// read again from 0.
+    pub fn sms_read(&mut self, since: u32) -> Result<Vec<u8>, i32> {
+        let mut b = vec![0u8; sms::READ_ROOM];
+        let n = {
+            let mut d = TPtr8::new(&mut b);
+            let mut args = TIpcArgs::new();
+            args.des8(0, &mut d);
+            args.int(1, since as i32);
+            args.int(2, sms::READ_CHANGES);
+            match self.send(op::SMS_READ, &args) {
+                r if r < 0 => return Err(r),
+                _ => d.len(),
+            }
+        };
+        b.truncate(n);
+        Ok(b)
+    }
+
+    /// Mark read, delete, retry (modem_ipc::sms EDIT_*) message `id` or its thread.
+    pub fn sms_edit(&mut self, action: i32, id: u32) -> i32 {
+        self.ints(op::SMS_EDIT, action, id as i32)
+    }
+
+    /// The message settings (delivery reports, alert, message centre).
+    pub fn sms_settings(&mut self) -> Result<SmsSettings, i32> {
+        let mut b = [0u8; SmsSettings::SIZE];
+        let r = {
+            let mut d = TPtr8::new(&mut b);
+            let mut args = TIpcArgs::new();
+            args.int(0, 0);
+            args.des8(1, &mut d);
+            self.send(op::SMS_SETTINGS, &args)
+        };
+        if r < 0 {
+            return Err(r);
+        }
+        SmsSettings::from_bytes(&b).ok_or(-6)
+    }
+
+    pub fn set_sms_settings(&mut self, s: &SmsSettings) -> i32 {
+        let b = s.to_bytes();
+        let d = TPtrC8::new(&b);
+        let mut args = TIpcArgs::new();
+        args.int(0, 1);
+        args.desc8(1, &d);
+        self.send(op::SMS_SETTINGS, &args)
+    }
+
     /// The contacts' numbers as [`phone_rules::block::known_key`] hashes (for "block unknown numbers").
     pub fn set_known(&mut self, keys: &[u32]) -> i32 {
         let b: Vec<u8> = keys

@@ -3,11 +3,12 @@
 //! (neoui ipc 1.4), the claimed Back/Options, the system keyboard, drawing.
 //!
 //! Areas (one module each, same shape): [`crate::dial`] (Phone: dialer, Recents, details, speed dial),
-//! [`crate::people`] (Contacts), [`crate::call`] (the call screens), [`crate::prefs`] (Settings, Blocked numbers).
+//! [`crate::people`] (Contacts), [`crate::call`] (the call screens), [`crate::prefs`] (Settings, Blocked numbers),
+//! [`crate::msgs`] (Messages).
 //! Each has `State`, `bind` (its global's `act`), `show` (model → UI), `chrome`, `options`/`option`, `action`, `back`.
 
 use crate::modem::Modem;
-use crate::{call, dial, people, prefs};
+use crate::{call, dial, msgs, people, prefs};
 use alloc::string::String;
 use alloc::vec::Vec;
 use contacts::{Book, NameOrder};
@@ -68,6 +69,7 @@ pub struct Model {
     pub people: people::State,
     pub call: call::State,
     pub prefs: prefs::State,
+    pub msgs: msgs::State,
     pub note_until: u64,
     pub visible: bool,
 }
@@ -145,6 +147,7 @@ impl Ctx {
             Page::Contacts(_) => people::back(self),
             Page::Call => call::back(self),
             Page::Settings(_) => prefs::back(self),
+            Page::Messages(_) => msgs::back(self),
         };
         if handled {
             return true;
@@ -165,6 +168,7 @@ impl Ctx {
             Page::Contacts(_) => people::options(self),
             Page::Call => call::options(self),
             Page::Settings(_) => prefs::options(self),
+            Page::Messages(_) => msgs::options(self),
         };
         let ui = self.ui();
         let nav = ui.global::<Nav>();
@@ -180,6 +184,7 @@ impl Ctx {
             Page::Contacts(_) => people::option(self, item),
             Page::Call => call::option(self, item),
             Page::Settings(_) => prefs::option(self, item),
+            Page::Messages(_) => msgs::option(self, item),
         }
     }
 
@@ -190,6 +195,7 @@ impl Ctx {
             Page::Contacts(_) => people::action(self),
             Page::Call => call::action(self),
             Page::Settings(_) => prefs::action(self),
+            Page::Messages(_) => msgs::action(self),
         }
     }
 
@@ -200,6 +206,7 @@ impl Ctx {
             Page::Contacts(_) => people::show(self),
             Page::Call => call::show(self),
             Page::Settings(_) => prefs::show(self),
+            Page::Messages(_) => msgs::show(self),
         }
     }
 
@@ -222,6 +229,7 @@ impl Ctx {
             Page::Contacts(_) => people::chrome(self),
             Page::Call => call::chrome(self),
             Page::Settings(_) => prefs::chrome(self),
+            Page::Messages(_) => msgs::chrome(self),
         };
         if self.chrome.borrow().as_ref() != Some(&chrome) {
             if let Err(e) = self.app.title(&chrome.title) {
@@ -251,7 +259,9 @@ impl Ctx {
             } else {
                 proto::KEYBOARD_HIDDEN
             };
-            let _ = self.app.keyboard(mode);
+            // how much of the surface it covers: Messages keeps its composer above it
+            let h = self.app.keyboard(mode).unwrap_or(0);
+            kf.set_text_h(h as f32);
         }
         self.app.draw()
     }
@@ -263,6 +273,7 @@ impl Ctx {
             Page::Contacts(_) => people::wants_back(self),
             Page::Call => false,
             Page::Settings(_) => prefs::wants_back(self),
+            Page::Messages(_) => msgs::wants_back(self),
         }
     }
 
@@ -285,6 +296,7 @@ impl Ctx {
                 Err(e) => dprintln!("neophone: call log not read ({})", e),
             }
         }
+        msgs::on_status(self);
         call::on_status(self);
         prefs::on_status(self);
         self.show();

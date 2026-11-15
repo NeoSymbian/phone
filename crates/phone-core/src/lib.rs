@@ -8,7 +8,8 @@
 //! - [`calls`]: which call screen shows, from MODEMD's call list;
 //! - [`speed`]: speed dial keys 2..=9 (`phone.speed`);
 //! - [`people`]: the contact list's rows, sections and side index, the card, the editor;
-//! - [`blocking`]: editing the blocklist MODEMD applies, and the contacts' known-number hashes.
+//! - [`blocking`]: editing the blocklist MODEMD applies, and the contacts' known-number hashes;
+//! - [`messages`]: the copy of MODEMD's messages, the conversations, a thread's bubbles, the composer's counter.
 #![no_std]
 
 extern crate alloc;
@@ -16,6 +17,7 @@ extern crate alloc;
 pub mod blocking;
 pub mod calls;
 pub mod dial;
+pub mod messages;
 pub mod page;
 pub mod people;
 pub mod recents;

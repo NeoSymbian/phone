@@ -8,7 +8,8 @@
 //! - `DialState` (ui/phone/): the dialer, Recents, call details, speed dial;
 //! - `ContactsState` (ui/contacts/): the list, search, the card, the editor, the queries;
 //! - `CallState` (ui/call/): every call screen;
-//! - `SettingsState` (ui/settings/): Phone & Contacts settings, Blocked numbers.
+//! - `SettingsState` (ui/settings/): Phone & Contacts settings, Blocked numbers, Quick replies;
+//! - `MessagesState` (ui/messages/): the conversations, a thread, a new message, the blocked messages.
 #![no_std]
 
 extern crate alloc;
