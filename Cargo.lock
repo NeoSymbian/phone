@@ -2570,7 +2570,7 @@ dependencies = [
 [[package]]
 name = "neoui-proto"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/neoui?rev=873dc49b77ac9cf67a40081b7895c33e0bd775d9#873dc49b77ac9cf67a40081b7895c33e0bd775d9"
+source = "git+https://github.com/NeoSymbian/neoui?rev=5533c72b6310f204976fc5896aa95c036a31be34#5533c72b6310f204976fc5896aa95c036a31be34"
 
 [[package]]
 name = "nix"
