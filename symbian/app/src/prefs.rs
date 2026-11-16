@@ -424,6 +424,26 @@ fn close(ctx: &Ctx) {
     ui.global::<KeyboardFocus>().set_open(false);
 }
 
+/// Remove all, asked with the UI server's dialog.
+pub fn query(ctx: &Ctx) -> Option<neoapp::Query> {
+    ctx.ui().global::<SettingsState>().get_query().then(|| {
+        crate::ctx::ask(
+            "Remove all blocked numbers?",
+            "Calls and messages from them come through again.",
+            "Remove all",
+        )
+    })
+}
+
+pub fn answer(ctx: &Ctx, yes: bool) {
+    ctx.ui().global::<SettingsState>().set_query(false);
+    if yes {
+        act(ctx, "remove-all", "");
+    } else {
+        ctx.show();
+    }
+}
+
 /// Back closes a picker, the query, the editor or the add row first.
 pub fn back(ctx: &Ctx) -> bool {
     let ui = ctx.ui();

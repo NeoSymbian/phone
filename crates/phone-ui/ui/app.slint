@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // NeoPhone (NEOPHONE.EXE): Phone, Contacts and Messages as one app behind three home icons, plus the call screens and their
-// settings. Drawn by its own process into the surface the UI server shows between its status bar and toolbar; the
-// title and the toolbar's middle button are the app's (neoui ipc 1.4), set from Rust per page and view.
+// settings. Drawn by its own process into the surface the UI server shows between its status bar and strip; the app
+// describes each page (neoui protocol 1.7: title, primary action, Options, page dots) and the UI server draws them, so
+// no page has a header of its own.
 import "@neoui/fonts/Inter-VariableFont.ttf";
 import "@neoui/fonts/DejaVuSans.ttf";
 import { Theme } from "@neoui/theme.slint";
 import { Scroll } from "@neoui/components/scroll.slint";
 import { KeyboardFocus } from "@neoui/components/keyboard/focus.slint";
 import { Nav } from "nav.slint";
-import { Sheet, Note } from "common.slint";
+import { Note } from "common.slint";
 import { DialState } from "phone/state.slint";
 import { PhonePage } from "phone/pages.slint";
 import { ContactsState } from "contacts/state.slint";
@@ -45,22 +46,24 @@ export component PhoneApp inherits Window {
         KeyboardFocus.open = false;
     }
 
-    if Nav.page == 0: PhonePage { }
-    if Nav.page == 1: ContactsPage { }
-    if Nav.page == 3: CallPage { }
-    if Nav.page == 4: SettingsPage { }
-    if Nav.page == 6: MessagesPage { }
-    Sheet {
-        items: Nav.options;
-        open: Nav.options-open;
-        dismissed => {
-            Nav.act("dismiss-options", "");
+    // Phone | Contacts: a sideways swipe on the dialer or the contact list (the UI server shows the dots beside the
+    // title); taps and the lists' own scrolling still reach the page
+    property <bool> paged: (Nav.page == 0 || Nav.page == 1) && Nav.view == "";
+    SwipeGestureHandler {
+        handle-swipe-left: root.paged && Nav.page == 0;
+        handle-swipe-right: root.paged && Nav.page == 1;
+        swiped => {
+            if (abs(self.current-position.x - self.pressed-position.x) > 60 * Theme.dp) {
+                Nav.act("switch", Nav.page == 0 ? "1" : "0");
+            }
         }
-        selected(i, item) => {
-            Nav.act("option", item);
-        }
-    }
 
+        if Nav.page == 0: PhonePage { }
+        if Nav.page == 1: ContactsPage { }
+        if Nav.page == 3: CallPage { }
+        if Nav.page == 4: SettingsPage { }
+        if Nav.page == 6: MessagesPage { }
+    }
     Note {
         x: (parent.width - self.width) / 2;
         y: parent.height - self.height - 16 * Theme.dp;

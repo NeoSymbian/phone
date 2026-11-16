@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Settings: Phone & Contacts (mockup 23) with its pickers and the voicemail editor, Blocked numbers (mockup 25) with
-// the add row and the Remove all query.
+// the add row (Remove all is the UI server's dialog).
 mod common;
 use phone_ui::{BlockRow, Nav, SettingsState};
 use slint::{Color, ComponentHandle, ModelRc, SharedString, VecModel};
@@ -96,7 +96,4 @@ fn settings() {
     st.set_add_prefix(true);
     s.shoot("settings-add");
     st.set_adding(false);
-
-    st.set_query(true);
-    s.shoot("settings-remove-all");
 }

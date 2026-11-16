@@ -1,117 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// NeoPhone's shared pieces, in the "Belle, modernised" look of the approved mockups (artifact 286acb93): the page
-// switch, the glossy title strip, rows, chips, round actions, the keypad, the popup sheets and the query dialog.
-// Sizes are neoui's dp tokens (@neoui/theme.slint); the status bar and the toolbar belong to the UI server.
+// NeoPhone's shared pieces, in the "Belle, modernised" look of the approved mockups (artifact 286acb93): rows,
+// chips, round actions, the keypad, the popup sheets and the query dialog (titles and the page dots are the UI
+// server's, in its status bar). Sizes are neoui's dp tokens (@neoui/theme.slint); the status bar and the strip
+// belong to the UI server.
 import { Theme } from "@neoui/theme.slint";
 import { Glyph } from "@neoui/components/frame.slint";
 import { Avatar } from "@neoui/components/lists.slint";
 
 export { Avatar, Glyph }
-
-// The Belle title strip, its gloss softened. `trailing` shows an icon at the right (the card's favourite star).
-export component TitleStrip inherits Rectangle {
-    in property <string> title;
-    in property <image> trailing;
-    in property <bool> has-trailing;
-    in property <color> trailing-tint: Theme.text-secondary;
-    callback trailing-clicked;
-    height: Theme.title-h;
-    background: @linear-gradient(180deg, #22262c 0%, #111317 55%, #0b0c0e 100%);
-    Rectangle {
-        y: 0;
-        height: max(1px, Theme.dp / 2);
-        background: #ffffff14;
-    }
-
-    Rectangle {
-        y: parent.height - self.height;
-        height: max(1px, Theme.dp / 2);
-        background: #ffffff12;
-    }
-
-    HorizontalLayout {
-        padding-left: 14 * Theme.dp;
-        padding-right: 6 * Theme.dp;
-        Text {
-            text: title;
-            color: Theme.text;
-            font-size: Theme.font-title;
-            font-weight: 600;
-            vertical-alignment: center;
-            overflow: elide;
-            horizontal-stretch: 1;
-        }
-
-        if has-trailing: Rectangle {
-            width: 48 * Theme.dp;
-            Glyph {
-                source: trailing;
-                colorize: trailing-tint;
-            }
-
-            TouchArea {
-                clicked => {
-                    root.trailing-clicked();
-                }
-            }
-        }
-    }
-}
-
-// Phone | Contacts: the two halves of the app, in the title strip of their main views (mockup 2).
-export component PageSwitch inherits Rectangle {
-    in property <int> current;
-    callback picked(int);
-    height: Theme.title-h;
-    background: @linear-gradient(180deg, #22262c 0%, #111317 55%, #0b0c0e 100%);
-    Rectangle {
-        y: parent.height - self.height;
-        height: max(1px, Theme.dp / 2);
-        background: #ffffff12;
-    }
-
-    Rectangle {
-        x: 14 * Theme.dp;
-        width: parent.width - 28 * Theme.dp;
-        height: 40 * Theme.dp;
-        border-radius: 12 * Theme.dp;
-        background: #0a0b0d;
-        border-width: max(1px, Theme.dp / 2);
-        border-color: #ffffff1a;
-        HorizontalLayout {
-            padding: 3 * Theme.dp;
-            spacing: 3 * Theme.dp;
-            for label[i] in ["Phone", "Contacts"]: Rectangle {
-                border-radius: 9 * Theme.dp;
-                background: i == current ? #33383f : transparent;
-                HorizontalLayout {
-                    alignment: center;
-                    spacing: 7 * Theme.dp;
-                    Glyph {
-                        source: i == 0 ? @image-url("@neoui/icons/sys/call.svg") : @image-url("icons/person.svg");
-                        size: 18 * Theme.dp;
-                        colorize: i == current ? Theme.text : Theme.text-dim;
-                        y: (parent.height - self.height) / 2;
-                    }
-
-                    Text {
-                        text: label;
-                        color: i == current ? Theme.text : Theme.text-dim;
-                        font-size: 15 * Theme.dp;
-                        font-weight: 600;
-                        vertical-alignment: center;
-                    }
-                }
-
-                TouchArea {
-                    clicked => {
-                        root.picked(i);
-                    }
-                }
-            }
-        }
-    }
-}
 
 // A section band ("TODAY", "FAVOURITES", "A").
 export component Band inherits Rectangle {
