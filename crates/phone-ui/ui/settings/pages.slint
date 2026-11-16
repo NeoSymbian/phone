@@ -6,7 +6,7 @@ import { NeoList } from "@neoui/components/scroll.slint";
 import { TextField } from "@neoui/components/controls.slint";
 import { Alphabets } from "@neoui/components/keyboard/glyphs.slint";
 import { Nav } from "../nav.slint";
-import { TitleStrip, Band, Sheet, Query, Avatar, Glyph } from "../common.slint";
+import { Band, Sheet, Avatar, Glyph } from "../common.slint";
 import { SettingsState } from "state.slint";
 
 // The mockups' switch: green when on; `busy` dims it while the network answers.
@@ -567,10 +567,6 @@ export component SettingsPage inherits Rectangle {
     // bakes in the glyphs of contacts' names (Armenian, Cyrillic) for the blocked rows
     Alphabets { }
     VerticalLayout {
-        TitleStrip {
-            title: Nav.view == "blocked" ? "Blocked numbers" : Nav.view == "replies" ? "Quick replies" : "Phone & Contacts";
-        }
-
         if Nav.view == "": Main { }
         if Nav.view == "blocked": Blocked { }
         if Nav.view == "replies": Replies { }
@@ -595,21 +591,6 @@ export component SettingsPage inherits Rectangle {
         selected(i, item) => {
             SettingsState.act(picker, i);
             SettingsState.picker = "";
-        }
-    }
-
-    Query {
-        open: SettingsState.query;
-        question: "Remove all blocked numbers?";
-        detail: "Calls and messages from them come through again.";
-        confirm: "Remove all";
-        danger: true;
-        confirmed => {
-            SettingsState.query = false;
-            SettingsState.act("remove-all", "");
-        }
-        cancelled => {
-            SettingsState.query = false;
         }
     }
 }

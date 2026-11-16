@@ -50,7 +50,7 @@ fn main() -> i32 {
 
 fn run() -> Result<(), i32> {
     let app = App::connect()?;
-    dprintln!("neophone: surface {}x{} mapped", app.width, app.height);
+    dprintln!("neophone: surface {}x{} mapped", app.width, app.height());
     let ui = PhoneApp::new().map_err(|_| -2)?;
     ui.global::<Theme>().set_dp(app.dp);
     ui.show().map_err(|_| -2)?;
@@ -97,15 +97,13 @@ fn run() -> Result<(), i32> {
         let ctx = Rc::downgrade(&ctx);
         nav.on_act(move |action, value| {
             let Some(ctx) = ctx.upgrade() else { return };
-            match action.as_str() {
-                "switch" => ctx.go(if value == "1" {
+            // the only act: "switch" (the Phone | Contacts swipe)
+            if action == "switch" {
+                ctx.go(if value == "1" {
                     Page::Contacts(phone_core::page::ContactsView::List)
                 } else {
                     Page::Phone(PhoneView::Dial)
-                }),
-                "option" => ctx.option(&value),
-                "dismiss-options" => ctx.ui().global::<Nav>().set_options_open(false),
-                _ => {}
+                });
             }
         });
     }
@@ -172,15 +170,19 @@ fn run() -> Result<(), i32> {
                     ctx.back();
                 }
                 Some(AppEvent::Keyboard { h }) => {
-                    // 0 while a field still has the focus: the user put the keyboard away (the toolbar's key);
+                    // 0 while a field still has the focus: the user put the keyboard away (its hide key, Back);
                     // a tap on the field brings it back (it asks again through ctx.sync)
                     let ui = ctx.ui();
                     let kf = ui.global::<phone_ui::KeyboardFocus>();
                     kf.set_dismissed(h == 0 && kf.get_open());
                     kf.set_text_h(h as f32);
                 }
-                Some(AppEvent::Options) => ctx.options(),
-                Some(AppEvent::Action) => ctx.action(),
+                Some(AppEvent::Primary) => ctx.action(),
+                Some(AppEvent::Cancel) => {
+                    ctx.back();
+                }
+                Some(AppEvent::Option { i }) => ctx.option_at(i),
+                Some(AppEvent::Answer { i }) => ctx.answer(i == 0),
                 Some(AppEvent::Input(input)) => match input {
                     InputEvent::Key { code, down: true } => ctx.app.dispatch_key(code),
                     InputEvent::Key { .. } => {}

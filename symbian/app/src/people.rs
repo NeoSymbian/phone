@@ -43,7 +43,6 @@ enum Dialog {
 
 /// The layout's fixed heights (dp) the side index's room comes from: the title strip, the search field, my card,
 /// the favourites band and strip.
-const TITLE_H: f32 = 52.0;
 const SEARCH_H: f32 = 64.0;
 const MY_CARD_H: f32 = 52.0;
 const FAVOURITES_H: f32 = 30.0 + 94.0;
@@ -126,6 +125,14 @@ fn contact(m: &crate::ctx::Model, who: Who) -> Option<&Contact> {
 }
 
 /// The card's contact (a clone, so nothing stays borrowed).
+/// The open card's first number, which its Call dials (none on my own card).
+fn card_number(m: &crate::ctx::Model) -> Option<String> {
+    if m.people.card == Who::Mine {
+        return None;
+    }
+    contact(m, m.people.card).and_then(|c| c.numbers.first().map(|(_, n)| n.clone()))
+}
+
 fn card(ctx: &Ctx) -> Option<Contact> {
     let m = ctx.m.borrow();
     contact(&m, m.people.card).cloned()
@@ -560,7 +567,7 @@ fn show_list(ctx: &Ctx) {
             row(c, first)
         })
         .collect();
-    let list_h = ctx.app.height as f32 / ctx.app.dp - TITLE_H - SEARCH_H;
+    let list_h = ctx.app.height() as f32 / ctx.app.dp - SEARCH_H;
     let header = MY_CARD_H
         + if favourites.is_empty() {
             0.0
@@ -704,7 +711,8 @@ fn show_dialog(ctx: &Ctx) {
     let ui = ctx.ui();
     let st = ui.global::<ContactsState>();
     st.set_picking(picking.map_or(-1, |p| p as i32));
-    st.set_dialog_open(d != Dialog::None);
+    // Block has check boxes: the app draws it; the deletes are the UI server's dialog ([`query`])
+    st.set_dialog_open(d == Dialog::Block);
     let (question, detail, button, boxes): (String, String, &str, &[&str]) = match d {
         Dialog::None => return,
         Dialog::Delete => (
@@ -733,12 +741,54 @@ fn show_dialog(ctx: &Ctx) {
     st.set_dialog_checked(model(checks[..boxes.len()].to_vec()));
 }
 
+/// The delete questions, asked with the UI server's dialog.
+pub fn query(ctx: &Ctx) -> Option<neoapp::Query> {
+    let d = ctx.m.borrow().people.dialog;
+    let name = || {
+        let m = ctx.m.borrow();
+        card(ctx).map(|c| c.title(m.order)).unwrap_or_default()
+    };
+    match d {
+        Dialog::Delete => {
+            let key = {
+                let m = ctx.m.borrow();
+                card(ctx).and_then(|c| logic::speed_key(&m.prefs.speed, &c))
+            };
+            Some(crate::ctx::ask(
+                &format!("Delete {}?", name()),
+                &logic::delete_detail(key),
+                "Delete",
+            ))
+        }
+        Dialog::DeleteMarked => {
+            let n = ctx.m.borrow().people.marked.len();
+            Some(crate::ctx::ask(
+                &format!("Delete {n} contacts?"),
+                "",
+                "Delete",
+            ))
+        }
+        Dialog::None | Dialog::Block => None,
+    }
+}
+
+pub fn answer(ctx: &Ctx, yes: bool) {
+    if yes {
+        confirm(ctx);
+    } else {
+        ctx.m.borrow_mut().people.dialog = Dialog::None;
+    }
+    ctx.show();
+}
+
 pub fn chrome(ctx: &Ctx) -> Chrome {
     let m = ctx.m.borrow();
     let p = &m.people;
     let Page::Contacts(v) = m.page else {
         return Chrome::titled("Contacts");
     };
+    // the status bar's title is the page's only heading (docs gestures.md rule 11)
+    let marked = alloc::format!("{} marked", p.marked.len());
     let title = match v {
         ContactsView::Card if p.card == Who::Mine => "My card",
         ContactsView::Card => "Contact",
@@ -747,9 +797,12 @@ pub fn chrome(ctx: &Ctx) -> Chrome {
             Who::Contact(_) => "Edit contact",
             Who::Mine => "My card",
         },
-        _ => "Contacts",
+        ContactsView::Mark if p.marked.is_empty() => "Mark contacts",
+        ContactsView::Mark => &marked,
+        ContactsView::List => "Contacts",
     };
     let chrome = Chrome::titled(title);
+    let has_number = card_number(&m).is_some();
     if p.dialog != Dialog::None {
         return chrome;
     }
@@ -758,7 +811,9 @@ pub fn chrome(ctx: &Ctx) -> Chrome {
     }
     match v {
         ContactsView::List => chrome.with(proto::TOOL_PERSON_ADD, 0, "New"),
-        ContactsView::Mark => chrome.with(proto::TOOL_DELETE, 0, "Delete"),
+        ContactsView::Mark => chrome.with(proto::TOOL_DELETE, proto::TOOLBAR_CANCEL, "Delete"),
+        // a card's main action is a call; Edit is in Options then
+        ContactsView::Card if has_number => chrome.with(proto::TOOL_CALL, 0, "Call"),
         ContactsView::Card => chrome.with(proto::TOOL_EDIT, 0, "Edit"),
         ContactsView::Edit => chrome.with(proto::TOOL_CHECK, proto::TOOLBAR_CANCEL, "Save"),
     }
@@ -779,7 +834,7 @@ pub fn options(ctx: &Ctx) -> Vec<&'static str> {
             "Export vCards",
             "Settings",
         ],
-        ContactsView::Mark => alloc::vec!["Export marked", "Cancel"],
+        ContactsView::Mark => alloc::vec!["Export marked"],
         ContactsView::Card => {
             let Some(c) = card(ctx) else {
                 return Vec::new();
@@ -787,7 +842,11 @@ pub fn options(ctx: &Ctx) -> Vec<&'static str> {
             if ctx.m.borrow().people.card == Who::Mine {
                 return alloc::vec!["Delete", "Send as vCard"];
             }
-            let mut v = alloc::vec!["Delete"];
+            let mut v = alloc::vec![];
+            if !c.numbers.is_empty() {
+                v.push("Edit"); // Call is the strip's
+            }
+            v.push("Delete");
             if let Some((_, n)) = c.numbers.first() {
                 v.push("Speed dial");
                 v.push(if prefs::blocked(ctx, n).is_some() {
@@ -844,6 +903,10 @@ pub fn option(ctx: &Ctx, item: &str) {
             ctx.go(Page::Contacts(ContactsView::List));
         }
         "Delete" => ask(ctx, Dialog::Delete),
+        "Edit" => {
+            let who = ctx.m.borrow().people.card;
+            edit(ctx, who, "");
+        }
         "Block contact" => ask(ctx, Dialog::Block),
         "Unblock contact" => unblock(ctx),
         "Speed dial" => {
@@ -885,7 +948,13 @@ pub fn action(ctx: &Ctx) {
         Some(ContactsView::List) => edit(ctx, Who::New, ""),
         Some(ContactsView::Mark) if marked == 0 => ctx.note("Mark contacts first"),
         Some(ContactsView::Mark) => ask(ctx, Dialog::DeleteMarked),
-        Some(ContactsView::Card) => edit(ctx, who, ""),
+        Some(ContactsView::Card) => {
+            let number = card_number(&ctx.m.borrow());
+            match number {
+                Some(n) => dial::place_call(ctx, &n),
+                None => edit(ctx, who, ""),
+            }
+        }
         Some(ContactsView::Edit) => save_edit(ctx),
         None => {}
     }

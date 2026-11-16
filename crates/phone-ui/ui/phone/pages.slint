@@ -4,7 +4,7 @@
 import { Theme } from "@neoui/theme.slint";
 import { NeoList } from "@neoui/components/scroll.slint";
 import { Nav } from "../nav.slint";
-import { PageSwitch, Band, RowAction, PillButton, KeyGrid, Sheet, Avatar, Glyph } from "../common.slint";
+import { Band, RowAction, PillButton, KeyGrid, Sheet, Avatar, Glyph } from "../common.slint";
 import { DialState, LogRow, MatchRow } from "state.slint";
 import { Alphabets } from "@neoui/components/keyboard/glyphs.slint";
 
@@ -271,13 +271,6 @@ component NumberLine inherits Rectangle {
 
 // Mockups 3, 4: the dialer.
 component Dialer inherits VerticalLayout {
-    PageSwitch {
-        current: 0;
-        picked(i) => {
-            Nav.act("switch", i);
-        }
-    }
-
     NeoList {
         vertical-stretch: 1;
         VerticalLayout {

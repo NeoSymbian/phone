@@ -553,19 +553,25 @@ pub fn show(ctx: &Ctx) {
         }
         None => g.set_details_open(false),
     }
-    let (q, detail, confirm) = match s.query {
-        Query::None => ("", "", ""),
+}
+
+/// The question open, asked with the UI server's dialog.
+pub fn query(ctx: &Ctx) -> Option<neoapp::Query> {
+    let (q, detail) = match ctx.m.borrow().msgs.query {
+        Query::None => return None,
         Query::DeleteAll => (
             "Delete all conversations?",
             "Every message is deleted from the phone.",
-            "Delete",
         ),
-        Query::DeleteThread => ("Delete this conversation?", "", "Delete"),
-        Query::ClearBlocked => ("Delete all blocked messages?", "", "Delete"),
+        Query::DeleteThread => ("Delete this conversation?", ""),
+        Query::ClearBlocked => ("Delete all blocked messages?", ""),
     };
-    g.set_query(q.into());
-    g.set_query_detail(detail.into());
-    g.set_query_confirm(confirm.into());
+    Some(crate::ctx::ask(q, detail, "Delete"))
+}
+
+pub fn answer(ctx: &Ctx, yes: bool) {
+    act(ctx, if yes { "confirm" } else { "cancel" }, "");
+    ctx.show();
 }
 
 pub fn chrome(ctx: &Ctx) -> Chrome {

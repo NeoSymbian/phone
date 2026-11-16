@@ -5,21 +5,12 @@ import { Theme } from "@neoui/theme.slint";
 import { NeoList } from "@neoui/components/scroll.slint";
 import { Alphabets } from "@neoui/components/keyboard/glyphs.slint";
 import { Nav } from "../nav.slint";
-import { Avatar, Band, Glyph, PageSwitch, Query, RowAction, Sheet, TitleStrip } from "../common.slint";
+import { Avatar, Band, Glyph, Query, RowAction, Sheet } from "../common.slint";
 import { ContactsState } from "state.slint";
 import { BlockedBanner, Field, HitRow, InfoRow, LabelChip, Minus, PersonRow, SideIndex } from "parts.slint";
 
 component ListView inherits VerticalLayout {
     property <bool> marking: Nav.view == "mark";
-    if !marking: PageSwitch {
-        current: 1;
-        picked(i) => {
-            Nav.act("switch", i);
-        }
-    }
-    if marking: TitleStrip {
-        title: ContactsState.marked == 0 ? "Mark contacts" : ContactsState.marked + " marked";
-    }
     if !marking: Rectangle {
         height: 64 * Theme.dp;
         Field {
@@ -200,16 +191,6 @@ component ListView inherits VerticalLayout {
 }
 
 component CardView inherits VerticalLayout {
-    TitleStrip {
-        title: ContactsState.card-mine ? "My card" : "Contact";
-        has-trailing: !ContactsState.card-mine;
-        trailing: ContactsState.card-favourite ? @image-url("../icons/star_full.svg") : @image-url("@neoui/icons/sys/star.svg");
-        trailing-tint: ContactsState.card-favourite ? Theme.warn : Theme.text-secondary;
-        trailing-clicked => {
-            ContactsState.act("favourite", "");
-        }
-    }
-
     NeoList {
         vertical-stretch: 1;
         VerticalLayout {
@@ -229,16 +210,38 @@ component CardView inherits VerticalLayout {
                         }
                     }
 
-                    Text {
-                        text: ContactsState.card-name;
-                        font-family: "DejaVu Sans";
-                        color: Theme.text;
-                        font-size: 24 * Theme.dp;
-                        font-weight: 600;
-                        horizontal-alignment: center;
-                        overflow: elide;
-                        height: self.preferred-height + 10 * Theme.dp;
-                        vertical-alignment: bottom;
+                    // the name, and beside it the favourite star (no header: the status bar has the title)
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: 6 * Theme.dp;
+                        padding-left: 14 * Theme.dp;
+                        padding-right: 14 * Theme.dp;
+                        Text {
+                            text: ContactsState.card-name;
+                            font-family: "DejaVu Sans";
+                            color: Theme.text;
+                            font-size: 24 * Theme.dp;
+                            font-weight: 600;
+                            overflow: elide;
+                            height: self.preferred-height + 10 * Theme.dp;
+                            vertical-alignment: bottom;
+                        }
+
+                        if !ContactsState.card-mine: Rectangle {
+                            width: 36 * Theme.dp;
+                            Glyph {
+                                y: parent.height - self.height - 2 * Theme.dp;
+                                source: ContactsState.card-favourite ? @image-url("../icons/star_full.svg") : @image-url("@neoui/icons/sys/star.svg");
+                                size: 24 * Theme.dp;
+                                colorize: ContactsState.card-favourite ? Theme.warn : Theme.text-secondary;
+                            }
+
+                            TouchArea {
+                                clicked => {
+                                    ContactsState.act("favourite", "");
+                                }
+                            }
+                        }
                     }
 
                     if ContactsState.card-company != "": Text {
@@ -322,10 +325,6 @@ component CardView inherits VerticalLayout {
 }
 
 component EditView inherits VerticalLayout {
-    TitleStrip {
-        title: ContactsState.edit-title;
-    }
-
     NeoList {
         vertical-stretch: 1;
         VerticalLayout {

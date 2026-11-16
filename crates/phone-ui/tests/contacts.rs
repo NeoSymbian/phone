@@ -142,23 +142,11 @@ fn contacts() {
     let px = s.shoot("contacts-list");
     assert!(px.iter().any(|&p| p != 0));
 
-    // 22: Options over the list
-    nav.set_options(strings(&[
-        "New contact",
-        "Mark several",
-        "Import vCards",
-        "Export vCards",
-        "Settings",
-    ]));
-    nav.set_options_open(true);
-    s.shoot("contacts-options");
-    nav.set_options_open(false);
-
     // a finger on the Latin "•": its letters in a bubble
     let dp = 3.0;
     // the index starts beside the first section: below my card (52) and the favourites (30 + 94)
-    let list_top = (52.0 + 64.0 + 52.0 + 30.0 + 94.0) * dp;
-    let pitch = (1902.0 - list_top - 8.0 * dp) / 21.0;
+    let list_top = (64.0 + 52.0 + 30.0 + 94.0) * dp;
+    let pitch = (1917.0 - list_top - 8.0 * dp) / 21.0;
     tap(
         &s,
         1080.0 - 11.0 * dp,
@@ -194,7 +182,7 @@ fn contacts() {
             detail_post: "ahit & Co".into(),
         },
     ]));
-    tap(&s, 200.0 * dp, (52.0 + 32.0) * dp, true);
+    tap(&s, 200.0 * dp, 32.0 * dp, true); // the search field, right under the status bar
     s.shoot("contacts-search");
     c.set_search("".into());
 
@@ -235,13 +223,7 @@ fn contacts() {
     c.set_can_email(true);
     s.shoot("contacts-card");
 
-    // 21: the delete query
-    c.set_dialog_question("Delete Ava Lindqvist?".into());
-    c.set_dialog_detail("Its speed dial key 2 is cleared too.".into());
-    c.set_dialog_confirm("Delete".into());
-    c.set_dialog_open(true);
-    s.shoot("contacts-delete");
-    c.set_dialog_open(false);
+    // 21: the delete question is the UI server's dialog (neoui protocol 1.7)
 
     // 26: a blocked contact (no Message app yet)
     c.set_can_message(false);
@@ -299,10 +281,10 @@ fn contacts() {
             number: "".into(),
         },
     ]));
-    tap(&s, 200.0 * dp, (52.0 + 14.0 + 22.0) * dp, true);
+    tap(&s, 200.0 * dp, (14.0 + 22.0) * dp, true);
     s.shoot("contacts-edit");
     // typing into a number writes it into the model the app reads on Save
-    tap(&s, 200.0 * dp, 348.0 * dp, true);
+    tap(&s, 200.0 * dp, (348.0 - 52.0) * dp, true); // no title strip above the form
     for ch in "5550199".chars() {
         let text = SharedString::from(ch.encode_utf8(&mut [0; 4]) as &str);
         s.ui.window()
@@ -311,7 +293,7 @@ fn contacts() {
             .dispatch_event(WindowEvent::KeyReleased { text });
     }
     assert_eq!(c.get_edit_numbers().row_data(1).unwrap().number, "5550199");
-    tap(&s, 200.0 * dp, (52.0 + 14.0 + 22.0) * dp, true);
+    tap(&s, 200.0 * dp, (14.0 + 22.0) * dp, true);
 
     // 20: the number-type picker
     c.set_picking(0);

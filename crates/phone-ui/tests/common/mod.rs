@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! The snapshot harness: one software-rendered `PhoneApp` per test binary (Slint's platform is per process), drawn
-//! at the Pixel's app area (1080 x 1902: 2160 minus the UI server's status bar and toolbar, dp = 3) into
+//! at the Pixel's app area (1080 x 1917: 2160 minus the UI server's status bar and strip, dp = 3) into
 //! `snapshots/<name>.png` at the repo root, for side-by-side review with the approved mockups.
 #![allow(dead_code)]
 
@@ -13,7 +13,7 @@ use slint::platform::{Platform, WindowAdapter};
 use std::rc::Rc;
 
 pub const W: u32 = 1080;
-pub const H: u32 = 1902;
+pub const H: u32 = 1917;
 
 struct Host(Rc<MinimalSoftwareWindow>);
 

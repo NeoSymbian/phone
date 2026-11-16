@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! The app's state and the moves every area shares: which page shows, the note, the title and toolbar button
-//! (neoui ipc 1.4), the claimed Back/Options, the system keyboard, drawing.
+//! The app's state and the moves every area shares: which page shows, the note, the page the UI server draws the
+//! chrome for (neoui protocol 1.7: title, Back, the strip's buttons, the Options sheet, dialogs), the system
+//! keyboard, drawing.
 //!
 //! Areas (one module each, same shape): [`crate::dial`] (Phone: dialer, Recents, details, speed dial),
 //! [`crate::people`] (Contacts), [`crate::call`] (the call screens), [`crate::prefs`] (Settings, Blocked numbers),
@@ -17,21 +18,38 @@ use e32::dprintln;
 use modem_ipc::{LogEntry, Status};
 use neoapp::App;
 use neoui_proto::ipc as proto;
-use phone_core::page::Page;
+use phone_core::page::{ContactsView, Page, PhoneView};
 use phone_rules::block;
 use phone_ui::{KeyboardFocus, Nav, PhoneApp};
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 
+/// A dialog for the UI server: `text` (and `detail` on its own line, if it fits), a red `confirm` and Cancel.
+pub fn ask(text: &str, detail: &str, confirm: &str) -> neoapp::Query {
+    let mut t = String::from(text);
+    if !detail.is_empty() && t.len() + 1 + detail.len() <= neoui_proto::page::TEXT_MAX {
+        t.push('\n');
+        t.push_str(detail);
+    }
+    while t.len() > neoui_proto::page::TEXT_MAX {
+        t.pop();
+    }
+    neoapp::Query {
+        text: t,
+        buttons: alloc::vec![confirm.into(), "Cancel".into()],
+        destructive: true,
+    }
+}
+
 /// How long a note stays.
 pub const NOTE_MS: u64 = 3000;
 
-/// The UI server's title and the toolbar's middle button for the current view.
+/// A view's title and primary action, as each area describes it (made into the UI server's page by [`Ctx::sync`]).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Chrome {
     pub title: String,
     /// `proto::TOOL_*`
     pub icon: i32,
-    /// `proto::TOOLBAR_*` bits
+    /// `proto::TOOLBAR_*` bits: `TOOLBAR_CANCEL` a form (the strip's Cancel), `TOOLBAR_EMPTY` no action
     pub style: i32,
     pub label: String,
 }
@@ -78,9 +96,10 @@ pub struct Ctx {
     pub app: App,
     pub ui: slint::Weak<PhoneApp>,
     pub m: RefCell<Model>,
-    /// what the UI server shows for us now (sent only when it changes)
-    chrome: RefCell<Option<Chrome>>,
-    nav_claim: Cell<i32>,
+    /// the page the UI server shows for us now (sent only when it changes)
+    shown: RefCell<Option<neoapp::Page>>,
+    /// the dialog the UI server shows for us now
+    asked: RefCell<Option<neoapp::Query>>,
     /// the keyboard last asked of the UI server: (open, KeyboardFocus.seq, mode)
     keyboard: Cell<(bool, i32, i32)>,
 }
@@ -99,8 +118,8 @@ impl Ctx {
             app,
             ui: ui.as_weak(),
             m: RefCell::new(m),
-            chrome: RefCell::new(None),
-            nav_claim: Cell::new(-1),
+            shown: RefCell::new(None),
+            asked: RefCell::new(None),
             keyboard: Cell::new((false, 0, 0)),
         }
     }
@@ -129,7 +148,6 @@ impl Ctx {
         let (p, v) = page.nav();
         nav.set_page(p);
         nav.set_view(v.into());
-        nav.set_options_open(false);
         dprintln!("neophone: page {} view {}", p, v);
         self.show();
     }
@@ -137,11 +155,6 @@ impl Ctx {
     /// Back inside the app: the area's own step (closing a search, a dialog), else the page's parent. False when Back
     /// leaves the app (it is then not claimed, and the UI server goes home).
     pub fn back(&self) -> bool {
-        let ui = self.ui();
-        if ui.global::<Nav>().get_options_open() {
-            ui.global::<Nav>().set_options_open(false);
-            return true;
-        }
         let handled = match self.page() {
             Page::Phone(_) => dial::back(self),
             Page::Contacts(_) => people::back(self),
@@ -161,24 +174,30 @@ impl Ctx {
         }
     }
 
-    /// Options: open (or close) the sheet with the current view's items.
-    pub fn options(&self) {
-        let items = match self.page() {
+    /// The current view's Options items (the UI server's sheet).
+    fn options(&self) -> Vec<&'static str> {
+        match self.page() {
             Page::Phone(_) => dial::options(self),
             Page::Contacts(_) => people::options(self),
             Page::Call => call::options(self),
             Page::Settings(_) => prefs::options(self),
             Page::Messages(_) => msgs::options(self),
-        };
-        let ui = self.ui();
-        let nav = ui.global::<Nav>();
-        let open = !nav.get_options_open() && !items.is_empty();
-        nav.set_options(strings(&items));
-        nav.set_options_open(open);
+        }
+    }
+
+    /// Item `i` of the sheet the UI server showed.
+    pub fn option_at(&self, i: u16) {
+        let item = self
+            .shown
+            .borrow()
+            .as_ref()
+            .and_then(|p| p.options.get(usize::from(i)).cloned());
+        if let Some(item) = item {
+            self.option(&item);
+        }
     }
 
     pub fn option(&self, item: &str) {
-        self.ui().global::<Nav>().set_options_open(false);
         match self.page() {
             Page::Phone(_) => dial::option(self, item),
             Page::Contacts(_) => people::option(self, item),
@@ -188,7 +207,18 @@ impl Ctx {
         }
     }
 
-    /// The toolbar's middle button.
+    /// The UI server's dialog was answered: `yes` is its first (confirming) button.
+    pub fn answer(&self, yes: bool) {
+        *self.asked.borrow_mut() = None; // the UI server closed it
+        match self.page() {
+            Page::Contacts(_) => people::answer(self, yes),
+            Page::Settings(_) => prefs::answer(self, yes),
+            Page::Messages(_) => msgs::answer(self, yes),
+            Page::Phone(_) | Page::Call => {}
+        }
+    }
+
+    /// The strip's primary action.
     pub fn action(&self) {
         match self.page() {
             Page::Phone(_) => dial::action(self),
@@ -216,7 +246,7 @@ impl Ctx {
         self.ui().global::<Nav>().set_note(text.into());
     }
 
-    /// The UI server's chrome, the claimed buttons and the keyboard as the view needs them; then draw.
+    /// The UI server's page and the keyboard as the view needs them; then draw.
     pub fn sync(&self) -> Result<(), i32> {
         let now = e32::time::millis();
         let ui = self.ui();
@@ -224,28 +254,28 @@ impl Ctx {
         if !nav.get_note().is_empty() && now >= self.m.borrow().note_until {
             nav.set_note("".into());
         }
-        let chrome = match self.page() {
-            Page::Phone(_) => dial::chrome(self),
-            Page::Contacts(_) => people::chrome(self),
-            Page::Call => call::chrome(self),
-            Page::Settings(_) => prefs::chrome(self),
-            Page::Messages(_) => msgs::chrome(self),
-        };
-        if self.chrome.borrow().as_ref() != Some(&chrome) {
-            if let Err(e) = self.app.title(&chrome.title) {
-                dprintln!("neophone: title not set ({})", e);
+        let page = self.page_now();
+        if self.shown.borrow().as_ref() != Some(&page) {
+            if let Err(e) = self.app.page(&page) {
+                dprintln!("neophone: page not set ({})", e);
             }
-            if let Err(e) = self.app.toolbar(chrome.icon, chrome.style, &chrome.label) {
-                dprintln!("neophone: toolbar not set ({})", e);
-            }
-            *self.chrome.borrow_mut() = Some(chrome);
+            *self.shown.borrow_mut() = Some(page);
         }
-        // Back is ours while there is somewhere to go back to inside the app (or a sheet to close)
-        let back = nav.get_options_open() || self.page().back().is_some() || self.wants_back();
-        let claim = i32::from(back) | 2;
-        if self.nav_claim.get() != claim {
-            self.nav_claim.set(claim);
-            let _ = self.app.claim_nav(back, true);
+        let query = match self.page() {
+            Page::Contacts(_) => people::query(self),
+            Page::Settings(_) => prefs::query(self),
+            Page::Messages(_) => msgs::query(self),
+            Page::Phone(_) | Page::Call => None,
+        };
+        if *self.asked.borrow() != query {
+            let r = match &query {
+                Some(q) => self.app.query(q),
+                None => self.app.close_query(),
+            };
+            if let Err(e) = r {
+                dprintln!("neophone: dialog not shown ({})", e);
+            }
+            *self.asked.borrow_mut() = query;
         }
         // a field took the focus (or was tapped after the keyboard was put away): ask for its keyboard (letters,
         // number pad, phone pad); none focused: hide it
@@ -264,6 +294,36 @@ impl Ctx {
             kf.set_text_h(h as f32);
         }
         self.app.draw()
+    }
+
+    /// What the UI server draws around the current view: its title; Back stays in the app while there is somewhere to
+    /// go back to (or something Back closes); the primary action; Cancel on a form; the Options items; the call
+    /// screens full screen; the Phone | Contacts dots.
+    fn page_now(&self) -> neoapp::Page {
+        let chrome = match self.page() {
+            Page::Phone(_) => dial::chrome(self),
+            Page::Contacts(_) => people::chrome(self),
+            Page::Call => call::chrome(self),
+            Page::Settings(_) => prefs::chrome(self),
+            Page::Messages(_) => msgs::chrome(self),
+        };
+        let empty = chrome.style & proto::TOOLBAR_EMPTY != 0;
+        neoapp::Page {
+            primary: (chrome.icon != proto::TOOL_NONE && !empty).then_some(neoapp::Action {
+                icon: chrome.icon,
+                label: chrome.label,
+            }),
+            title: chrome.title,
+            can_back: self.page().back().is_some() || self.wants_back(),
+            cancel: chrome.style & proto::TOOLBAR_CANCEL != 0,
+            options: self.options().into_iter().map(String::from).collect(),
+            full: self.page() == Page::Call,
+            dots: match self.page() {
+                Page::Phone(PhoneView::Dial) => Some((2, 0)),
+                Page::Contacts(ContactsView::List) => Some((2, 1)),
+                _ => None,
+            },
+        }
     }
 
     /// An area has something Back closes on a root view (a search, a dialog).

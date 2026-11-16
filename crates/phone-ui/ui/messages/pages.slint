@@ -7,7 +7,7 @@ import { NeoList } from "@neoui/components/scroll.slint";
 import { KeyboardFocus } from "@neoui/components/keyboard/focus.slint";
 import { Alphabets } from "@neoui/components/keyboard/glyphs.slint";
 import { Nav } from "../nav.slint";
-import { Avatar, Band, Glyph, Query, Sheet, TitleStrip } from "../common.slint";
+import { Avatar, Band, Glyph, Sheet } from "../common.slint";
 import { Field } from "../contacts/parts.slint";
 import { MessagesState } from "state.slint";
 
@@ -134,10 +134,6 @@ component ThreadLine inherits Rectangle {
 
 // The conversations (mockup 28).
 component ListView inherits VerticalLayout {
-    TitleStrip {
-        title: "Messages";
-    }
-
     Rectangle {
         height: 64 * Theme.dp;
         Field {
@@ -370,10 +366,6 @@ component Counter inherits Text {
 // A thread (mockup 29): the bubbles, newest at the bottom, then the composer.
 component ThreadView inherits VerticalLayout {
     in property <string> title;
-    TitleStrip {
-        title: root.title;
-    }
-
     list := NeoList {
         vertical-stretch: 1;
         init => {
@@ -455,10 +447,6 @@ component RecipientChip inherits Rectangle {
 
 // A new message (mockup 32): To with the chosen recipients and the matching contacts, then the composer.
 component NewView inherits VerticalLayout {
-    TitleStrip {
-        title: "New message";
-    }
-
     HorizontalLayout {
         padding-left: 14 * Theme.dp;
         padding-right: 14 * Theme.dp;
@@ -562,10 +550,6 @@ component NewView inherits VerticalLayout {
 
 // The blocked messages (mockup 35), kept 7 days.
 component BlockedView inherits VerticalLayout {
-    TitleStrip {
-        title: "Blocked messages";
-    }
-
     NeoList {
         vertical-stretch: 1;
         VerticalLayout {
@@ -775,17 +759,4 @@ export component MessagesPage inherits Rectangle {
     }
 
     if MessagesState.details-open: Details { }
-    Query {
-        open: MessagesState.query != "";
-        question: MessagesState.query;
-        detail: MessagesState.query-detail;
-        confirm: MessagesState.query-confirm;
-        danger: true;
-        confirmed => {
-            MessagesState.act("confirm", "");
-        }
-        cancelled => {
-            MessagesState.act("cancel", "");
-        }
-    }
 }
