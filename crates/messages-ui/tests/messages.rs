@@ -296,18 +296,19 @@ fn boards() {
     m.set_threads(model(threads()));
     // as the shell draws Messages' entries (neoui render set_notes): the newest expanded with its avatar, time, two
     // lines and Reply / Call; the older one a row
-    let note = |title: &str, earlier: &str, text: &str, initials: &str, rgb: u32, time: &str, expanded| {
-        ShadeNote {
-            title: title.into(),
-            earlier: earlier.into(),
-            text: text.into(),
-            actions: strings(&["Reply", "Call"]),
-            initials: initials.into(),
-            tint: Color::from_argb_encoded(0xff00_0000 | rgb),
-            time: time.into(),
-            expanded,
-        }
-    };
+    let note =
+        |title: &str, earlier: &str, text: &str, initials: &str, rgb: u32, time: &str, expanded| {
+            ShadeNote {
+                title: title.into(),
+                earlier: earlier.into(),
+                text: text.into(),
+                actions: strings(&["Reply", "Call"]),
+                initials: initials.into(),
+                tint: Color::from_argb_encoded(0xff00_0000 | rgb),
+                time: time.into(),
+                expanded,
+            }
+        };
     s.ui.set_missed(2);
     s.ui.set_notes(model(vec![
         note(
@@ -319,7 +320,15 @@ fn boards() {
             "10:05",
             true,
         ),
-        note("Ben Okafor", "", "The build passed on the phone!", "", 0, "09:48", false),
+        note(
+            "Ben Okafor",
+            "",
+            "The build passed on the phone!",
+            "",
+            0,
+            "09:48",
+            false,
+        ),
     ]));
     s.shoot("p2-msg-notify");
 
