@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! The snapshot harness: one software-rendered `MessagesApp` per test binary (Slint's platform is per process), drawn
+//! The snapshot harness: one software-rendered `MessagesPreview` (the app and the shell's toast and shade) per test binary (Slint's platform is per process), drawn
 //! at the Pixel's app area (1080 x 2037: 2160 minus the UI server's status bar and the Gestures band, dp = 3) into
 //! `snapshots/<name>.png` at the repo root, for side-by-side review with the approved mockups.
 #![allow(dead_code)]
 
-use messages_ui::{MessagesApp, Theme};
+use messages_ui::{MessagesPreview, Theme};
 use slint::ComponentHandle;
 use slint::platform::software_renderer::{
     MinimalSoftwareWindow, PremultipliedRgbaColor, RepaintBufferType, TargetPixel,
@@ -47,7 +47,8 @@ impl TargetPixel for Px {
 
 pub struct Shot {
     window: Rc<MinimalSoftwareWindow>,
-    pub ui: MessagesApp,
+    pub ui: MessagesPreview,
+    h: std::cell::Cell<u32>,
 }
 
 /// The app at the Pixel's size; call once per test binary.
@@ -55,27 +56,60 @@ pub fn app() -> Shot {
     let window = MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer);
     slint::platform::set_platform(Box::new(Host(window.clone())))
         .expect("one platform per process");
-    let ui = MessagesApp::new().expect("MessagesApp");
+    let ui = MessagesPreview::new().expect("MessagesPreview");
     ui.global::<Theme>().set_dp(3.0);
     window.set_size(slint::PhysicalSize::new(W, H));
     ui.show().expect("show");
-    Shot { window, ui }
+    Shot {
+        window,
+        ui,
+        h: std::cell::Cell::new(H),
+    }
 }
 
 impl Shot {
+    /// The app area's height in px: 2037 in Gestures, 1917 in Buttons mode (639 dp).
+    pub fn resize(&self, h: u32) {
+        self.h.set(h);
+        self.window.set_size(slint::PhysicalSize::new(W, h));
+    }
+
+    /// A finger from (x0, y) to (x1, y), in px, in steps.
+    pub fn drag(&self, x0: f32, x1: f32, y: f32) {
+        use slint::platform::{PointerEventButton, WindowEvent};
+        let w = self.window.window();
+        let at = |x: f32| slint::LogicalPosition::new(x, y);
+        w.dispatch_event(WindowEvent::PointerPressed {
+            position: at(x0),
+            button: PointerEventButton::Left,
+        });
+        for i in 1..=10 {
+            NOW.set(NOW.get() + core::time::Duration::from_millis(16));
+            slint::platform::update_timers_and_animations();
+            w.dispatch_event(WindowEvent::PointerMoved {
+                position: at(x0 + (x1 - x0) * i as f32 / 10.0),
+            });
+        }
+        w.dispatch_event(WindowEvent::PointerReleased {
+            position: at(x1),
+            button: PointerEventButton::Left,
+        });
+    }
+
     /// Draw and save `snapshots/<name>.png`; returns the pixels for checks.
     pub fn shoot(&self, name: &str) -> Vec<u32> {
         NOW.set(NOW.get() + core::time::Duration::from_secs(1));
         slint::platform::update_timers_and_animations();
         self.window.request_redraw();
-        let mut px = vec![Px(0); (W * H) as usize];
+        let h = self.h.get();
+        let mut px = vec![Px(0); (W * h) as usize];
         self.window.draw_if_needed(|r| {
             r.render(&mut px, W as usize);
         });
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../snapshots");
         std::fs::create_dir_all(&root).unwrap();
         let file = std::fs::File::create(root.join(format!("{name}.png"))).unwrap();
-        let mut enc = png::Encoder::new(std::io::BufWriter::new(file), W, H);
+        let mut enc = png::Encoder::new(std::io::BufWriter::new(file), W, h);
         enc.set_color(png::ColorType::Rgb);
         enc.set_depth(png::BitDepth::Eight);
         let mut w = enc.write_header().unwrap();

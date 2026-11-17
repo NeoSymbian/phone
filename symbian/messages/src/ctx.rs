@@ -191,7 +191,7 @@ impl Ctx {
 
     /// The header's search field changed (each keystroke; "" when it closed).
     pub fn searched(&self, query: &str) {
-        let _ = query; // the area's own search field, until it moves into the header
+        msgs::searched(self, query);
     }
 
     /// The UI server's dialog was answered: `yes` is its first (confirming) button.
@@ -213,6 +213,13 @@ impl Ctx {
     /// A toast for 3 s (the shell's NOTE, above the key row or band).
     pub fn note(&self, text: &str) {
         if let Err(e) = self.app.note(&phone_common::ui::note_text(text), "") {
+            dprintln!("neomsg: note not shown ({})", e);
+        }
+    }
+
+    /// A toast with Undo (the shell's NOTE): a tap on it comes as `AppEvent::NoteAction`.
+    pub fn note_undo(&self, text: &str) {
+        if let Err(e) = self.app.note(&phone_common::ui::note_text(text), "Undo") {
             dprintln!("neomsg: note not shown ({})", e);
         }
     }
@@ -298,7 +305,8 @@ impl Ctx {
             nav.set_actions(phone_common::ui::model(acts));
         }
         nav.set_search(chrome.search.is_some());
-        nav.set_search_hint(chrome.search.unwrap_or("Search").into());
+        // the list leads with its own 🔍 (its header action), which opens the kit's search field
+        nav.set_search_hint(chrome.search.unwrap_or("Search messages").into());
         nav.set_selected(chrome.selected);
         let sel: Vec<_> = chrome
             .selection

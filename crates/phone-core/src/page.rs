@@ -82,6 +82,10 @@ pub enum MessagesView {
     Thread,
     New,
     Blocked,
+    /// the archived conversations
+    Archived,
+    /// a message's details (from its menu in the thread)
+    Details,
 }
 
 impl Page {
@@ -127,8 +131,10 @@ impl Page {
             Page::Contacts(ContactsView::List | ContactsView::Mark) => contacts::LIST,
             Page::Contacts(ContactsView::Card) => contacts::CARD,
             Page::Contacts(ContactsView::Edit) => contacts::NEW,
-            Page::Messages(MessagesView::List | MessagesView::Blocked) => messages::LIST,
-            Page::Messages(MessagesView::Thread) => messages::THREAD,
+            Page::Messages(MessagesView::List | MessagesView::Blocked | MessagesView::Archived) => {
+                messages::LIST
+            }
+            Page::Messages(MessagesView::Thread | MessagesView::Details) => messages::THREAD,
             Page::Messages(MessagesView::New) => messages::NEW,
         }
     }
@@ -170,6 +176,8 @@ impl Page {
                     MessagesView::Thread => "thread",
                     MessagesView::New => "new",
                     MessagesView::Blocked => "blocked",
+                    MessagesView::Archived => "archived",
+                    MessagesView::Details => "details",
                 },
             ),
         }
@@ -188,6 +196,7 @@ impl Page {
             }
             Page::Settings(SettingsView::Main) => None,
             Page::Messages(MessagesView::List) => None,
+            Page::Messages(MessagesView::Details) => Some(Page::Messages(MessagesView::Thread)),
             Page::Messages(_) => Some(Page::Messages(MessagesView::List)),
         }
     }
@@ -234,6 +243,14 @@ mod tests {
         assert_eq!(
             Page::Messages(MessagesView::Thread).back(),
             Some(Page::Messages(MessagesView::List))
+        );
+        assert_eq!(
+            Page::Messages(MessagesView::Details).back(),
+            Some(Page::Messages(MessagesView::Thread))
+        );
+        assert_eq!(
+            Page::Messages(MessagesView::Archived).nav(),
+            (6, "archived")
         );
     }
 }

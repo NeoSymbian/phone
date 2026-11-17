@@ -1,41 +1,72 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Messages (mockups 28-36): the conversations (""), a thread ("thread") with the composer, a new message ("new"), the
-// blocked messages ("blocked"); the held bubble's sheet, the details, the queries. While the keyboard is up the page
-// ends above it (KeyboardFocus.text-h), so the composer stays in view.
+// Messages (NEOPHONE v2 p2-msg-*): the conversations ("") and the archived ones ("archived") with swipe actions and
+// selection mode, a thread ("thread") with the composer, a message's details ("details"), a new message ("new"), the
+// blocked messages ("blocked"); the menu at the finger. The header and the footer are the frame's. While the keyboard
+// is up the page ends above it (KeyboardFocus.text-h), so the composer stays in view.
 import { Theme } from "@neoui/theme.slint";
 import { NeoList } from "@neoui/components/scroll.slint";
 import { KeyboardFocus } from "@neoui/components/keyboard/focus.slint";
 import { Alphabets } from "@neoui/components/keyboard/glyphs.slint";
+import { FieldInput } from "@neoui/components/controls.slint";
+import {
+    Avatar, Glyph, Bubble, Composer, RowActions, Menu, SectionHeader, EmptyState, Card
+} from "@neoui/kit.slint";
 import { Nav } from "@phone-shared/nav.slint";
-import { Avatar, Band, Glyph, Sheet } from "@phone-shared/common.slint";
-import { Field } from "@phone-shared/field.slint";
-import { MessagesState } from "state.slint";
+import { MessagesState, ThreadRow } from "state.slint";
 
-// An avatar: a contact's initials, else a grey disc with a # (or the block glyph).
-component Face inherits Rectangle {
-    in property <bool> known;
-    in property <string> initials;
-    in property <color> tint;
-    in property <bool> block;
-    width: Theme.avatar;
-    height: self.width;
-    if known: Avatar {
-        initials: initials;
-        tint: tint;
+// A tap, or a hold of 500 ms (at the finger: `at-x`, `at-y` in window coordinates).
+component Press inherits TouchArea {
+    callback tap;
+    callback hold;
+    out property <length> at-x: self.absolute-position.x + self.pressed-x;
+    out property <length> at-y: self.absolute-position.y + self.pressed-y;
+    property <bool> fired;
+    changed pressed => {
+        if self.pressed {
+            self.fired = false;
+        }
     }
-    if !known: Rectangle {
-        border-radius: self.width / 2;
-        background: #2b3038;
-        Glyph {
-            source: block ? @image-url("@phone-shared/icons/block.svg") : @image-url("@phone-shared/icons/hash.svg");
-            size: 22 * Theme.dp;
-            colorize: Theme.text-secondary;
+    clicked => {
+        if !self.fired {
+            root.tap();
+        }
+    }
+    Timer {
+        interval: 500ms;
+        running: root.pressed && !root.fired;
+        triggered => {
+            root.fired = true;
+            root.hold();
         }
     }
 }
 
-// The unread count.
-component Badge inherits Rectangle {
+// An avatar: a contact's initials, else a grey disc with a person.
+component Face inherits Rectangle {
+    in property <bool> known;
+    in property <string> initials;
+    in property <color> tint;
+    in property <length> size: Theme.avatar;
+    width: self.size;
+    height: self.size;
+    if known: Avatar {
+        size: root.size;
+        initials: root.initials;
+        tint: root.tint;
+    }
+    if !known: Rectangle {
+        border-radius: self.width / 2;
+        background: #4b5563;
+        Glyph {
+            source: @image-url("@phone-shared/icons/person.svg");
+            size: 24 * Theme.dp;
+            colorize: white;
+        }
+    }
+}
+
+// The unread count (blue).
+component Count inherits Rectangle {
     in property <int> count;
     height: 20 * Theme.dp;
     width: max(self.height, n.preferred-width + 12 * Theme.dp);
@@ -43,63 +74,80 @@ component Badge inherits Rectangle {
     background: Theme.accent;
     n := Text {
         text: count;
-        color: Theme.text;
+        color: white;
         font-size: 12 * Theme.dp;
         font-weight: 700;
-        horizontal-alignment: center;
-        vertical-alignment: center;
     }
 }
 
-// A conversation row (mockup 28).
+component Hairline inherits Rectangle {
+    height: max(1px, Theme.dp / 3);
+    background: Theme.header-hairline;
+}
+
+// A conversation row (p2-msg-list, p2-msg-select).
 component ThreadLine inherits Rectangle {
-    in property <string> name;
-    in property <string> initials;
-    in property <color> tint;
-    in property <bool> known;
-    in property <string> snippet;
-    in property <string> when;
-    in property <int> unread;
-    in property <bool> failed;
-    in property <bool> divider;
-    callback clicked;
+    in property <ThreadRow> item;
+    in property <bool> selecting;
+    callback tap;
+    callback hold;
     height: 72 * Theme.dp;
-    background: t.pressed ? Theme.pressed : transparent;
-    if divider: Rectangle {
-        x: 70 * Theme.dp;
-        y: 0;
-        width: parent.width - self.x;
-        height: max(1px, Theme.dp / 2);
-        background: Theme.hairline;
+    background: press.pressed ? Theme.pressed : item.checked ? Theme.selected : Theme.bg;
+    press := Press {
+        tap => {
+            root.tap();
+        }
+        hold => {
+            root.hold();
+        }
     }
+
     HorizontalLayout {
-        padding-left: 14 * Theme.dp;
-        padding-right: 14 * Theme.dp;
-        spacing: 12 * Theme.dp;
-        Face {
-            y: (parent.height - self.height) / 2;
-            known: known;
-            initials: initials;
-            tint: tint;
+        padding-left: 16 * Theme.dp;
+        padding-right: 16 * Theme.dp;
+        spacing: 14 * Theme.dp;
+        if selecting: VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 24 * Theme.dp;
+                height: self.width;
+                border-radius: self.width / 2;
+                background: item.checked ? Theme.accent : transparent;
+                border-width: item.checked ? 0 : 2 * Theme.dp;
+                border-color: Theme.text-dim;
+                if item.checked: Glyph {
+                    source: @image-url("@neoui/icons/sys/check.svg");
+                    size: 16 * Theme.dp;
+                    colorize: white;
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Face {
+                known: item.known;
+                initials: item.initials;
+                tint: item.tint;
+            }
         }
 
         VerticalLayout {
             alignment: center;
-            spacing: 2 * Theme.dp;
+            spacing: 3 * Theme.dp;
             horizontal-stretch: 1;
             Text {
-                text: name;
+                text: item.name;
                 font-family: "DejaVu Sans";
                 color: Theme.text;
                 font-size: 16 * Theme.dp;
-                font-weight: unread > 0 ? 700 : 400;
+                font-weight: item.unread > 0 ? 600 : 500;
                 overflow: elide;
             }
 
             Text {
-                text: failed ? "⚠ Not sent · tap to retry" : snippet;
+                text: item.failed ? "⚠ Not sent · tap to retry" : item.snippet;
                 font-family: "DejaVu Sans";
-                color: failed ? Theme.danger : unread > 0 ? Theme.text : Theme.text-secondary;
+                color: item.failed ? Theme.danger-text : item.unread > 0 ? Theme.text : Theme.text-secondary;
                 font-size: 13.5 * Theme.dp;
                 overflow: elide;
             }
@@ -107,145 +155,68 @@ component ThreadLine inherits Rectangle {
 
         VerticalLayout {
             alignment: center;
-            spacing: 6 * Theme.dp;
+            spacing: 5 * Theme.dp;
             Text {
-                text: when;
-                color: unread > 0 ? Theme.accent : Theme.text-dim;
-                font-size: 13.5 * Theme.dp;
-                font-weight: unread > 0 ? 600 : 400;
+                text: item.when;
+                color: item.unread > 0 ? Theme.accent : Theme.text-dim;
+                font-size: 12.5 * Theme.dp;
+                font-weight: item.unread > 0 ? 600 : 400;
                 horizontal-alignment: right;
             }
 
-            if unread > 0: HorizontalLayout {
+            HorizontalLayout {
                 alignment: end;
-                Badge {
-                    count: unread;
+                height: 20 * Theme.dp;
+                if item.unread > 0: Count {
+                    count: item.unread;
                 }
             }
         }
     }
 
-    t := TouchArea {
-        clicked => {
-            root.clicked();
-        }
+    Hairline {
+        x: (selecting ? 112 : 74) * Theme.dp;
+        y: parent.height - self.height;
+        width: parent.width - self.x;
     }
 }
 
-// The conversations (mockup 28).
-component ListView inherits VerticalLayout {
-    Rectangle {
-        height: 64 * Theme.dp;
-        Field {
-            x: 14 * Theme.dp;
-            width: parent.width - 28 * Theme.dp;
-            search: true;
-            clearable: true;
-            placeholder: "Search messages";
-            text <=> MessagesState.search;
-            edited(t) => {
-                MessagesState.act("search", t);
-            }
+// The conversations, or the archived ones (p2-msg-list, -swipe, -select): swipe a row left for Archive (Unarchive)
+// and Delete; hold one for selection mode.
+component ListView inherits Rectangle {
+    in property <bool> archived;
+    if MessagesState.empty != "": EmptyState {
+        icon: archived ? @image-url("@neoui/icons/sys/archive.svg") : @image-url("@neoui/icons/sys/message.svg");
+        title: MessagesState.empty;
+        action: archived ? "" : "New message";
+        acted => {
+            MessagesState.act("new", "");
         }
-    }
-
-    if MessagesState.empty: Text {
-        height: 140 * Theme.dp;
-        text: "No messages yet\nTap New to write one";
-        color: Theme.text-dim;
-        font-size: 15 * Theme.dp;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-        wrap: word-wrap;
     }
     NeoList {
-        vertical-stretch: 1;
         VerticalLayout {
             alignment: start;
-            for t[i] in MessagesState.threads: ThreadLine {
-                name: t.name;
-                initials: t.initials;
-                tint: t.tint;
-                known: t.known;
-                snippet: t.snippet;
-                when: t.when;
-                unread: t.unread;
-                failed: t.failed;
-                divider: i > 0;
-                clicked => {
-                    MessagesState.act("open", i);
+            padding-top: 4 * Theme.dp;
+            for t[i] in MessagesState.threads: RowActions {
+                height: 72 * Theme.dp;
+                actions: MessagesState.selecting ? [] : [
+                    {
+                        icon: @image-url("@neoui/icons/sys/archive.svg"),
+                        label: root.archived ? "Unarchive" : "Archive"
+                    },
+                    { icon: @image-url("@neoui/icons/sys/delete.svg"), label: "Delete" },
+                ];
+                action(a) => {
+                    MessagesState.act(a == 1 ? "delete" : root.archived ? "unarchive" : "archive", i);
                 }
-            }
-        }
-    }
-}
-
-// One bubble with its day band: ours blue on the right with ✓ sent / ✓✓ delivered, theirs grey on the left. A tap on
-// a failed one or a hold of 0.6 s opens its sheet. Placed by hand in its row (no layout), so its width follows the
-// row's without a binding loop.
-component BubbleLine inherits VerticalLayout {
-    in property <string> text;
-    in property <bool> mine;
-    in property <string> time;
-    in property <int> state;
-    in property <string> band;
-    callback held;
-    callback tapped;
-    property <duration> down-at;
-    property <length> pad: 12 * Theme.dp;
-    if band != "": Text {
-        height: 26 * Theme.dp;
-        text: band;
-        color: Theme.text-dim;
-        font-size: 12 * Theme.dp;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-    }
-    Rectangle {
-        height: bubble.height;
-        bubble := Rectangle {
-            width: min(max(body.preferred-width, meta.preferred-width) + 2 * root.pad, parent.width * 0.76);
-            height: inner.preferred-height;
-            x: root.mine ? parent.width - self.width : 0;
-            border-radius: 18 * Theme.dp;
-            background: root.state == 4 ? #3a2326 : root.mine ? Theme.bubble-out : Theme.bubble-in;
-            border-width: root.state == 4 ? max(1px, Theme.dp / 2) : 0;
-            border-color: Theme.danger.with-alpha(0.5);
-            inner := VerticalLayout {
-                padding-left: root.pad;
-                padding-right: root.pad;
-                padding-top: 8 * Theme.dp;
-                padding-bottom: 6 * Theme.dp;
-                spacing: 2 * Theme.dp;
-                body := Text {
-                    text: root.text;
-                    font-family: "DejaVu Sans";
-                    color: Theme.text;
-                    font-size: 15.5 * Theme.dp;
-                    wrap: word-wrap;
-                }
-
-                meta := Text {
-                    text: root.state == 4 ? "⚠ Not sent · tap" : root.state == 1 ? root.time + " · Sending"
-                        : root.state == 3 ? root.time + "  ✓✓" : root.state == 2 ? root.time + "  ✓" : root.time;
-                    font-family: "DejaVu Sans";
-                    color: root.state == 4 ? #ff8a8d : #ffffff9e;
-                    font-size: 11.5 * Theme.dp;
-                    horizontal-alignment: right;
-                }
-            }
-
-            TouchArea {
-                pointer-event(e) => {
-                    if e.kind == PointerEventKind.down {
-                        root.down-at = animation-tick();
+                ThreadLine {
+                    item: t;
+                    selecting: MessagesState.selecting;
+                    tap => {
+                        MessagesState.act(MessagesState.selecting ? "toggle" : "open", i);
                     }
-                }
-                clicked => {
-                    if animation-tick() - root.down-at >= 600ms {
-                        root.held();
-                    } else {
-                        root.tapped();
+                    hold => {
+                        MessagesState.act(MessagesState.selecting ? "toggle" : "select", i);
                     }
                 }
             }
@@ -253,119 +224,44 @@ component BubbleLine inherits VerticalLayout {
     }
 }
 
-// The composer: grows to four lines; Send is blue once there is something to send.
-component Composer inherits Rectangle {
-    // KeyboardFocus.seq when the input took the focus
-    property <int> took;
-    height: row.preferred-height;
-    function reopen() {
-        KeyboardFocus.seq += 1;
-        root.took = KeyboardFocus.seq;
-        KeyboardFocus.dismissed = false;
-    }
+// The day band before a bubble ("Today").
+component DayBand inherits Text {
+    height: 24 * Theme.dp;
+    color: Theme.text-dim;
+    font-size: 12 * Theme.dp;
+    horizontal-alignment: center;
+    vertical-alignment: center;
+}
+
+// The composer with its hairline; Send stays in the content (D14).
+component ComposerBar inherits VerticalLayout {
+    in property <bool> counter: true;
     init => {
         if MessagesState.autofocus {
             MessagesState.autofocus = false;
-            input.focus();
+            composer.focus-field();
         }
     }
-    Rectangle {
-        y: 0;
-        height: max(1px, Theme.dp / 2);
-        background: #ffffff0f;
+    Hairline { }
+    composer := Composer {
+        text <=> MessagesState.draft;
+        counter: root.counter ? MessagesState.counter : "";
+        enabled: MessagesState.can-send;
+        edited(t) => {
+            MessagesState.act("draft", t);
+        }
+        send => {
+            MessagesState.act("send", "");
+        }
     }
-
-    row := HorizontalLayout {
-        padding-left: 12 * Theme.dp;
-        padding-right: 12 * Theme.dp;
-        padding-top: 8 * Theme.dp;
-        padding-bottom: 4 * Theme.dp;
-        spacing: 10 * Theme.dp;
-        alignment: stretch;
-        Rectangle {
-            horizontal-stretch: 1;
-            height: max(44 * Theme.dp, min(input.preferred-height + 20 * Theme.dp, 120 * Theme.dp));
-            border-radius: 22 * Theme.dp;
-            background: Theme.field;
-            border-width: max(1px, Theme.dp / 2);
-            border-color: input.has-focus ? Theme.accent : #ffffff0f;
-            clip: true;
-            if MessagesState.draft == "": Text {
-                x: 16 * Theme.dp;
-                text: "Text message";
-                color: Theme.text-dim;
-                font-size: 15.5 * Theme.dp;
-                vertical-alignment: center;
-            }
-            input := TextInput {
-                x: 16 * Theme.dp;
-                y: 10 * Theme.dp;
-                width: parent.width - 32 * Theme.dp;
-                height: parent.height - 20 * Theme.dp;
-                text <=> MessagesState.draft;
-                font-family: "DejaVu Sans";
-                font-size: 15.5 * Theme.dp;
-                color: Theme.text;
-                single-line: false;
-                wrap: word-wrap;
-                changed has-focus => {
-                    if self.has-focus {
-                        root.reopen();
-                        KeyboardFocus.mode = 1;
-                        KeyboardFocus.open = true;
-                    } else if root.took == KeyboardFocus.seq {
-                        KeyboardFocus.open = false;
-                    }
-                }
-                edited => {
-                    MessagesState.act("draft", self.text);
-                }
-            }
-
-            if KeyboardFocus.dismissed && input.has-focus: TouchArea {
-                clicked => {
-                    root.reopen();
-                }
-            }
-        }
-
-        VerticalLayout {
-            alignment: end;
-            Rectangle {
-                width: 44 * Theme.dp;
-                height: self.width;
-                border-radius: self.width / 2;
-                background: send.pressed ? Theme.accent.darker(20%) : Theme.accent;
-                opacity: MessagesState.can-send ? 1 : 0.4;
-                Glyph {
-                    source: @image-url("@neoui/icons/sys/send.svg");
-                    size: 20 * Theme.dp;
-                }
-
-                send := TouchArea {
-                    enabled: MessagesState.can-send;
-                    clicked => {
-                        MessagesState.act("send", "");
-                    }
-                }
-            }
-        }
+    if !root.counter || MessagesState.counter == "": Rectangle {
+        height: (root.counter ? 4 : 8) * Theme.dp;
     }
 }
 
-// The counter under the composer while typing.
-component Counter inherits Text {
-    text: MessagesState.counter;
-    height: MessagesState.counter == "" ? 4 * Theme.dp : 22 * Theme.dp;
-    color: MessagesState.counter == "Too long" ? Theme.danger : Theme.text-dim;
-    font-size: 12 * Theme.dp;
-    horizontal-alignment: right;
-    vertical-alignment: top;
-}
-
-// A thread (mockup 29): the bubbles, newest at the bottom, then the composer.
+// A thread (p2-msg-thread, p2-msg-options): the bubbles, newest at the bottom, then the composer. A tap on a failed
+// bubble retries it; a hold opens its menu at the finger.
 component ThreadView inherits VerticalLayout {
-    in property <string> title;
     list := NeoList {
         vertical-stretch: 1;
         init => {
@@ -382,338 +278,377 @@ component ThreadView inherits VerticalLayout {
             min-height: list.height;
             padding-left: 12 * Theme.dp;
             padding-right: 12 * Theme.dp;
-            padding-top: 6 * Theme.dp;
+            padding-top: 10 * Theme.dp;
             padding-bottom: 10 * Theme.dp;
             spacing: 6 * Theme.dp;
-            for b in MessagesState.bubbles: BubbleLine {
-                text: b.text;
-                mine: b.mine;
-                time: b.time;
-                state: b.state;
-                band: b.band;
-                held => {
-                    MessagesState.act("hold", b.id);
+            for b in MessagesState.bubbles: VerticalLayout {
+                spacing: 6 * Theme.dp;
+                if b.band != "": DayBand {
+                    text: b.band;
                 }
-                tapped => {
-                    MessagesState.act("tap", b.id);
+                bubble := Bubble {
+                    text: b.text;
+                    meta: b.meta;
+                    mine: b.mine;
+                    failed: b.failed;
+                    tapped => {
+                        if b.failed {
+                            MessagesState.act("retry", b.id);
+                        }
+                    }
+                    long-pressed(x, y) => {
+                        MessagesState.menu-x = self.absolute-position.x + x;
+                        MessagesState.menu-y = self.absolute-position.y + y;
+                        MessagesState.act("hold", b.id);
+                    }
                 }
             }
         }
     }
 
-    Composer { }
-
-    HorizontalLayout {
-        padding-right: 18 * Theme.dp;
-        Counter { }
-    }
+    ComposerBar { }
 }
 
-// A chosen recipient in To.
+// A message's details (p2-msg-details): the bubble, then its lines in a card.
+component DetailsView inherits VerticalLayout {
+    VerticalLayout {
+        padding-left: 12 * Theme.dp;
+        padding-right: 12 * Theme.dp;
+        padding-top: 30 * Theme.dp;
+        padding-bottom: 12 * Theme.dp;
+        Bubble {
+            text: MessagesState.details.text;
+            meta: MessagesState.details.meta;
+            mine: MessagesState.details.mine;
+            failed: MessagesState.details.failed;
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: 12 * Theme.dp;
+        padding-right: 12 * Theme.dp;
+        Card {
+            clip: true;
+            VerticalLayout {
+                for k[i] in MessagesState.details-keys: Rectangle {
+                    min-height: 64 * Theme.dp;
+                    VerticalLayout {
+                        alignment: center;
+                        padding-left: 16 * Theme.dp;
+                        padding-right: 16 * Theme.dp;
+                        padding-top: 10 * Theme.dp;
+                        padding-bottom: 10 * Theme.dp;
+                        spacing: 3 * Theme.dp;
+                        Text {
+                            text: k;
+                            color: Theme.text-secondary;
+                            font-size: 13.5 * Theme.dp;
+                        }
+
+                        Text {
+                            text: MessagesState.details-values[i];
+                            font-family: "DejaVu Sans";
+                            color: Theme.text;
+                            font-size: 16 * Theme.dp;
+                            wrap: word-wrap;
+                        }
+                    }
+
+                    if i < MessagesState.details-keys.length - 1: Hairline {
+                        x: 16 * Theme.dp;
+                        y: parent.height - self.height;
+                        width: parent.width - self.x;
+                    }
+                }
+            }
+        }
+    }
+
+    Rectangle { }
+}
+
+// A chosen recipient in To; its ✕ takes it out.
 component RecipientChip inherits Rectangle {
     in property <string> text;
     callback removed;
-    height: 30 * Theme.dp;
+    height: 32 * Theme.dp;
     width: row.preferred-width;
     border-radius: self.height / 2;
-    background: Theme.accent.with-alpha(0.22);
+    background: #1f3a66;
     row := HorizontalLayout {
-        padding-left: 10 * Theme.dp;
-        padding-right: 6 * Theme.dp;
+        padding-left: 12 * Theme.dp;
+        padding-right: 4 * Theme.dp;
         spacing: 4 * Theme.dp;
         Text {
             text: root.text;
             font-family: "DejaVu Sans";
-            color: #cfe0ff;
-            font-size: 14 * Theme.dp;
-            font-weight: 600;
+            color: Theme.text;
+            font-size: 14.5 * Theme.dp;
             vertical-alignment: center;
         }
 
-        Glyph {
-            source: @image-url("@neoui/icons/sys/close.svg");
-            size: 15 * Theme.dp;
-            colorize: #cfe0ff;
-            y: (parent.height - self.height) / 2;
-        }
-    }
+        Rectangle {
+            width: 24 * Theme.dp;
+            Glyph {
+                source: @image-url("@neoui/icons/sys/close.svg");
+                size: 16 * Theme.dp;
+                colorize: Theme.text-secondary;
+            }
 
-    TouchArea {
-        clicked => {
-            root.removed();
+            TouchArea {
+                clicked => {
+                    root.removed();
+                }
+            }
         }
     }
 }
 
-// A new message (mockup 32): To with the chosen recipients and the matching contacts, then the composer.
+// A new message (p2-msg-new): To with the chosen recipients and the contacts matching what is typed, then the composer.
 component NewView inherits VerticalLayout {
-    HorizontalLayout {
-        padding-left: 14 * Theme.dp;
-        padding-right: 14 * Theme.dp;
-        padding-top: 10 * Theme.dp;
-        padding-bottom: 6 * Theme.dp;
-        spacing: 10 * Theme.dp;
-        Text {
-            text: "To";
-            color: Theme.text-dim;
-            font-size: 15 * Theme.dp;
-            vertical-alignment: center;
-        }
-
-        VerticalLayout {
-            horizontal-stretch: 1;
-            spacing: 6 * Theme.dp;
-            if MessagesState.recipients.length > 0: Flickable {
-                height: 30 * Theme.dp;
-                content-width: max(self.width, chips.preferred-width);
-                chips := HorizontalLayout {
-                    spacing: 6 * Theme.dp;
-                    alignment: start;
-                    for r[i] in MessagesState.recipients: RecipientChip {
-                        text: r;
-                        removed => {
-                            MessagesState.act("unpick", i);
-                        }
-                    }
-                }
-            }
-            Field {
-                placeholder: MessagesState.recipients.length > 0 ? "Add another" : "Name or number";
-                text <=> MessagesState.to-text;
-                edited(t) => {
-                    MessagesState.act("to", t);
-                }
-            }
-        }
-    }
-
-    NeoList {
-        vertical-stretch: 1;
-        VerticalLayout {
-            alignment: start;
-            for s[i] in MessagesState.suggestions: Rectangle {
-                height: 72 * Theme.dp;
-                background: st.pressed ? Theme.pressed : transparent;
-                if i > 0: Rectangle {
-                    x: 70 * Theme.dp;
-                    y: 0;
-                    width: parent.width - self.x;
-                    height: max(1px, Theme.dp / 2);
-                    background: Theme.hairline;
-                }
-                HorizontalLayout {
-                    padding-left: 14 * Theme.dp;
-                    padding-right: 14 * Theme.dp;
-                    spacing: 12 * Theme.dp;
-                    Avatar {
-                        y: (parent.height - self.height) / 2;
-                        initials: s.initials;
-                        tint: s.tint;
-                    }
-
-                    VerticalLayout {
-                        alignment: center;
-                        spacing: 2 * Theme.dp;
-                        Text {
-                            text: s.name;
-                            font-family: "DejaVu Sans";
-                            color: Theme.text;
-                            font-size: 16 * Theme.dp;
-                            overflow: elide;
-                        }
-
-                        Text {
-                            text: s.detail;
-                            color: Theme.text-secondary;
-                            font-size: 13.5 * Theme.dp;
-                            overflow: elide;
-                        }
-                    }
-                }
-
-                st := TouchArea {
-                    clicked => {
-                        MessagesState.act("pick", i);
-                    }
-                }
-            }
-        }
-    }
-
-    Composer { }
-
-    HorizontalLayout {
-        padding-right: 18 * Theme.dp;
-        Counter { }
-    }
-}
-
-// The blocked messages (mockup 35), kept 7 days.
-component BlockedView inherits VerticalLayout {
-    NeoList {
-        vertical-stretch: 1;
-        VerticalLayout {
-            alignment: start;
-            if MessagesState.blocked.length == 0: Text {
-                height: 140 * Theme.dp;
-                text: "No blocked messages";
-                color: Theme.text-dim;
-                font-size: 15 * Theme.dp;
-                horizontal-alignment: center;
+    Rectangle {
+        min-height: 56 * Theme.dp;
+        HorizontalLayout {
+            padding-left: 16 * Theme.dp;
+            padding-right: 16 * Theme.dp;
+            padding-top: 8 * Theme.dp;
+            padding-bottom: 8 * Theme.dp;
+            spacing: 8 * Theme.dp;
+            Text {
+                text: "To";
+                color: Theme.text-secondary;
+                font-size: 14 * Theme.dp;
                 vertical-alignment: center;
             }
-            for b[i] in MessagesState.blocked: VerticalLayout {
-                if b.band != "": Band {
-                    text: b.band.to-uppercase();
+
+            Rectangle {
+                width: 4 * Theme.dp;
+            }
+
+            // shortcut: the chips do not wrap to a second line; enough for a few recipients
+            for r[i] in MessagesState.recipients: VerticalLayout {
+                alignment: center;
+                RecipientChip {
+                    text: r;
+                    removed => {
+                        MessagesState.act("unpick", i);
+                    }
+                }
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+                if MessagesState.to-text == "": Text {
+                    width: parent.width;
+                    text: MessagesState.recipients.length > 0 ? "Add another" : "Name or number";
+                    color: Theme.text-dim;
+                    font-size: 16 * Theme.dp;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+                FieldInput {
+                    width: parent.width;
+                    height: parent.height;
+                    text <=> MessagesState.to-text;
+                    edited => {
+                        MessagesState.act("to", self.text);
+                    }
+                }
+            }
+        }
+
+        Hairline {
+            y: parent.height - self.height;
+        }
+    }
+
+    for s[i] in MessagesState.suggestions: Rectangle {
+        height: 64 * Theme.dp;
+        background: st.pressed ? Theme.pressed : transparent;
+        HorizontalLayout {
+            padding-left: 16 * Theme.dp;
+            padding-right: 16 * Theme.dp;
+            spacing: 14 * Theme.dp;
+            VerticalLayout {
+                alignment: center;
+                Avatar {
+                    size: 40 * Theme.dp;
+                    initials: s.initials;
+                    tint: s.tint;
+                }
+            }
+
+            VerticalLayout {
+                alignment: center;
+                spacing: 3 * Theme.dp;
+                HorizontalLayout {
+                    Text {
+                        text: s.pre;
+                        font-family: "DejaVu Sans";
+                        color: Theme.text;
+                        font-size: 16 * Theme.dp;
+                        font-weight: 500;
+                    }
+
+                    Text {
+                        text: s.hit;
+                        font-family: "DejaVu Sans";
+                        color: Theme.accent;
+                        font-size: 16 * Theme.dp;
+                        font-weight: 500;
+                    }
+
+                    Text {
+                        text: s.post;
+                        font-family: "DejaVu Sans";
+                        color: Theme.text;
+                        font-size: 16 * Theme.dp;
+                        font-weight: 500;
+                        overflow: elide;
+                        horizontal-stretch: 1;
+                    }
+                }
+
+                Text {
+                    text: s.detail;
+                    color: Theme.text-secondary;
+                    font-size: 13.5 * Theme.dp;
+                    overflow: elide;
+                }
+            }
+        }
+
+        Hairline {
+            x: 70 * Theme.dp;
+            y: parent.height - self.height;
+            width: parent.width - self.x;
+        }
+
+        st := TouchArea {
+            clicked => {
+                MessagesState.act("pick", i);
+            }
+        }
+    }
+    Rectangle {
+        vertical-stretch: 1;
+    }
+
+    ComposerBar {
+        counter: MessagesState.draft != "";
+    }
+}
+
+// The blocked messages (p2-msg-blocked), kept 7 days: a tap or a hold opens Unblock sender · Delete at the finger.
+component BlockedView inherits Rectangle {
+    if MessagesState.blocked.length == 0: EmptyState {
+        icon: @image-url("@phone-shared/icons/block.svg");
+        title: "No blocked messages";
+        reason: "Blocked messages never alert and are deleted after 7 days.";
+    }
+    NeoList {
+        VerticalLayout {
+            alignment: start;
+            for b in MessagesState.blocked: VerticalLayout {
+                if b.band != "": SectionHeader {
+                    text: b.band;
                 }
                 Rectangle {
-                    height: 84 * Theme.dp;
+                    height: 88 * Theme.dp;
                     background: bt.pressed ? Theme.pressed : transparent;
+                    bt := Press {
+                        tap => {
+                            MessagesState.menu-x = self.at-x;
+                            MessagesState.menu-y = self.at-y;
+                            MessagesState.act("blocked", b.id);
+                        }
+                        hold => {
+                            MessagesState.menu-x = self.at-x;
+                            MessagesState.menu-y = self.at-y;
+                            MessagesState.act("blocked", b.id);
+                        }
+                    }
+
                     HorizontalLayout {
-                        padding-left: 14 * Theme.dp;
-                        padding-right: 14 * Theme.dp;
-                        spacing: 12 * Theme.dp;
-                        Face {
-                            y: (parent.height - self.height) / 2;
-                            known: b.known;
-                            initials: b.initials;
-                            tint: b.tint;
-                            block: true;
+                        padding-left: 16 * Theme.dp;
+                        padding-right: 16 * Theme.dp;
+                        spacing: 14 * Theme.dp;
+                        VerticalLayout {
+                            alignment: center;
+                            Face {
+                                known: b.known;
+                                initials: b.initials;
+                                tint: b.tint;
+                            }
                         }
 
                         VerticalLayout {
                             alignment: center;
-                            spacing: 2 * Theme.dp;
+                            spacing: 3 * Theme.dp;
                             horizontal-stretch: 1;
                             Text {
                                 text: b.title;
                                 font-family: "DejaVu Sans";
                                 color: Theme.text;
                                 font-size: 16 * Theme.dp;
+                                font-weight: 500;
                                 overflow: elide;
                             }
 
                             Text {
                                 text: b.snippet;
                                 font-family: "DejaVu Sans";
-                                color: Theme.text-secondary;
-                                font-size: 13.5 * Theme.dp;
+                                color: Theme.text;
+                                font-size: 14 * Theme.dp;
                                 overflow: elide;
                             }
 
                             HorizontalLayout {
                                 spacing: 5 * Theme.dp;
-                                Glyph {
-                                    source: @image-url("@phone-shared/icons/block.svg");
-                                    size: 15 * Theme.dp;
-                                    colorize: Theme.danger;
-                                    y: (parent.height - self.height) / 2;
+                                VerticalLayout {
+                                    alignment: center;
+                                    Glyph {
+                                        source: @image-url("@phone-shared/icons/block.svg");
+                                        size: 14 * Theme.dp;
+                                        colorize: Theme.danger;
+                                    }
                                 }
 
                                 Text {
                                     text: b.why;
                                     color: Theme.text-secondary;
-                                    font-size: 13.5 * Theme.dp;
+                                    font-size: 13 * Theme.dp;
                                     horizontal-stretch: 1;
                                 }
                             }
                         }
 
-                        Text {
-                            text: b.when;
-                            color: Theme.text-dim;
-                            font-size: 13.5 * Theme.dp;
-                            vertical-alignment: center;
+                        VerticalLayout {
+                            padding-top: 16 * Theme.dp;
+                            Text {
+                                text: b.when;
+                                color: Theme.text-dim;
+                                font-size: 12.5 * Theme.dp;
+                            }
                         }
                     }
 
-                    bt := TouchArea {
-                        clicked => {
-                            MessagesState.act("blocked", b.id);
-                        }
+                    Hairline {
+                        x: 74 * Theme.dp;
+                        y: parent.height - self.height;
+                        width: parent.width - self.x;
                     }
                 }
             }
-        }
-    }
-
-    HorizontalLayout {
-        padding-left: 14 * Theme.dp;
-        padding-right: 14 * Theme.dp;
-        padding-bottom: 14 * Theme.dp;
-        Text {
-            text: "Blocked messages never alert and are deleted after 7 days.";
-            color: Theme.text-secondary;
-            font-size: 13 * Theme.dp;
-            wrap: word-wrap;
-        }
-    }
-}
-
-// A message's details (mockup 31).
-component Details inherits Rectangle {
-    Rectangle {
-        background: Theme.scrim;
-        TouchArea {
-            clicked => {
-                MessagesState.act("details-close", "");
-            }
-        }
-    }
-
-    Rectangle {
-        x: 22 * Theme.dp;
-        width: parent.width - 44 * Theme.dp;
-        y: (parent.height - self.height) / 2;
-        height: box.preferred-height;
-        border-radius: 16 * Theme.dp;
-        background: #23272d;
-        border-width: max(1px, Theme.dp / 2);
-        border-color: #ffffff1f;
-        TouchArea { }
-
-        box := VerticalLayout {
-            padding: 20 * Theme.dp;
-            spacing: 10 * Theme.dp;
-            Text {
-                text: "Message details";
-                color: Theme.text;
-                font-size: 17 * Theme.dp;
-            }
-
-            for k[i] in MessagesState.details-keys: HorizontalLayout {
-                spacing: 14 * Theme.dp;
+            if MessagesState.blocked.length > 0: VerticalLayout {
+                padding-left: 16 * Theme.dp;
+                padding-right: 16 * Theme.dp;
+                padding-top: 14 * Theme.dp;
+                padding-bottom: 14 * Theme.dp;
                 Text {
-                    width: 82 * Theme.dp;
-                    text: k;
+                    text: "Blocked messages never alert and are deleted after 7 days.";
                     color: Theme.text-secondary;
-                    font-size: 14 * Theme.dp;
-                }
-
-                Text {
-                    text: MessagesState.details-values[i];
-                    font-family: "DejaVu Sans";
-                    color: Theme.text;
-                    font-size: 14 * Theme.dp;
+                    font-size: 13 * Theme.dp;
                     wrap: word-wrap;
-                    horizontal-stretch: 1;
-                }
-            }
-            Rectangle {
-                height: 44 * Theme.dp;
-                border-radius: 12 * Theme.dp;
-                background: close.pressed ? #4a505a : #353a42;
-                Text {
-                    text: "Close";
-                    color: Theme.text;
-                    font-size: 15 * Theme.dp;
-                    font-weight: 600;
-                }
-
-                close := TouchArea {
-                    clicked => {
-                        MessagesState.act("details-close", "");
-                    }
                 }
             }
         }
@@ -725,38 +660,76 @@ export component MessagesPage inherits Rectangle {
     property <length> kb: KeyboardFocus.open && !KeyboardFocus.dismissed ? KeyboardFocus.text-h : 0;
     // bakes in the glyphs of names and texts in any keyboard language (Armenian, Cyrillic)
     Alphabets { }
+    // and the ticks of a bubble's meta (the app's strings are not baked in)
+    Text {
+        visible: false;
+        text: "✓";
+    }
     Rectangle {
         y: 0;
         height: parent.height - root.kb;
-        if Nav.view == "": ListView { }
-        if Nav.view == "thread": ThreadView {
-            title: MessagesState.title;
+        if Nav.view == "" || Nav.view == "archived": ListView {
+            archived: Nav.view == "archived";
         }
+        if Nav.view == "thread": ThreadView { }
+        if Nav.view == "details": DetailsView { }
         if Nav.view == "new": NewView { }
         if Nav.view == "blocked": BlockedView { }
     }
 
-    Sheet {
-        items: MessagesState.bubble-items;
-        open: MessagesState.bubble-open;
-        dismissed => {
-            MessagesState.act("dismiss", "");
-        }
-        selected(i, item) => {
-            MessagesState.act("bubble", item);
+    // the system clipboard (the UI server's, through Slint's platform): Copy text and Paste go through this field
+    clip := TextInput {
+        visible: false;
+        width: 0;
+        height: 0;
+    }
+
+    property <int> paste: MessagesState.paste;
+    changed paste => {
+        clip.text = "";
+        clip.paste();
+        if clip.text != "" {
+            MessagesState.draft += clip.text;
+            MessagesState.act("draft", MessagesState.draft);
         }
     }
 
-    Sheet {
-        items: ["Unblock sender", "Delete"];
-        open: MessagesState.blocked-open;
-        dismissed => {
-            MessagesState.act("dismiss", "");
-        }
-        selected(i, item) => {
-            MessagesState.act("blocked-item", item);
+    // the menu at the finger: above it in the lower half of the page, else below; kept on the page
+    property <length> menu-h: MessagesState.menu-items.length * Theme.header-h + 16 * Theme.dp;
+    property <length> fx: MessagesState.menu-x - root.absolute-position.x;
+    property <length> fy: MessagesState.menu-y - root.absolute-position.y;
+    menu := Menu {
+        x: 0;
+        y: 0;
+        right-aligned: false;
+        at-x: max(12 * Theme.dp, min(root.fx - Theme.menu-w + 48 * Theme.dp, root.width - Theme.menu-w - 12 * Theme.dp));
+        at-y: max(8 * Theme.dp, min(root.height - root.menu-h - 8 * Theme.dp,
+            root.fy > root.height / 2 ? root.fy - root.menu-h - 24 * Theme.dp : root.fy + 24 * Theme.dp));
+        items: MessagesState.menu-items;
+        destructive: MessagesState.menu-destructive;
+        picked(i) => {
+            if MessagesState.menu-items[i] == "Copy text" {
+                clip.text = MessagesState.menu-text;
+                clip.select-all();
+                clip.copy();
+            }
+            MessagesState.act("menu", MessagesState.menu-items[i]);
         }
     }
 
-    if MessagesState.details-open: Details { }
+    property <bool> want-menu: MessagesState.menu-open;
+    changed want-menu => {
+        if self.want-menu {
+            menu.show();
+        } else {
+            menu.close();
+        }
+    }
+    property <bool> menu-shown: menu.open;
+    changed menu-shown => {
+        if !self.menu-shown && MessagesState.menu-open {
+            MessagesState.menu-open = false;
+            MessagesState.act("dismiss", "");
+        }
+    }
 }

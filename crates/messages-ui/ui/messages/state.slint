@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Messages: the conversations, a thread, a new message, the blocked messages: what the app shows and what the
-// screens ask for (`act`). The app (symbian/app/src/msgs.rs) fills it from MODEMD's messages; the search text, the
-// composer and the To field are written by the screens.
+// Messages (NEOPHONE v2 p2-msg-*): what the app shows and what the screens ask for (`act`). The app
+// (symbian/messages/src/msgs.rs) fills it from MODEMD's messages; the composer and the To field are written by the
+// screens.
 
-// A conversation (mockup 28). `known`: a contact (initials) or a number (#).
+// A conversation (p2-msg-list). `known`: a contact (initials) or a number (person glyph); `checked` in selection mode.
 export struct ThreadRow {
     name: string,
     initials: string,
@@ -13,28 +13,30 @@ export struct ThreadRow {
     when: string,
     unread: int,
     failed: bool,
+    checked: bool,
 }
 
-// A bubble (mockup 29): `band` is the day band before it ("" none); `state` 0 received, 1 sending, 2 sent,
-// 3 delivered, 4 not sent.
+// A bubble (p2-msg-thread): `meta` is its time and ticks ("09:53 ✓✓"), `band` the day band before it ("" none).
 export struct Bubble {
     id: int,
     text: string,
+    meta: string,
     mine: bool,
-    time: string,
-    state: int,
+    failed: bool,
     band: string,
 }
 
-// A contact's number matching what is typed in To (mockup 32).
+// A contact's number matching what is typed in To (p2-msg-new): the name split around the match, which shows blue.
 export struct Suggestion {
-    name: string,
+    pre: string,
+    hit: string,
+    post: string,
     detail: string,
     initials: string,
     tint: color,
 }
 
-// A blocked message (mockup 35).
+// A blocked message (p2-msg-blocked).
 export struct BlockedMessage {
     id: int,
     band: string,
@@ -48,37 +50,42 @@ export struct BlockedMessage {
 }
 
 export global MessagesState {
-    // the list: its rows (already filtered by the search text)
+    // the list (conversations, or the archived ones): its rows, filtered by the header's search
     in property <[ThreadRow]> threads;
-    in-out property <string> search;
-    in property <bool> empty: true;
-    // the thread: its title (the contact's name or the number) and bubbles, oldest first
-    in property <string> title;
+    // the empty state's title when there are no rows ("" = rows)
+    in property <string> empty;
+    in property <bool> selecting;
+    // the thread: its bubbles, oldest first
     in property <[Bubble]> bubbles;
-    // the composer's text (written by the field), its counter ("138 left · 1 SMS"), whether Send works
+    // the composer's text (written by the field), its counter ("Unicode · 57 left · 1 SMS"), whether Send works
     in-out property <string> draft;
     in property <string> counter;
     in property <bool> can-send;
-    // the composer takes the focus when the view opens (Write your own…)
+    // the composer takes the focus when the view opens (Reply)
     in-out property <bool> autofocus;
     // the new message: the chosen recipients' names, what is typed in To, the contacts matching it
     in property <[string]> recipients;
     in-out property <string> to-text;
     in property <[Suggestion]> suggestions;
-    // the held bubble's sheet: its items ("" = closed)
-    in property <[string]> bubble-items;
-    in property <bool> bubble-open;
-    // the details dialog: its lines
-    in property <bool> details-open;
+    // the menu at the finger (a held bubble, a held blocked message): where (window coordinates), its items, the red
+    // one, and the text Copy text copies
+    in-out property <bool> menu-open;
+    in-out property <length> menu-x;
+    in-out property <length> menu-y;
+    in property <[string]> menu-items;
+    in property <int> menu-destructive: -1;
+    in property <string> menu-text;
+    // bumped by Paste: the system clipboard's text goes into the composer
+    in-out property <int> paste;
+    // the details page: the message and its lines
+    in property <Bubble> details;
     in property <[string]> details-keys;
     in property <[string]> details-values;
     // the blocked messages
     in property <[BlockedMessage]> blocked;
-    // the held blocked message's sheet
-    in property <bool> blocked-open;
 
-    // "open" + thread index, "search" + text, "draft" + text, "send", "hold" + bubble id, "tap" + bubble id,
-    // "bubble" + item, "dismiss", "to" + text, "pick" + suggestion index, "unpick" + recipient index,
-    // "details-close", "confirm", "cancel", "blocked" + id, "blocked-item" + item
+    // "open" i, "toggle" i (selection), "select" i (long-press), "archive" i, "unarchive" i, "delete" i (swipe),
+    // "new"; "draft" text, "send", "hold" bubble id, "retry" bubble id, "menu" item, "dismiss";
+    // "to" text, "pick" suggestion, "unpick" recipient; "blocked" message id
     callback act(string, string);
 }

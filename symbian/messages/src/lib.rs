@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! NEOMSG.EXE: Messages (NeoSymbian/phone), one of three apps with Phone (NEOPHONE) and Contacts (NEOCONT). The UI server starts it hidden at boot and keeps it
-//! running (neoui `host::RESIDENT`): it posts a shade entry per conversation as texts arrive. Phone and Contacts open
+//! running (neoui `host::RESIDENT`): it posts a shade entry per conversation as texts arrive (Reply, Call). Phone and Contacts open
 //! it on a conversation (`AppEvent::Open`); a thread's Call and Contact open them.
 //!
 //! - [`ctx`]: the state and the shared moves; `phone_common`: MODEMD's client, the contacts file, settings, blocking
@@ -124,7 +124,7 @@ fn run() -> Result<(), i32> {
                 loop {
                     match rt::select(
                         next.as_mut(),
-                        rt::select(watch.as_mut(), time::delay(60_000_000)),
+                        rt::select(watch.as_mut(), time::delay(msgs::wait_us(&ctx))),
                     )
                     .await
                     {
@@ -134,7 +134,11 @@ fn run() -> Result<(), i32> {
                             ctx.on_status(status);
                             ctx.sync()?;
                         }
-                        Either::Right(Either::Right(())) => {}
+                        // a swiped delete whose toast is gone
+                        Either::Right(Either::Right(())) => {
+                            msgs::tick(&ctx);
+                            ctx.sync()?;
+                        }
                     }
                 }
             };
@@ -160,6 +164,8 @@ fn run() -> Result<(), i32> {
                 }
                 // a tap on our entry in the shade, or on its Reply / Call
                 Some(AppEvent::Notified { id, action }) => msgs::notified(&ctx, id, action),
+                // the toast's Undo (a swiped conversation)
+                Some(AppEvent::NoteAction) => msgs::undo(&ctx),
                 Some(AppEvent::Settings { .. }) => {
                     ctx.reload_prefs();
                     let rev = contacts_rev(&ctx.app);

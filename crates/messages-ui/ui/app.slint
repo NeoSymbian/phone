@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// NEOMSG.EXE (Messages): the conversations, a thread, a new message, the blocked messages (Phone and Contacts are
-// apps of their own; the footer and a thread's Call and Contact open them).
+// NEOMSG.EXE (Messages): the conversations, the archived ones, a thread, a message's details, a new message, the
+// blocked messages (Phone and Contacts are apps of their own; the footer and a thread's Call and Contact open them).
 import "@neoui/fonts/Inter-VariableFont.ttf";
 import "@neoui/fonts/DejaVuSans.ttf";
-import { Theme, Scroll, KeyboardFocus, Kit } from "@neoui/kit.slint";
+import { Theme, Scroll, KeyboardFocus, Kit, Toast } from "@neoui/kit.slint";
+import { Shade, ShadeNote } from "@neoui/components/shade.slint";
 import { Nav } from "@phone-shared/nav.slint";
 import { AppFrame } from "@phone-shared/frame.slint";
 import { Icons } from "@phone-shared/icons.slint";
 import { MessagesState } from "messages/state.slint";
 import { MessagesPage } from "messages/pages.slint";
 
-export { Theme, Scroll, KeyboardFocus, Kit, Nav, Icons, MessagesState }
+export { Theme, Scroll, KeyboardFocus, Kit, Nav, Icons, MessagesState, ShadeNote }
 
 export component MessagesApp inherits Window {
     default-font-family: "Inter";
@@ -18,5 +19,27 @@ export component MessagesApp inherits Window {
     AppFrame {
         own: 2;
         MessagesPage { }
+    }
+}
+
+// The host snapshots only: the app with what the shell draws over it from the app's requests (NOTE's toast, the
+// shade's NOTIFY entries), for comparing with the boards.
+export component MessagesPreview inherits MessagesApp {
+    in property <string> toast;
+    in property <string> toast-action;
+    in property <[ShadeNote]> notes;
+    in property <int> missed;
+    if root.toast != "": Toast {
+        x: 12 * Theme.dp;
+        y: root.height - Theme.footer-h - 14 * Theme.dp - self.height;
+        width: root.width - 24 * Theme.dp;
+        text: root.toast;
+        action: root.toast-action;
+    }
+    Shade {
+        open: root.notes.length > 0;
+        notes: root.notes;
+        missed: root.missed;
+        app-unread: true;
     }
 }

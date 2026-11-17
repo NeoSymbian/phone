@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Messages (mockups 28-36): the app's copy of MODEMD's message store ([`Mirror`], kept up to date with
 //! modem_ipc::op::SMS_READ), the conversations ([`threads`]: one per person or number, newest first), a thread's
-//! bubbles with their day bands, the blocked messages, the composer's counter, the To field's recipients.
+//! bubbles with their day bands, the blocked messages, the composer's counter, the To field's recipients, archived
+//! threads (modem-ipc 2.4), a swipe's Undo ([`Undo`]) and the shade's entries, one per conversation ([`alerts`]).
 
 use alloc::format;
 use alloc::string::String;
@@ -96,6 +97,8 @@ pub struct Thread {
     pub snippet: String,
     pub failed: bool,
     pub utc: i64,
+    /// archived (MODEMD 2.4): listed under Archived until a new message from the number comes
+    pub archived: bool,
 }
 
 /// Who `number` is: the contact's name and id, else the number itself.
@@ -128,6 +131,7 @@ pub fn threads(m: &Mirror, book: &Book, order: NameOrder) -> Vec<Thread> {
             snippet: snippet(msg),
             failed: msg.entry.state == st::FAILED,
             utc: msg.entry.utc,
+            archived: msg.entry.archived,
         });
     }
     out
@@ -169,6 +173,154 @@ pub fn search(m: &Mirror, threads: &[Thread], query: &str) -> Vec<usize> {
         })
         .map(|(i, _)| i)
         .collect()
+}
+
+/// The conversations a list shows: the archived ones (`archived`) or the others, without a delete waiting for its
+/// Undo (`hidden`), matching `query`.
+pub fn listed(
+    m: &Mirror,
+    threads: &[Thread],
+    query: &str,
+    archived: bool,
+    hidden: Option<&str>,
+) -> Vec<usize> {
+    search(m, threads, query)
+        .into_iter()
+        .filter(|&i| {
+            let t = &threads[i];
+            t.archived == archived && !hidden.is_some_and(|h| same(h, &t.number))
+        })
+        .collect()
+}
+
+/// What a swipe did, for the toast's Undo.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Swiped {
+    /// archived at once (Undo unarchives): a message id of the thread
+    Archived(u32),
+    /// held back (MODEMD can't undo a delete): sent when the toast is gone or on the next other action
+    Deleted { number: String, id: u32 },
+}
+
+/// The last swipe while its toast (3 s, neoui `NOTE_MS`) can still take it back.
+#[derive(Clone, Debug, Default)]
+pub struct Undo {
+    last: Option<(Swiped, i64)>,
+}
+
+impl Undo {
+    pub const MS: i64 = 3000;
+
+    /// A new swipe at `now_ms`; returns the delete held before it, to send now.
+    pub fn push(&mut self, s: Swiped, now_ms: i64) -> Option<u32> {
+        let held = self.flush();
+        self.last = Some((s, now_ms + Self::MS));
+        held
+    }
+
+    /// Undo was tapped: what to take back.
+    pub fn undo(&mut self) -> Option<Swiped> {
+        self.last.take().map(|(s, _)| s)
+    }
+
+    /// The held delete once its toast is gone (an archive just stops being undoable).
+    pub fn due(&mut self, now_ms: i64) -> Option<u32> {
+        match self.last {
+            Some((_, at)) if now_ms >= at => self.flush(),
+            _ => None,
+        }
+    }
+
+    /// Another action: the held delete is sent now.
+    pub fn flush(&mut self) -> Option<u32> {
+        match self.last.take() {
+            Some((Swiped::Deleted { id, .. }, _)) => Some(id),
+            _ => None,
+        }
+    }
+
+    /// The number of the thread a held delete hides.
+    pub fn hidden(&self) -> Option<&str> {
+        match &self.last {
+            Some((Swiped::Deleted { number, .. }, _)) => Some(number),
+            _ => None,
+        }
+    }
+
+    /// Milliseconds until [`Undo::due`] has something to do.
+    pub fn wait_ms(&self, now_ms: i64) -> Option<i64> {
+        self.last.as_ref().map(|(_, at)| (at - now_ms).max(0))
+    }
+}
+
+/// A shade entry: one per conversation with unread messages (neoapp `Notification`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Alert {
+    pub id: u32,
+    pub number: String,
+    /// the contact's name, else the number
+    pub title: String,
+    /// the newest unread message, on one line
+    pub text: String,
+    /// that message's id: a newer one posts the entry again
+    pub newest: u32,
+}
+
+/// A conversation's shade entry id: a hash (FNV-1a) of the number's last digits, so every way of writing the number
+/// gives the same entry (as [`same`] matches them); an alphanumeric sender by its name.
+// shortcut: numbers equal in their last 7 digits share an entry (`same` also compares the digits above when both
+// have them); hash a canonical number if two such senders ever text at once.
+pub fn alert_id(number: &str) -> u32 {
+    let d = number::digits(number);
+    let key = if d.is_empty() {
+        number
+    } else {
+        &d[d.len().saturating_sub(number::LOW)..]
+    };
+    key.bytes().fold(0x811c_9dc5, |h: u32, b| {
+        (h ^ u32::from(b)).wrapping_mul(0x0100_0193)
+    })
+}
+
+/// The shade's entries: each conversation with unread messages, newest first, except `open` (the thread on screen).
+pub fn alerts(m: &Mirror, threads: &[Thread], open: Option<&str>) -> Vec<Alert> {
+    threads
+        .iter()
+        .filter(|t| t.unread > 0 && !open.is_some_and(|o| same(o, &t.number)))
+        .filter_map(|t| {
+            let i = thread(m, &t.number)
+                .into_iter()
+                .rev()
+                .find(|&i| m.msgs[i].entry.state == st::UNREAD)?;
+            let msg = &m.msgs[i];
+            Some(Alert {
+                id: alert_id(&t.number),
+                number: t.number.clone(),
+                title: t.name.clone(),
+                text: msg
+                    .text
+                    .chars()
+                    .map(|c| if c.is_control() { ' ' } else { c })
+                    .collect(),
+                newest: msg.entry.id,
+            })
+        })
+        .collect()
+}
+
+/// Against the entries posted before ((id, newest)): the ones to post (new or with a newer message) and the ids to
+/// cancel (read, deleted, or on screen now).
+pub fn alert_changes<'a>(posted: &[(u32, u32)], now: &'a [Alert]) -> (Vec<&'a Alert>, Vec<u32>) {
+    let post = now
+        .iter()
+        .filter(|a| !posted.contains(&(a.id, a.newest)))
+        .collect();
+    let cancel = posted
+        .iter()
+        .filter(|(id, _)| !now.iter().any(|a| a.id == *id))
+        .map(|(id, _)| *id)
+        .collect();
+    (post, cancel)
 }
 
 /// A thread's messages (indexes into the mirror), oldest first.
@@ -314,6 +466,33 @@ pub fn as_number(typed: &str) -> Option<String> {
     ok.then(|| String::from(t))
 }
 
+/// `name` split around the first place `typed` matches it, ignoring case (a suggestion shows that part blue); the whole
+/// name first when it does not match there (a number or a transliteration matched).
+pub fn split_match<'a>(name: &'a str, typed: &str) -> (&'a str, &'a str, &'a str) {
+    let t: Vec<char> = typed.trim().chars().flat_map(char::to_lowercase).collect();
+    if !t.is_empty() {
+        for (at, _) in name.char_indices() {
+            let mut n = name[at..].char_indices();
+            let mut end = at;
+            let mut k = 0;
+            while k < t.len() {
+                let Some((j, c)) = n.next() else { break };
+                let low: Vec<char> = c.to_lowercase().collect();
+                if t[k..].starts_with(&low) {
+                    k += low.len();
+                    end = at + j + c.len_utf8();
+                } else {
+                    break;
+                }
+            }
+            if k == t.len() {
+                return (&name[..at], &name[at..end], &name[end..]);
+            }
+        }
+    }
+    (name, "", "")
+}
+
 /// The contacts' numbers matching what is typed in To: (contact id, name, label, number), at most `max`.
 pub fn suggestions(
     book: &Book,
@@ -426,6 +605,80 @@ mod tests {
         assert_eq!(search(&m, &t, "dinner"), [0]);
         assert_eq!(search(&m, &t, "4821"), [1]);
         assert_eq!(search(&m, &t, ""), [0, 1]);
+        assert_eq!(listed(&m, &t, "", false, Some("091234567")), [1]);
+    }
+
+    #[test]
+    fn archived_threads_list_apart() {
+        let mut m = mirror();
+        // MODEMD archives every message of the thread; a new one from the number comes unarchived
+        let mut b = Vec::new();
+        let mut e = m.msgs[2].entry;
+        e.archived = true;
+        e.rev = 8;
+        let mut buf = alloc::vec![0u8; SmsEntry::HEAD + 2 + 20];
+        let n = e.write("Your code is 4821", &mut buf).unwrap();
+        b.extend_from_slice(&buf[..n]);
+        m.apply(&b);
+        let t = threads(&m, &book(), NameOrder::FirstLast);
+        assert!(t[1].archived && !t[0].archived);
+        assert_eq!(listed(&m, &t, "", false, None), [0]);
+        assert_eq!(listed(&m, &t, "", true, None), [1]);
+        assert_eq!(listed(&m, &t, "dinner", true, None), [] as [usize; 0]);
+        let mut b = Vec::new();
+        rec(6, 9, "Ucom", st::UNREAD, true, "New code", &mut b);
+        m.apply(&b);
+        let t = threads(&m, &book(), NameOrder::FirstLast);
+        assert_eq!((t[0].name.as_str(), t[0].archived), ("Ucom", false));
+    }
+
+    #[test]
+    fn undo_holds_a_delete_for_three_seconds() {
+        let mut u = Undo::default();
+        let del = |id| Swiped::Deleted {
+            number: String::from("+37491234567"),
+            id,
+        };
+        assert_eq!(u.push(del(5), 1000), None);
+        assert_eq!(u.hidden(), Some("+37491234567"));
+        assert_eq!(u.wait_ms(2500), Some(1500));
+        assert_eq!(u.due(3999), None);
+        assert_eq!(u.due(4000), Some(5));
+        assert_eq!(u.hidden(), None);
+        assert_eq!(u.due(9000), None);
+        // Undo: nothing is sent
+        u.push(del(5), 0);
+        assert_eq!(u.undo(), Some(del(5)));
+        assert_eq!(u.due(5000), None);
+        // the next swipe sends the held delete first
+        u.push(del(5), 0);
+        assert_eq!(u.push(Swiped::Archived(3), 100), Some(5));
+        assert_eq!(u.hidden(), None);
+        assert_eq!(u.flush(), None);
+        assert_eq!(u.undo(), None);
+    }
+
+    #[test]
+    fn one_alert_per_conversation() {
+        let m = mirror();
+        let t = threads(&m, &book(), NameOrder::FirstLast);
+        let a = alerts(&m, &t, None);
+        assert_eq!(a.len(), 2);
+        assert_eq!(
+            (a[0].title.as_str(), a[0].text.as_str(), a[0].newest),
+            ("Ava Lindqvist", "Running late", 5)
+        );
+        // every way of writing the number is one entry; a sender name its own
+        assert_eq!(a[0].id, alert_id("091 234567"));
+        assert_ne!(a[0].id, alert_id("+37491234568"));
+        assert_eq!(a[1].id, alert_id("Ucom"));
+        // the thread on screen has none
+        assert_eq!(alerts(&m, &t, Some("091234567")).len(), 1);
+        // posted: unchanged ones stay, a newer message posts again, a read thread is cancelled
+        let posted = [(a[0].id, 1), (a[1].id, a[1].newest), (7, 2)];
+        let (post, cancel) = alert_changes(&posted, &a);
+        assert_eq!(post, [&a[0]]);
+        assert_eq!(cancel, [7]);
     }
 
     #[test]
@@ -452,6 +705,16 @@ mod tests {
         assert_eq!(as_number(" +374 91 23 "), Some(String::from("+374 91 23")));
         assert_eq!(as_number("Ava"), None);
         assert_eq!(as_number("12"), None);
+        assert_eq!(
+            split_match("Ani Petrosyan", "an"),
+            ("", "An", "i Petrosyan")
+        );
+        assert_eq!(
+            split_match("Aram Hakobyan", " hak"),
+            ("Aram ", "Hak", "obyan")
+        );
+        assert_eq!(split_match("Անի", "ան"), ("", "Ան", "ի"));
+        assert_eq!(split_match("Ava", "374"), ("Ava", "", ""));
         let s = suggestions(&book(), NameOrder::FirstLast, "av", 5);
         assert_eq!(s[0].1, "Ava Lindqvist");
         assert_eq!(s[0].3, "+37491234567");
