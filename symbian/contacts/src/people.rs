@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! Contacts (NEOCONT.EXE; mockups 16-22, 24, 26): the list with search, favourites and the per-script side index, Mark
-//! several, the card (favourite, block, speed dial, vCard, my card), the editor with its number-type picker, and the
-//! Delete and Block queries. The model is the host-tested `contacts` crate and `phone_core::people`; every change is
+//! Contacts (NEOCONT.EXE; NEOPHONE v2 boards p2-contacts-*): the list with the header's search, favourites and the
+//! per-script letter strip, selection mode, the card (favourite, block, speed dial, vCard, my card), the editor with
+//! its number-type sheet, and the Delete and Block queries. The model is the host-tested `contacts` crate and `phone_core::people`; every change is
 //! saved at once ([`store::save`]) and MODEMD gets the new known-number hashes ([`send_known`]).
 
 use crate::ctx::Ctx;
@@ -13,7 +13,7 @@ use contacts::index::{self, Script};
 use contacts::{Contact, Label, NUMBERS_MAX, NameOrder, Refused, vcard};
 use contacts_ui::{
     ContactEditNumber, ContactHit, ContactMark, ContactNumber, ContactRow, ContactSection,
-    ContactsApp, ContactsState, KeyboardFocus,
+    ContactsApp, ContactsState, KeyboardFocus, Nav,
 };
 use e32::dprintln;
 use neoui_proto::settings::Value;
@@ -42,11 +42,9 @@ enum Dialog {
     DeleteMarked,
 }
 
-/// The layout's fixed heights (dp) the side index's room comes from: the title strip, the search field, my card,
-/// the favourites band and strip.
-const SEARCH_H: f32 = 64.0;
-const MY_CARD_H: f32 = 52.0;
-const FAVOURITES_H: f32 = 30.0 + 94.0;
+/// The heights (dp) the letter strip's room comes from: the header and the footer, and the strip's margins.
+const BARS_H: f32 = 48.0 + 48.0;
+const STRIP_MARGINS: f32 = 12.0 + 12.0;
 
 pub struct State {
     card: Who,
@@ -61,9 +59,12 @@ pub struct State {
     /// the number-type picker's row
     picking: Option<usize>,
     marked: Vec<u32>,
-    /// bumped by every change to the book; the list is rebuilt when it (or the name order) changed
+    /// the header's search text
+    query: String,
+    /// bumped by every change to the book; the list is rebuilt when it (or the name order, or the app's height)
+    /// changed
     rev: u32,
-    shown: Option<(u32, NameOrder)>,
+    shown: Option<(u32, NameOrder, usize)>,
     /// the view the last show drew
     last_view: Option<ContactsView>,
 }
@@ -79,6 +80,7 @@ impl Default for State {
             checks: [true, true],
             picking: None,
             marked: Vec::new(),
+            query: String::new(),
             rev: 0,
             shown: None,
             last_view: None,
@@ -138,14 +140,6 @@ fn contact(m: &crate::ctx::Model, who: Who) -> Option<&Contact> {
 }
 
 /// The card's contact (a clone, so nothing stays borrowed).
-/// The open card's first number, which its Call dials (none on my own card).
-fn card_number(m: &crate::ctx::Model) -> Option<String> {
-    if m.people.card == Who::Mine {
-        return None;
-    }
-    contact(m, m.people.card).and_then(|c| c.numbers.first().map(|(_, n)| n.clone()))
-}
-
 fn card(ctx: &Ctx) -> Option<Contact> {
     let m = ctx.m.borrow();
     contact(&m, m.people.card).cloned()
@@ -166,7 +160,6 @@ fn act(ctx: &Ctx, action: &str, value: &str) {
     let st = ui.global::<ContactsState>();
     let n = value.parse::<i32>().unwrap_or(-1);
     match action {
-        "search" => show_results(ctx),
         "open" if n < 0 => {
             if ctx.m.borrow().book.my_card.is_some() {
                 open_card(ctx, Who::Mine, None);
@@ -175,24 +168,13 @@ fn act(ctx: &Ctx, action: &str, value: &str) {
             }
         }
         "open" => open_card(ctx, Who::Contact(n as u32), None),
-        "favourite" => {
-            let Who::Contact(id) = ctx.m.borrow().people.card else {
-                return;
-            };
-            if let Some(c) = ctx
-                .m
-                .borrow_mut()
-                .book
-                .contacts
-                .iter_mut()
-                .find(|c| c.id == id)
-            {
-                c.favourite = !c.favourite;
-            }
+        // a long press on a row: selection mode with it marked
+        "hold" => {
+            ctx.m.borrow_mut().people.marked = alloc::vec![n as u32];
             changed(ctx);
-            save(ctx);
-            ctx.show();
+            ctx.go(Page::Contacts(ContactsView::Mark));
         }
+        "new" => edit(ctx, Who::New, ""),
         "call" => ctx.call(value),
         "unblock" => unblock(ctx),
         "mark" => mark(ctx, n as u32),
@@ -291,14 +273,6 @@ fn edit(ctx: &Ctx, who: Who, number: &str) {
     }
     let ui = ctx.ui();
     let st = ui.global::<ContactsState>();
-    st.set_edit_title(
-        match who {
-            Who::New => "New contact",
-            Who::Contact(_) => "Edit contact",
-            Who::Mine => "My card",
-        }
-        .into(),
-    );
     st.set_edit_first(c.first.as_str().into());
     st.set_edit_last(c.last.as_str().into());
     st.set_edit_company(c.company.as_str().into());
@@ -391,7 +365,6 @@ fn mark(ctx: &Ctx, id: u32) {
             s.people.set_row_data(i, ContactRow { marked: on, ..p });
         }
     }
-    st.set_marked(ctx.m.borrow().people.marked.len() as i32);
 }
 
 /// Unblock every number of the card's contact.
@@ -537,8 +510,21 @@ pub fn show(ctx: &Ctx) {
     };
     // a field removed with its view never reports losing focus: the keyboard goes with the view
     if ctx.m.borrow_mut().people.last_view.replace(v) != Some(v) {
-        ctx.ui().global::<KeyboardFocus>().set_open(false);
+        let ui = ctx.ui();
+        ui.global::<KeyboardFocus>().set_open(false);
+        // the header's search belongs to the list: a card opened from its results starts a fresh header
+        if v != ContactsView::List && ui.global::<Nav>().get_searching() {
+            ui.global::<Nav>().set_searching(false);
+            ui.global::<Nav>().set_query("".into());
+            ctx.m.borrow_mut().people.query.clear();
+        }
     }
+    // Inter has no Armenian: an Armenian name in the header needs DejaVu Sans
+    let armenian = chrome(ctx)
+        .title
+        .chars()
+        .any(|c| ('\u{531}'..='\u{58f}').contains(&c));
+    ctx.ui().global::<ContactsState>().set_armenian(armenian);
     match v {
         ContactsView::List | ContactsView::Mark => {
             show_list(ctx);
@@ -555,8 +541,7 @@ fn show_list(ctx: &Ctx) {
     let ui = ctx.ui();
     let st = ui.global::<ContactsState>();
     let m = ctx.m.borrow();
-    st.set_marked(m.people.marked.len() as i32);
-    let key = (m.people.rev, m.order);
+    let key = (m.people.rev, m.order, ctx.app.height());
     if m.people.shown == Some(key) {
         return;
     }
@@ -583,22 +568,20 @@ fn show_list(ctx: &Ctx) {
             row(c, first)
         })
         .collect();
-    let list_h = ctx.app.height() as f32 / ctx.app.dp - SEARCH_H;
-    let header = MY_CARD_H
-        + if favourites.is_empty() {
-            0.0
-        } else {
-            FAVOURITES_H
-        };
-    let marks = index::side_index(&sections, logic::index_room(list_h - header));
+    let list_h = ctx.app.height() as f32 / ctx.app.dp - BARS_H;
+    let marks = index::side_index(&sections, logic::index_room(list_h - STRIP_MARGINS));
     let letter = |i: usize| chr(sections[i].letter);
+    let spans = logic::index_spans(&marks, &tops);
     st.set_index(model(
         marks
             .iter()
-            .map(|k| ContactMark {
+            .zip(spans)
+            .map(|(k, (start, end))| ContactMark {
                 text: chr(k.text),
                 letters: model(k.sections.iter().map(|&i| letter(i)).collect()),
                 tops: model(k.sections.iter().map(|&i| tops[i]).collect()),
+                start,
+                end,
             })
             .collect(),
     ));
@@ -622,7 +605,6 @@ fn show_list(ctx: &Ctx) {
     ));
     st.set_favourites(model(favourites));
     st.set_total(m.book.contacts.len() as i32);
-    st.set_has_my_card(m.book.my_card.is_some());
     drop(m);
     ctx.m.borrow_mut().people.shown = Some(key);
 }
@@ -630,19 +612,20 @@ fn show_list(ctx: &Ctx) {
 fn show_results(ctx: &Ctx) {
     let ui = ctx.ui();
     let st = ui.global::<ContactsState>();
-    let q = st.get_search();
+    let m = ctx.m.borrow();
+    let q = m.people.query.as_str();
+    st.set_has_query(!q.is_empty());
     if q.is_empty() {
         st.set_results(model(Vec::new()));
         return;
     }
-    let m = ctx.m.borrow();
     let hits: Vec<ContactHit> = m
         .book
-        .search(&q, m.order)
+        .search(q, m.order)
         .into_iter()
         .filter_map(|id| m.book.get(id))
         .map(|c| {
-            let h = logic::hit(c, &q, m.order);
+            let h = logic::hit(c, q, m.order);
             let [np, nh, nt] = h.name.map(|s| SharedString::from(s.as_str()));
             let [dp, dh, dt] = h.detail.map(|s| SharedString::from(s.as_str()));
             ContactHit {
@@ -684,12 +667,7 @@ fn show_card(ctx: &Ctx) {
     st.set_card_name(title.as_str().into());
     st.set_card_company(c.company.as_str().into());
     st.set_card_initials(logic::initials(&title).as_str().into());
-    st.set_card_tint(color(if blocked.is_some() {
-        logic::desaturate(tint)
-    } else {
-        tint
-    }));
-    st.set_card_favourite(c.favourite);
+    st.set_card_tint(color(tint));
     st.set_card_numbers(model(
         c.numbers
             .iter()
@@ -701,7 +679,6 @@ fn show_card(ctx: &Ctx) {
     ));
     st.set_card_email(c.email.as_str().into());
     st.set_card_note(c.note.as_str().into());
-    st.set_can_message(true);
     st.set_card_speed(speed.map_or(0, i32::from));
     st.set_card_blocked(blocked.map_or("", |(a, b)| logic::block_text(a, b)).into());
 }
@@ -803,35 +780,42 @@ pub fn chrome(ctx: &Ctx) -> Chrome {
     let Page::Contacts(v) = m.page else {
         return Chrome::titled("Contacts");
     };
-    // the status bar's title is the page's only heading (docs gestures.md rule 11)
-    let marked = alloc::format!("{} marked", p.marked.len());
-    let title = match v {
-        ContactsView::Card if p.card == Who::Mine => "My card",
-        ContactsView::Card => "Contact",
-        ContactsView::Edit => match p.editing {
+    match v {
+        // 🔍 first, as the board draws it (the kit's own search icon would come after the actions)
+        ContactsView::List => Chrome {
+            more: alloc::vec![(tool::PERSON_ADD, "New contact")],
+            ..Chrome::titled("Contacts").with(tool::SEARCH, 0, "Search")
+        },
+        ContactsView::Mark => Chrome {
+            selected: p.marked.len() as i32,
+            selection: alloc::vec![
+                (tool::DELETE, "Delete marked"),
+                (tool::SHARE, "Export marked"),
+            ],
+            ..Chrome::titled("Select contacts")
+        },
+        ContactsView::Card => {
+            let c = contact(&m, p.card);
+            let mut more = Vec::new();
+            if p.card != Who::Mine {
+                let star = c.is_some_and(|c| c.favourite);
+                more.push((if star { tool::STAR_FULL } else { tool::STAR }, "Favourite"));
+            }
+            more.push((tool::EDIT, "Edit"));
+            Chrome {
+                more,
+                ..Chrome::titled(&match p.card {
+                    Who::Mine => String::from("My card"),
+                    _ => c.map(|c| c.title(m.order)).unwrap_or_default(),
+                })
+            }
+        }
+        ContactsView::Edit => Chrome::titled(match p.editing {
             Who::New => "New contact",
             Who::Contact(_) => "Edit contact",
             Who::Mine => "My card",
-        },
-        ContactsView::Mark if p.marked.is_empty() => "Mark contacts",
-        ContactsView::Mark => &marked,
-        ContactsView::List => "Contacts",
-    };
-    let chrome = Chrome::titled(title);
-    let has_number = card_number(&m).is_some();
-    if p.dialog != Dialog::None {
-        return chrome;
-    }
-    if p.picking.is_some() {
-        return chrome.with(tool::NONE, tool::CANCEL, "");
-    }
-    match v {
-        ContactsView::List => chrome.with(tool::PERSON_ADD, 0, "New"),
-        ContactsView::Mark => chrome.with(tool::DELETE, tool::CANCEL, "Delete"),
-        // a card's main action is a call; Edit is in Options then
-        ContactsView::Card if has_number => chrome.with(tool::CALL, 0, "Call"),
-        ContactsView::Card => chrome.with(tool::EDIT, 0, "Edit"),
-        ContactsView::Edit => chrome.with(tool::CHECK, tool::CANCEL, "Save"),
+        })
+        .with(tool::CHECK, tool::CANCEL, "Save"),
     }
 }
 
@@ -839,18 +823,10 @@ pub fn options(ctx: &Ctx) -> Vec<&'static str> {
     let Some(v) = view(ctx) else {
         return Vec::new();
     };
-    if ctx.m.borrow().people.dialog != Dialog::None {
-        return Vec::new();
-    }
     match v {
-        ContactsView::List => alloc::vec![
-            "New contact",
-            "Mark several",
-            "Import vCards",
-            "Export vCards",
-            "Settings",
-        ],
-        ContactsView::Mark => alloc::vec!["Export marked"],
+        ContactsView::List => {
+            alloc::vec!["Mark several", "Import vCards", "Export vCards", "Settings"]
+        }
         ContactsView::Card => {
             let Some(c) = card(ctx) else {
                 return Vec::new();
@@ -858,11 +834,7 @@ pub fn options(ctx: &Ctx) -> Vec<&'static str> {
             if ctx.m.borrow().people.card == Who::Mine {
                 return alloc::vec!["Delete", "Send as vCard"];
             }
-            let mut v = alloc::vec![];
-            if !c.numbers.is_empty() {
-                v.push("Edit"); // Call is the strip's
-            }
-            v.push("Delete");
+            let mut v = alloc::vec!["Delete"];
             if let Some((_, n)) = c.numbers.first() {
                 v.push("Speed dial");
                 v.push(if ctx.blocked(n).is_some() {
@@ -874,13 +846,32 @@ pub fn options(ctx: &Ctx) -> Vec<&'static str> {
             v.extend(["Send as vCard", "Set as my card"]);
             v
         }
-        ContactsView::Edit => Vec::new(),
+        ContactsView::Mark | ContactsView::Edit => Vec::new(),
     }
 }
 
 pub fn option(ctx: &Ctx, item: &str) {
     match item {
         "New contact" => edit(ctx, Who::New, ""),
+        "Favourite" => {
+            let Who::Contact(id) = ctx.m.borrow().people.card else {
+                return;
+            };
+            if let Some(c) = ctx
+                .m
+                .borrow_mut()
+                .book
+                .contacts
+                .iter_mut()
+                .find(|c| c.id == id)
+            {
+                c.favourite = !c.favourite;
+            }
+            changed(ctx);
+            save(ctx);
+            ctx.show();
+        }
+        "Delete marked" => ask(ctx, Dialog::DeleteMarked),
         "Mark several" => {
             ctx.m.borrow_mut().people.marked.clear();
             changed(ctx);
@@ -899,7 +890,8 @@ pub fn option(ctx: &Ctx, item: &str) {
             };
             export(ctx, &all);
         }
-        "Settings" => ctx.go(Page::Settings(SettingsView::Main)),
+        // Phone's settings, at their Contacts section
+        "Settings" => ctx.open(Page::Settings(SettingsView::Main), "contacts"),
         "Export marked" => {
             let marked: Vec<Contact> = {
                 let m = ctx.m.borrow();
@@ -912,11 +904,6 @@ pub fn option(ctx: &Ctx, item: &str) {
                     .collect()
             };
             export(ctx, &marked);
-        }
-        "Cancel" => {
-            ctx.m.borrow_mut().people.marked.clear();
-            changed(ctx);
-            ctx.go(Page::Contacts(ContactsView::List));
         }
         "Delete" => ask(ctx, Dialog::Delete),
         "Edit" => {
@@ -953,28 +940,19 @@ pub fn option(ctx: &Ctx, item: &str) {
     }
 }
 
+/// The header's action (List: 🔍) or the editor's ✓.
 pub fn action(ctx: &Ctx) {
-    let (dialog, who, marked) = {
-        let m = ctx.m.borrow();
-        (m.people.dialog, m.people.card, m.people.marked.len())
-    };
-    if dialog != Dialog::None {
-        return;
-    }
     match view(ctx) {
-        Some(ContactsView::List) => edit(ctx, Who::New, ""),
-        Some(ContactsView::Mark) if marked == 0 => ctx.note("Mark contacts first"),
-        Some(ContactsView::Mark) => ask(ctx, Dialog::DeleteMarked),
-        Some(ContactsView::Card) => {
-            let number = card_number(&ctx.m.borrow());
-            match number {
-                Some(n) => ctx.call(&n),
-                None => edit(ctx, who, ""),
-            }
-        }
+        Some(ContactsView::List) => ctx.ui().global::<Nav>().set_searching(true),
         Some(ContactsView::Edit) => save_edit(ctx),
-        None => {}
+        _ => {}
     }
+}
+
+/// The header's search text changed ("" when it closed).
+pub fn searched(ctx: &Ctx, query: &str) {
+    ctx.m.borrow_mut().people.query = query.into();
+    show_results(ctx);
 }
 
 pub fn back(ctx: &Ctx) -> bool {
@@ -991,16 +969,6 @@ pub fn back(ctx: &Ctx) -> bool {
         return true;
     }
     match view(ctx) {
-        Some(ContactsView::List) => {
-            let ui = ctx.ui();
-            let st = ui.global::<ContactsState>();
-            if st.get_search().is_empty() {
-                return false;
-            }
-            st.set_search("".into());
-            show_results(ctx);
-            true
-        }
         // Back is Cancel: nothing is saved
         Some(ContactsView::Edit) => {
             let from = ctx.m.borrow().people.edit_from;
@@ -1020,19 +988,13 @@ pub fn back(ctx: &Ctx) -> bool {
             changed(ctx);
             false
         }
-        None => false,
+        _ => false,
     }
 }
 
 pub fn wants_back(ctx: &Ctx) -> bool {
-    {
-        let m = ctx.m.borrow();
-        if m.people.dialog != Dialog::None || m.people.picking.is_some() {
-            return true;
-        }
-    }
-    view(ctx) == Some(ContactsView::List)
-        && !ctx.ui().global::<ContactsState>().get_search().is_empty()
+    let m = ctx.m.borrow();
+    m.people.dialog != Dialog::None || m.people.picking.is_some()
 }
 
 /// Send MODEMD the contacts' known-number hashes (for "block unknown numbers").

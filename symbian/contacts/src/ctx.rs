@@ -198,7 +198,7 @@ impl Ctx {
 
     /// The header's search field changed (each keystroke; "" when it closed).
     pub fn searched(&self, query: &str) {
-        let _ = query; // the area's own search field, until it moves into the header
+        people::searched(self, query);
     }
 
     /// The UI server's dialog was answered: `yes` is its first (confirming) button.

@@ -1,19 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The Contacts page without UI (mockups 16-22, 24, 26): avatars, the list's section offsets, search hits, the card's
+//! The Contacts page without UI (NEOPHONE v2 p2-contacts-*): avatars, the list's section offsets and the letter
+//! strip's spans, search hits, the card's
 //! speed-dial key and block line, the editor's checks, vCard merging and the known-number hashes MODEMD gets.
 
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
-use contacts::index::Section;
+use contacts::index::{Mark, Section};
 use contacts::{Book, Contact, Label, NameOrder};
 use phone_rules::number;
 
 /// A section band's and a row's height on the list (dp), for scrolling to a section.
-pub const BAND_H: f32 = 30.0;
+pub const BAND_H: f32 = 34.0;
 pub const ROW_H: f32 = 56.0;
-/// The side index's pitch (dp per place).
-pub const INDEX_PITCH: f32 = 17.0;
+/// The letter strip's pitch (dp per place).
+pub const INDEX_PITCH: f32 = 15.0;
 
 /// The initials an avatar shows: the first letters of the first two words ("#" for none).
 pub fn initials(name: &str) -> String {
@@ -56,9 +57,32 @@ pub fn tops(sections: &[Section]) -> Vec<f32> {
         .collect()
 }
 
-/// How many places the side index has in a list `height` dp high.
+/// How many places the letter strip has in a list `height` dp high.
 pub fn index_room(height: f32) -> usize {
     (height / INDEX_PITCH).max(3.0) as usize
+}
+
+/// Where each strip place is lit: [start, end) of the list's scroll (dp below the first band, as [`tops`]). The first
+/// letter is lit above the first band too; a dash never is (an empty span).
+pub fn index_spans(marks: &[Mark], tops: &[f32]) -> Vec<(f32, f32)> {
+    let start = |k: &Mark| k.sections.first().map(|&i| tops[i]);
+    let mut first = true;
+    marks
+        .iter()
+        .enumerate()
+        .map(|(n, k)| {
+            let Some(s) = start(k) else {
+                return (0.0, 0.0);
+            };
+            let end = marks[n + 1..].iter().find_map(start).unwrap_or(f32::MAX);
+            let s = if core::mem::take(&mut first) {
+                f32::MIN
+            } else {
+                s
+            };
+            (s, end)
+        })
+        .collect()
 }
 
 fn low(c: char) -> char {
@@ -328,8 +352,13 @@ mod tests {
                 ids: vec![4],
             },
         ];
-        assert_eq!(tops(&s), [0.0, 142.0, 228.0]);
-        assert_eq!(index_room(518.0), 30);
+        assert_eq!(tops(&s), [0.0, 146.0, 236.0]);
+        assert_eq!(index_room(518.0), 34);
+        let marks = contacts::index::side_index(&s, 10);
+        assert_eq!(
+            index_spans(&marks, &tops(&s)),
+            [(f32::MIN, 146.0), (146.0, 236.0), (236.0, f32::MAX)]
+        );
         assert_eq!(index_room(10.0), 3);
         let mut b = Book::default();
         b.add(person("A", "", "", &["+37491234567", "091234567"]))

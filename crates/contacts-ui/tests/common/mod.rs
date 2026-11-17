@@ -48,6 +48,8 @@ impl TargetPixel for Px {
 pub struct Shot {
     window: Rc<MinimalSoftwareWindow>,
     pub ui: ContactsApp,
+    /// the app's height now: 2037 in Gestures (679 dp), 1917 in Buttons mode (639 dp)
+    h: std::cell::Cell<u32>,
 }
 
 /// The app at the Pixel's size; call once per test binary.
@@ -59,23 +61,36 @@ pub fn app() -> Shot {
     ui.global::<Theme>().set_dp(3.0);
     window.set_size(slint::PhysicalSize::new(W, H));
     ui.show().expect("show");
-    Shot { window, ui }
+    Shot {
+        window,
+        ui,
+        h: std::cell::Cell::new(H),
+    }
 }
 
 impl Shot {
+    /// The app's height in px (the navigation mode changes it).
+    pub fn resize(&self, h: u32) {
+        self.h.set(h);
+        self.window.set_size(slint::PhysicalSize::new(W, h));
+    }
+
     /// Draw and save `snapshots/<name>.png`; returns the pixels for checks.
     pub fn shoot(&self, name: &str) -> Vec<u32> {
+        // change handlers run first (they may start an animation), then a second passes
+        slint::platform::update_timers_and_animations();
         NOW.set(NOW.get() + core::time::Duration::from_secs(1));
         slint::platform::update_timers_and_animations();
         self.window.request_redraw();
-        let mut px = vec![Px(0); (W * H) as usize];
+        let h = self.h.get();
+        let mut px = vec![Px(0); (W * h) as usize];
         self.window.draw_if_needed(|r| {
             r.render(&mut px, W as usize);
         });
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../snapshots");
         std::fs::create_dir_all(&root).unwrap();
         let file = std::fs::File::create(root.join(format!("{name}.png"))).unwrap();
-        let mut enc = png::Encoder::new(std::io::BufWriter::new(file), W, H);
+        let mut enc = png::Encoder::new(std::io::BufWriter::new(file), W, h);
         enc.set_color(png::ColorType::Rgb);
         enc.set_depth(png::BitDepth::Eight);
         let mut w = enc.write_header().unwrap();

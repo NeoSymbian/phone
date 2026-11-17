@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// NEOCONT.EXE (Contacts): the list with search and the side index, the card, the editor, Mark several (Phone and
-// Messages are apps of their own; the footer and the card's Call and Message open them).
+// NEOCONT.EXE (Contacts): the list with search, favourites and the letter strip, the card, the editor, selection mode
+// (Phone and Messages are apps of their own; the footer and the card's Call and Message open them). The number-type
+// sheet and the Block query cover the whole app, header too.
 import "@neoui/fonts/Inter-VariableFont.ttf";
 import "@neoui/fonts/DejaVuSans.ttf";
 import { Theme, Scroll, KeyboardFocus, Kit } from "@neoui/kit.slint";
@@ -9,14 +10,50 @@ import { AppFrame } from "@phone-shared/frame.slint";
 import { Icons } from "@phone-shared/icons.slint";
 import { ContactsState } from "contacts/state.slint";
 import { ContactsPage } from "contacts/pages.slint";
+import { Dialog, TypeSheet } from "contacts/parts.slint";
 
 export { Theme, Scroll, KeyboardFocus, Kit, Nav, Icons, ContactsState }
 
 export component ContactsApp inherits Window {
-    default-font-family: "Inter";
+    default-font-family: ContactsState.armenian ? "DejaVu Sans" : "Inter";
     background: Theme.bg;
     AppFrame {
         own: 1;
         ContactsPage { }
+    }
+
+    // the sheet's `open` is its own once it closes itself: follow the app's `picking` by hand
+    property <int> picking: ContactsState.picking;
+    changed picking => {
+        sheet.open = self.picking >= 0;
+    }
+    sheet := TypeSheet {
+        number: ContactsState.picking >= 0 ? ContactsState.edit-numbers[ContactsState.picking].number : "";
+        choices: ContactsState.labels;
+        current: ContactsState.picking >= 0 ? ContactsState.edit-numbers[ContactsState.picking].kind : -1;
+        dismissed => {
+            ContactsState.act("pick-cancel", "");
+        }
+        chosen(i) => {
+            ContactsState.act("pick", i);
+        }
+    }
+
+    Dialog {
+        open: ContactsState.dialog-open;
+        question: ContactsState.dialog-question;
+        detail: ContactsState.dialog-detail;
+        confirm: ContactsState.dialog-confirm;
+        checks: ContactsState.dialog-checks;
+        checked: ContactsState.dialog-checked;
+        confirmed => {
+            ContactsState.act("confirm", "");
+        }
+        cancelled => {
+            ContactsState.act("cancel", "");
+        }
+        toggled(i) => {
+            ContactsState.act("check", i);
+        }
     }
 }
