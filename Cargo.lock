@@ -2435,7 +2435,7 @@ dependencies = [
 [[package]]
 name = "modem-ipc"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/telephony?rev=b50763850b47373083e7cea82a3d30f40feb9cea#b50763850b47373083e7cea82a3d30f40feb9cea"
+source = "git+https://github.com/NeoSymbian/telephony?rev=e18187a69f7b3c6cf60305430861a0c082ac8283#e18187a69f7b3c6cf60305430861a0c082ac8283"
 
 [[package]]
 name = "moxcms"
@@ -3135,7 +3135,7 @@ dependencies = [
 [[package]]
 name = "phone-rules"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/telephony?rev=b50763850b47373083e7cea82a3d30f40feb9cea#b50763850b47373083e7cea82a3d30f40feb9cea"
+source = "git+https://github.com/NeoSymbian/telephony?rev=e18187a69f7b3c6cf60305430861a0c082ac8283#e18187a69f7b3c6cf60305430861a0c082ac8283"
 
 [[package]]
 name = "phone-ui"
@@ -3894,7 +3894,7 @@ dependencies = [
 [[package]]
 name = "sms"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/telephony?rev=b50763850b47373083e7cea82a3d30f40feb9cea#b50763850b47373083e7cea82a3d30f40feb9cea"
+source = "git+https://github.com/NeoSymbian/telephony?rev=e18187a69f7b3c6cf60305430861a0c082ac8283#e18187a69f7b3c6cf60305430861a0c082ac8283"
 
 [[package]]
 name = "snafu"
