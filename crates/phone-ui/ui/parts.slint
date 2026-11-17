@@ -1,0 +1,263 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Phone's own small parts (NEOPHONE v2 boards), on top of the neoui kit: the avatar palette and a face for numbers
+// without a contact, the call direction glyph, the details' pills, a switch row the app's state drives, a row with a
+// light value, a sheet of radio choices with its heading on the left, a dashed tile border.
+import { Theme, Glyph, ListRow, Switch, Sheet } from "@neoui/kit.slint";
+
+// The avatar palette (phone_core::calls::TINTS, same order): stable per contact or number.
+export global Tints {
+    out property <[color]> all: [#15803d, #be185d, #c2410c, #6d28d9, #0e7490, #2f80ed, #8b5cf6, #14a3a3];
+}
+
+// A contact's initials on its tint, or on grey (`tint` < 0) a glyph: 0 # (a number), 1 a person (private), 2 ⊘ (a
+// blocked prefix).
+export component Face inherits Rectangle {
+    in property <string> initials;
+    in property <int> tint: -1;
+    in property <int> glyph;
+    in property <length> size: Theme.avatar;
+    width: size;
+    height: size;
+    border-radius: size / 2;
+    background: tint >= 0 ? Tints.all[Math.mod(tint, 8)] : #2b3038;
+    if tint >= 0: Text {
+        text: root.initials;
+        color: white;
+        font-size: root.size * 0.38;
+        font-weight: 600;
+    }
+    if tint < 0: Glyph {
+        source: glyph == 1 ? @image-url("@phone-shared/icons/person.svg")
+            : glyph == 2 ? @image-url("@phone-shared/icons/block.svg") : @image-url("@phone-shared/icons/hash.svg");
+        size: root.size * 0.5;
+        colorize: Theme.text-secondary;
+    }
+}
+
+// A call's direction (modem_ipc::log kind: 1 dialled, 2 received, 3 missed, 4 rejected, 5 blocked).
+export component Direction inherits Glyph {
+    in property <int> kind;
+    source: kind == 1 ? @image-url("@phone-shared/icons/outgoing.svg")
+        : kind == 2 ? @image-url("@phone-shared/icons/incoming.svg")
+        : kind == 5 ? @image-url("@phone-shared/icons/block.svg")
+        : @image-url("@neoui/icons/sys/missed_call.svg");
+    colorize: kind == 3 ? Theme.danger : Theme.text-secondary;
+}
+
+// A rounded pill with a glyph (the details' Call and Message, the summary's): green or the field grey.
+export component Pill inherits Rectangle {
+    in property <string> text;
+    in property <image> icon;
+    in property <bool> green;
+    in property <length> glyph: 22 * Theme.dp;
+    in property <length> font: 16 * Theme.dp;
+    callback clicked;
+    height: 48 * Theme.dp;
+    border-radius: self.height / 2;
+    // solid: the software renderer does not round a gradient's corners
+    background: green ? (t.pressed ? #1e9e5d : #28b46d) : (t.pressed ? Theme.pressed : Theme.field);
+    HorizontalLayout {
+        alignment: center;
+        spacing: 8 * Theme.dp;
+        VerticalLayout {
+            alignment: center;
+            Glyph {
+                source: root.icon;
+                size: root.glyph;
+                colorize: white;
+            }
+        }
+
+        Text {
+            text: root.text;
+            color: white;
+            font-size: root.font;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+    }
+
+    t := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// A settings row with a switch that shows the app's state (`on`): a tap anywhere asks to flip it (`toggled`), the
+// app answers by changing `on` (the kit's own Switch would keep its own state).
+export component SwitchRow inherits Rectangle {
+    in property <string> title;
+    in property <string> subtitle;
+    in property <bool> on;
+    in property <bool> busy;
+    in property <bool> divider: true;
+    callback toggled(bool);
+    height: subtitle == "" ? Theme.list-row-h : Theme.list-row-double-h;
+    ListRow {
+        title: root.title;
+        subtitle: root.subtitle;
+        divider: root.divider;
+    }
+
+    Switch {
+        x: parent.width - self.width - 16 * Theme.dp;
+        on: root.on;
+        opacity: root.busy ? Theme.disabled : 1;
+    }
+
+    TouchArea {
+        enabled: !root.busy;
+        clicked => {
+            root.toggled(!root.on);
+        }
+    }
+}
+
+// A row with its value before the chevron in the boards' light grey (the kit's ListRow dims it): the message centre,
+// counts, the alert.
+export component ValueRow inherits Rectangle {
+    in property <string> title;
+    in property <string> subtitle;
+    in property <string> value;
+    in property <bool> divider: true;
+    callback clicked;
+    height: subtitle == "" ? Theme.list-row-h : Theme.list-row-double-h;
+    ListRow {
+        title: root.title;
+        subtitle: root.subtitle;
+        chevron: true;
+        divider: root.divider;
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    // the kit row's right padding, chevron and gap
+    HorizontalLayout {
+        padding-right: (16 + 18 + 14) * Theme.dp;
+        alignment: end;
+        Text {
+            text: root.value;
+            color: Theme.text-secondary;
+            font-size: 14.5 * Theme.dp;
+            vertical-alignment: center;
+        }
+    }
+}
+
+// A sheet heading on the left (the boards' ChoiceSheets).
+export component Heading inherits HorizontalLayout {
+    in property <string> text;
+    in property <length> left: 20 * Theme.dp;
+    padding-left: left;
+    padding-right: left;
+    padding-top: 10 * Theme.dp;
+    padding-bottom: 4 * Theme.dp;
+    Text {
+        text: root.text;
+        color: Theme.text;
+        font-size: Theme.font-body;
+        font-weight: 600;
+    }
+}
+
+// Pick one, radio first (p2-phone-settings-clir, -log): the kit Sheet with a heading on the left; a tap picks and
+// closes.
+export component RadioSheet inherits Sheet {
+    in property <string> heading;
+    in property <[string]> choices;
+    in property <int> current;
+    callback chosen(int);
+    Heading {
+        text: root.heading;
+    }
+
+    for c[i] in root.choices: Rectangle {
+        height: Theme.list-row-h;
+        background: t.pressed ? Theme.pressed : transparent;
+        HorizontalLayout {
+            padding-left: 20 * Theme.dp;
+            padding-right: 20 * Theme.dp;
+            spacing: 16 * Theme.dp;
+            VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 22 * Theme.dp;
+                    height: self.width;
+                    border-radius: self.width / 2;
+                    border-width: 2 * Theme.dp;
+                    border-color: i == root.current ? Theme.accent : Theme.text-dim;
+                    if i == root.current: Rectangle {
+                        width: 10 * Theme.dp;
+                        height: self.width;
+                        border-radius: self.width / 2;
+                        background: Theme.accent;
+                    }
+                }
+            }
+
+            Text {
+                text: c;
+                color: Theme.text;
+                font-size: Theme.font-body;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+        }
+
+        t := TouchArea {
+            clicked => {
+                root.open = false;
+                root.chosen(i);
+            }
+        }
+    }
+}
+
+// A dashed rounded border (an empty speed-dial key): dashes on the straight edges (Slint draws no dashed borders).
+export component Dashed inherits Rectangle {
+    in property <color> ink: #ffffff3d;
+    in property <length> radius: 14 * Theme.dp;
+    property <length> dash: 5 * Theme.dp;
+    property <length> step: 9 * Theme.dp;
+    property <length> line: max(1px, Theme.dp);
+    property <int> across: Math.floor((self.width - 2 * radius) / step);
+    property <int> down: Math.floor((self.height - 2 * radius) / step);
+    property <length> x0: (self.width - across * step + step - dash) / 2;
+    property <length> y0: (self.height - down * step + step - dash) / 2;
+    for i in across: Rectangle {
+        x: root.x0 + i * root.step;
+        y: 0;
+        width: root.dash;
+        height: root.line;
+        background: root.ink;
+    }
+    for i in across: Rectangle {
+        x: root.x0 + i * root.step;
+        y: root.height - root.line;
+        width: root.dash;
+        height: root.line;
+        background: root.ink;
+    }
+    for i in down: Rectangle {
+        x: 0;
+        y: root.y0 + i * root.step;
+        width: root.line;
+        height: root.dash;
+        background: root.ink;
+    }
+    for i in down: Rectangle {
+        x: root.width - root.line;
+        y: root.y0 + i * root.step;
+        width: root.line;
+        height: root.dash;
+        background: root.ink;
+    }
+    // the corners: a quarter of a solid ring each, faint, so the tile keeps its rounded shape
+    Rectangle {
+        border-radius: root.radius;
+        border-width: root.line;
+        border-color: root.ink.with-alpha(0.25);
+    }
+}

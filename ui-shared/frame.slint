@@ -1,0 +1,166 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// The frame Phone, Contacts and Messages draw their pages in (neoui protocol 1.9): the kit header as the view describes
+// itself (Nav: Header, SubHeader or FormHeader, ⋮ as the kit's menu), the page, the view's big action in a band of its
+// own (Call, D14), and the footer that switches between the three apps on a root view. A full-screen view (a call)
+// has none of it. Toasts and dialogs are the shell's (NOTE, QUERY).
+import { Theme, KeyboardFocus, Header, FormHeader, Glyph } from "@neoui/kit.slint";
+import { Nav } from "nav.slint";
+import { PillButton } from "common.slint";
+import { AppsFooter } from "footer.slint";
+import { Icons } from "icons.slint";
+
+export component AppFrame inherits Rectangle {
+    // 0 Phone, 1 Contacts, 2 Messages: the app's footer tab
+    in property <int> own;
+    // A tap that no row or button takes lands here, below the pages: the focus moves to `sink`, the field loses it
+    // and the keyboard closes. A page or view change does the same (a field removed with its `if` never reports
+    // losing focus).
+    sink := FocusScope { }
+    TouchArea {
+        clicked => {
+            root.leave-fields();
+        }
+    }
+
+    property <string> place: Nav.page + "/" + Nav.view;
+    changed place => {
+        root.leave-fields();
+    }
+
+    public function leave-fields() {
+        sink.focus();
+        KeyboardFocus.open = false;
+    }
+
+    property <bool> has-header: !Nav.full;
+    property <bool> has-footer: !Nav.full && Nav.footer;
+    if root.has-header && Nav.form: FormHeader {
+        y: 0;
+        title: Nav.title;
+        title-font: Nav.title-font;
+        alt: true;
+        // a form whose action is in its content (a new message's Send) has no ✓
+        has-save: Nav.action-tool != 0;
+        can-save: Nav.has-action;
+        cancel => {
+            Nav.header("back", 0);
+        }
+        save => {
+            Nav.header("save", 0);
+        }
+    }
+    if root.has-header && !Nav.form: Header {
+        y: 0;
+        title: Nav.title;
+        title-font: Nav.title-font;
+        // the boards' #0b0c0e header and footer
+        alt: true;
+        has-back: Nav.sub;
+        search: Nav.search;
+        search-placeholder: Nav.search-hint;
+        query <=> Nav.query;
+        searching <=> Nav.searching;
+        tap-to-top: false;
+        actions: Nav.actions;
+        menu: Nav.options;
+        selected: Nav.selected;
+        selecting: Nav.selecting;
+        selection-actions: Nav.selection-actions;
+        selection-menu: Nav.selection-menu;
+        back => {
+            Nav.header("back", 0);
+        }
+        action(i) => {
+            Nav.header("action", i);
+        }
+        menu-picked(i) => {
+            Nav.header("option", i);
+        }
+        searched(q) => {
+            Nav.searched(q);
+        }
+        selection-action(i) => {
+            Nav.header("selection", i);
+        }
+        selection-closed => {
+            Nav.header("selection-closed", 0);
+        }
+        selection-menu-picked(i) => {
+            Nav.header("selection-option", i);
+        }
+    }
+
+    // the view's big action (the dialer's Call) gets a band of its own under the content, where the thumb is (D14)
+    property <bool> has-pill: root.has-header && Nav.pill && Nav.has-action;
+    property <length> pill-band: 72 * Theme.dp;
+    property <length> bottom: (root.has-pill ? root.pill-band : 0) + (root.has-footer ? Theme.footer-h : 0);
+    property <bool> has-call-bar: root.has-header && Nav.call-bar != "";
+    // Return to call (the prototype's hidden call): 36 dp of green under the header
+    if root.has-call-bar: Rectangle {
+        y: Theme.header-h;
+        height: 36 * Theme.dp;
+        background: bar-touch.pressed ? #1e9e5d.darker(20%) : #1e9e5d;
+        HorizontalLayout {
+            padding-left: 16 * Theme.dp;
+            padding-right: 16 * Theme.dp;
+            spacing: 8 * Theme.dp;
+            VerticalLayout {
+                alignment: center;
+                Glyph {
+                    source: @image-url("@neoui/icons/sys/call.svg");
+                    size: 16 * Theme.dp;
+                    colorize: white;
+                }
+            }
+            Text {
+                text: Nav.call-bar;
+                color: white;
+                font-size: 13.5 * Theme.dp;
+                font-weight: 600;
+                vertical-alignment: center;
+                overflow: elide;
+                horizontal-stretch: 1;
+            }
+            Text {
+                text: "Return to call";
+                color: white;
+                font-size: 13.5 * Theme.dp;
+                font-weight: 600;
+                vertical-alignment: center;
+            }
+        }
+        bar-touch := TouchArea {
+            clicked => {
+                Nav.header("call-bar", 0);
+            }
+        }
+    }
+    Rectangle {
+        y: (root.has-header ? Theme.header-h : 0) + (root.has-call-bar ? 36 * Theme.dp : 0);
+        height: root.height - self.y - root.bottom;
+        @children
+    }
+
+    if root.has-pill: PillButton {
+        x: (root.width - self.width) / 2;
+        y: root.height - (root.has-footer ? Theme.footer-h : 0) - (root.pill-band + self.height) / 2;
+        width: 160 * Theme.dp;
+        text: Nav.action-label;
+        icon: Icons.icon(Nav.action-tool);
+        kind: "green";
+        clicked => {
+            Nav.header("save", 0);
+        }
+    }
+
+    if root.has-footer: AppsFooter {
+        y: root.height - self.height;
+        alt: true;
+        own: root.own;
+        missed: Nav.missed;
+        unread: Nav.unread;
+        open(i) => {
+            Nav.header("tab", i);
+        }
+    }
+}

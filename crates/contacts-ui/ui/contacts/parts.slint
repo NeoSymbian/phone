@@ -1,0 +1,811 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// The Contacts pieces the kit has no part for (NEOPHONE v2 p2-contacts-*): section bands in any script, my card's row,
+// the favourites strip, the letter strip of three alphabets, search hits, the card's rows, pills and blocked banner,
+// the editor's photo slot, type chip and remove button, the number-type sheet and the query with check boxes.
+import { Theme, Glyph, Avatar, Sheet, TextField } from "@neoui/kit.slint";
+import { ContactMark, ContactRow } from "state.slint";
+
+// A section band ("FAVOURITES", "A", "Ա"): 34 high, the text 6 dp above its bottom, as the boards draw it.
+export component Band inherits Rectangle {
+    in property <string> text;
+    height: 34 * Theme.dp;
+    Text {
+        x: 16 * Theme.dp;
+        y: parent.height - self.height - 6 * Theme.dp;
+        text: root.text;
+        color: Theme.text-dim;
+        font-size: 13 * Theme.dp;
+        font-weight: 600;
+    }
+}
+
+// The list's first row: my card.
+export component MyCardRow inherits Rectangle {
+    callback clicked;
+    height: 56 * Theme.dp;
+    background: t.pressed ? Theme.pressed : transparent;
+    HorizontalLayout {
+        padding-left: 14 * Theme.dp;
+        padding-right: 44 * Theme.dp;
+        spacing: 12 * Theme.dp;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 34 * Theme.dp;
+                height: self.width;
+                border-radius: self.width / 2;
+                background: #2b3038;
+                Glyph {
+                    source: @image-url("@phone-shared/icons/person.svg");
+                    size: 18 * Theme.dp;
+                    colorize: Theme.text-secondary;
+                }
+            }
+        }
+
+        Text {
+            text: "My card";
+            color: Theme.text;
+            font-size: Theme.font-body;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+
+        VerticalLayout {
+            alignment: center;
+            Glyph {
+                source: @image-url("@neoui/icons/sys/chevron_right.svg");
+                size: 24 * Theme.dp;
+                colorize: Theme.text-dim;
+            }
+        }
+    }
+
+    t := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// The favourites: big avatars with first names, scrolling sideways.
+export component Favourites inherits Flickable {
+    in property <[ContactRow]> people;
+    callback open(int);
+    height: 94 * Theme.dp;
+    content-width: max(self.width, row.preferred-width);
+    row := HorizontalLayout {
+        padding-top: 12 * Theme.dp;
+        padding-bottom: 12 * Theme.dp;
+        padding-left: 14 * Theme.dp;
+        padding-right: 44 * Theme.dp;
+        spacing: 16 * Theme.dp;
+        alignment: start;
+        for f in root.people: Rectangle {
+            width: 56 * Theme.dp;
+            VerticalLayout {
+                spacing: 5 * Theme.dp;
+                HorizontalLayout {
+                    alignment: center;
+                    Avatar {
+                        initials: f.initials;
+                        tint: f.tint;
+                        size: 52 * Theme.dp;
+                    }
+                }
+
+                Text {
+                    text: f.name;
+                    color: Theme.text;
+                    font-size: 12.5 * Theme.dp;
+                    horizontal-alignment: center;
+                    overflow: elide;
+                }
+            }
+
+            TouchArea {
+                clicked => {
+                    root.open(f.id);
+                }
+            }
+        }
+    }
+}
+
+// The letter strip at the list's right (Latin – Armenian – Cyrillic, #): the section at the list's top is lit; tap or
+// drag over a letter to jump to it, with the letter in a bubble beside the finger. Over "•" the finger's height
+// picks one of the letters it stands for.
+export component LetterStrip inherits Rectangle {
+    in property <[ContactMark]> marks;
+    // how far the list scrolled (dp below the first band)
+    in property <float> at;
+    callback jump(float);
+    property <length> pitch: 15 * Theme.dp;
+    property <int> on: -1;
+    property <int> sub: 0;
+    width: 24 * Theme.dp;
+    height: root.marks.length * root.pitch;
+    border-radius: 12 * Theme.dp;
+    background: Theme.card;
+    for m[i] in root.marks: Rectangle {
+        y: i * root.pitch;
+        height: root.pitch;
+        property <bool> lit: m.tops.length > 0 && root.at >= m.start && root.at < m.end;
+        Rectangle {
+            width: 20 * Theme.dp;
+            border-radius: 7 * Theme.dp;
+            background: parent.lit ? Theme.accent : transparent;
+        }
+
+        Text {
+            text: m.text;
+            font-size: m.tops.length == 0 ? 10 * Theme.dp : 11 * Theme.dp;
+            font-weight: 600;
+            color: m.tops.length == 0 ? Theme.text-dim : parent.lit ? Theme.text : Theme.text-secondary;
+        }
+    }
+    function pick(y: length) {
+        if root.marks.length == 0 {
+            return;
+        }
+        root.on = clamp(floor(y / root.pitch), 0, root.marks.length - 1);
+        let n = root.marks[root.on].tops.length;
+        if n == 0 {
+            return;
+        }
+        root.sub = clamp(floor((y - root.on * root.pitch) / root.pitch * n), 0, n - 1);
+        root.jump(root.marks[root.on].tops[root.sub]);
+    }
+    touch := TouchArea {
+        pointer-event(e) => {
+            if e.kind == PointerEventKind.down {
+                root.pick(self.mouse-y);
+            }
+        }
+        moved => {
+            root.pick(self.mouse-y);
+        }
+    }
+
+    if touch.pressed && root.on >= 0 && root.marks[root.on].letters.length > 0: Rectangle {
+        x: -self.width - 28 * Theme.dp;
+        y: clamp(touch.mouse-y - self.height / 2, -12 * Theme.dp, root.height);
+        width: 72 * Theme.dp;
+        height: self.width;
+        border-radius: self.width / 2;
+        background: Theme.accent;
+        drop-shadow-blur: 24 * Theme.dp;
+        drop-shadow-offset-y: 8 * Theme.dp;
+        drop-shadow-color: #000000b3;
+        Text {
+            text: root.marks[root.on].letters[root.sub];
+            font-size: 34 * Theme.dp;
+            font-weight: 600;
+            color: Theme.text;
+        }
+    }
+}
+
+// Text in three parts, the middle one lit (accent). Slint's text measure drops a part's trailing spaces, so each
+// part is measured with a bar after it.
+component Lit inherits Rectangle {
+    in property <[string]> parts;
+    in property <length> size;
+    in property <color> base;
+    in property <int> weight: 400;
+    height: pre.preferred-height;
+    bar := Text {
+        visible: false;
+        text: "|";
+        font-size: root.size;
+        font-weight: root.weight;
+    }
+
+    pre-m := Text {
+        visible: false;
+        text: root.parts[0] + "|";
+        font-size: root.size;
+        font-weight: root.weight;
+    }
+
+    hit-m := Text {
+        visible: false;
+        text: root.parts[1] + "|";
+        font-size: root.size;
+        font-weight: root.weight;
+    }
+
+    pre := Text {
+        x: 0;
+        width: min(root.width, pre-m.preferred-width - bar.preferred-width);
+        text: root.parts[0];
+        font-size: root.size;
+        font-weight: root.weight;
+        color: root.base;
+        overflow: elide;
+    }
+
+    hit := Text {
+        x: pre.width;
+        width: max(0px, min(root.width - self.x, hit-m.preferred-width - bar.preferred-width));
+        text: root.parts[1];
+        font-size: root.size;
+        font-weight: root.weight;
+        color: Theme.accent;
+        overflow: elide;
+    }
+
+    Text {
+        x: hit.x + hit.width;
+        width: max(0px, root.width - self.x);
+        text: root.parts[2];
+        font-size: root.size;
+        font-weight: root.weight;
+        color: root.base;
+        overflow: elide;
+    }
+}
+
+// A search result: the name and a detail line, what matched lit.
+export component HitRow inherits Rectangle {
+    in property <string> initials;
+    in property <color> tint;
+    in property <[string]> name;
+    in property <[string]> detail;
+    callback clicked;
+    height: Theme.list-row-double-h;
+    background: touch.pressed ? Theme.pressed : transparent;
+    HorizontalLayout {
+        padding-left: 16 * Theme.dp;
+        padding-right: 16 * Theme.dp;
+        spacing: 14 * Theme.dp;
+        VerticalLayout {
+            alignment: center;
+            Avatar {
+                initials: root.initials;
+                tint: root.tint;
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            spacing: 3 * Theme.dp;
+            horizontal-stretch: 1;
+            Lit {
+                parts: root.name;
+                size: Theme.font-body;
+                base: Theme.text;
+                weight: 500;
+            }
+
+            if root.detail[0] != "" || root.detail[2] != "": Lit {
+                parts: root.detail;
+                size: Theme.font-label;
+                base: Theme.text-dim;
+            }
+        }
+    }
+
+    Rectangle {
+        x: 74 * Theme.dp;
+        y: parent.height - self.height;
+        width: parent.width - self.x;
+        height: max(1px, Theme.dp / 2);
+        background: Theme.hairline;
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// A round action in a card row: blue Message and Email, green Call.
+export component RowAction inherits Rectangle {
+    in property <image> icon;
+    in property <color> tint: Theme.accent;
+    callback clicked;
+    width: 40 * Theme.dp;
+    height: self.width;
+    border-radius: self.width / 2;
+    background: tint.with-alpha(touch.pressed ? 0.3 : 0.12);
+    Glyph {
+        source: root.icon;
+        size: 20 * Theme.dp;
+        colorize: root.tint;
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// One line of the card: a label over its value, round actions at the right.
+export component InfoRow inherits Rectangle {
+    in property <string> label;
+    in property <string> value;
+    in property <length> size: 17 * Theme.dp;
+    in property <bool> divider: true;
+    height: 64 * Theme.dp;
+    if root.divider: Rectangle {
+        x: 14 * Theme.dp;
+        y: 0;
+        width: parent.width - self.x;
+        height: max(1px, Theme.dp / 2);
+        background: Theme.hairline;
+    }
+    HorizontalLayout {
+        padding-left: 14 * Theme.dp;
+        padding-right: 14 * Theme.dp;
+        spacing: 12 * Theme.dp;
+        VerticalLayout {
+            alignment: center;
+            spacing: 2 * Theme.dp;
+            horizontal-stretch: 1;
+            Text {
+                text: root.label;
+                color: Theme.text-secondary;
+                font-size: Theme.font-label;
+            }
+
+            Text {
+                text: root.value;
+                color: Theme.text;
+                font-size: root.size;
+                overflow: elide;
+            }
+        }
+
+        @children
+    }
+}
+
+// The card's Call and Message: big pills under the name.
+export component CardPill inherits Rectangle {
+    in property <string> text;
+    in property <image> icon;
+    in property <bool> green;
+    callback clicked;
+    height: 48 * Theme.dp;
+    border-radius: self.height / 2;
+    // solid: the software renderer does not round a gradient's corners
+    background: root.green ? (touch.pressed ? Theme.ok.darker(20%) : Theme.ok) : (touch.pressed ? Theme.pressed : Theme.field);
+    HorizontalLayout {
+        alignment: center;
+        spacing: 8 * Theme.dp;
+        VerticalLayout {
+            alignment: center;
+            Glyph {
+                source: root.icon;
+                size: 22 * Theme.dp;
+                colorize: root.green ? Theme.text : Theme.accent;
+            }
+        }
+
+        Text {
+            text: root.text;
+            color: Theme.text;
+            font-size: Theme.font-body;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// The red "Blocked" banner on a blocked contact's card, with Unblock.
+export component BlockedBanner inherits Rectangle {
+    in property <string> detail;
+    callback unblock;
+    height: 58 * Theme.dp;
+    border-radius: 14 * Theme.dp;
+    background: Theme.danger.with-alpha(0.12);
+    border-width: max(1px, Theme.dp / 2);
+    border-color: Theme.danger.with-alpha(0.35);
+    HorizontalLayout {
+        padding-left: 14 * Theme.dp;
+        padding-right: 8 * Theme.dp;
+        spacing: 12 * Theme.dp;
+        VerticalLayout {
+            alignment: center;
+            Glyph {
+                source: @image-url("@phone-shared/icons/block.svg");
+                size: 24 * Theme.dp;
+                colorize: Theme.danger-text;
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            spacing: 2 * Theme.dp;
+            horizontal-stretch: 1;
+            Text {
+                text: "Blocked";
+                color: Theme.danger-text;
+                font-size: 15 * Theme.dp;
+                font-weight: 600;
+            }
+
+            Text {
+                text: root.detail;
+                color: Theme.text-secondary;
+                font-size: Theme.font-label;
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                height: 36 * Theme.dp;
+                width: label.preferred-width + 28 * Theme.dp;
+                border-radius: self.height / 2;
+                background: ut.pressed ? Theme.pressed : Theme.dialog-button;
+                label := Text {
+                    text: "Unblock";
+                    color: Theme.text;
+                    font-size: 14 * Theme.dp;
+                    font-weight: 600;
+                }
+
+                ut := TouchArea {
+                    clicked => {
+                        root.unblock();
+                    }
+                }
+            }
+        }
+    }
+}
+
+// The editor's photo slot: a dashed ring (an SVG: Slint draws no dashed borders). shortcut: no Photos app to pick
+// from yet, so a tap only says so (the app's note); open it once there is one.
+export component PhotoSlot inherits Rectangle {
+    callback clicked;
+    width: 96 * Theme.dp;
+    height: self.width;
+    border-radius: self.width / 2;
+    background: touch.pressed ? Theme.pressed : Theme.card;
+    Image {
+        width: parent.width;
+        height: parent.height;
+        source: @image-url("photo_slot.svg");
+    }
+
+    VerticalLayout {
+        alignment: center;
+        spacing: 4 * Theme.dp;
+        HorizontalLayout {
+            alignment: center;
+            Glyph {
+                source: @image-url("@neoui/icons/sys/add.svg");
+                size: 24 * Theme.dp;
+                colorize: Theme.text-secondary;
+            }
+        }
+
+        Text {
+            text: "Photo";
+            color: Theme.text-secondary;
+            font-size: 13 * Theme.dp;
+            font-weight: 500;
+            horizontal-alignment: center;
+        }
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// The kit's field with the board's 1 dp border.
+export component Field inherits TextField {
+    border-width: Theme.dp;
+}
+
+// The editor's number-type chip.
+export component TypeChip inherits Rectangle {
+    in property <string> text;
+    callback clicked;
+    width: 104 * Theme.dp;
+    height: Theme.field-h;
+    border-radius: Theme.radius-small;
+    background: touch.pressed ? Theme.pressed : Theme.card;
+    border-width: Theme.dp;
+    border-color: Theme.hairline;
+    HorizontalLayout {
+        padding-left: 12 * Theme.dp;
+        padding-right: 8 * Theme.dp;
+        spacing: 4 * Theme.dp;
+        Text {
+            text: root.text;
+            color: Theme.text;
+            font-size: 14 * Theme.dp;
+            font-weight: 500;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+        }
+
+        VerticalLayout {
+            alignment: center;
+            Glyph {
+                source: @image-url("@phone-shared/icons/chevron_down.svg");
+                size: 16 * Theme.dp;
+                colorize: Theme.text-secondary;
+            }
+        }
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// A quiet icon button (the editor's ✕ after a number).
+export component IconButton inherits Rectangle {
+    in property <image> icon;
+    in property <length> size: 20 * Theme.dp;
+    callback clicked;
+    width: 40 * Theme.dp;
+    height: Theme.field-h;
+    Rectangle {
+        width: 32 * Theme.dp;
+        height: self.width;
+        border-radius: self.width / 2;
+        background: touch.pressed ? Theme.pressed : transparent;
+    }
+
+    Glyph {
+        source: root.icon;
+        size: root.size;
+        colorize: Theme.text-secondary;
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// A text button with a leading glyph (the editor's "+ Add number", the empty list's "New contact").
+export component GlyphButton inherits Rectangle {
+    in property <string> text;
+    in property <image> icon;
+    // filled: the field colour as a pill; else accent text with no fill
+    in property <bool> filled;
+    callback clicked;
+    height: Theme.field-h;
+    width: row.preferred-width;
+    border-radius: self.height / 2;
+    background: touch.pressed ? Theme.pressed : root.filled ? Theme.field : transparent;
+    row := HorizontalLayout {
+        padding-left: root.filled ? 16 * Theme.dp : 10 * Theme.dp;
+        padding-right: root.filled ? 20 * Theme.dp : 10 * Theme.dp;
+        spacing: 8 * Theme.dp;
+        VerticalLayout {
+            alignment: center;
+            Glyph {
+                source: root.icon;
+                size: 22 * Theme.dp;
+                colorize: Theme.accent;
+            }
+        }
+
+        Text {
+            text: root.text;
+            color: root.filled ? Theme.text : Theme.accent;
+            font-size: root.filled ? Theme.font-body : 15 * Theme.dp;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// The number-type sheet: a title, the number it is for, the types with a radio at the left.
+export component TypeSheet inherits Sheet {
+    in property <string> number;
+    in property <[string]> choices;
+    in property <int> current;
+    callback chosen(int);
+    VerticalLayout {
+        padding-left: 20 * Theme.dp;
+        padding-right: 20 * Theme.dp;
+        padding-top: 9 * Theme.dp;
+        padding-bottom: 4 * Theme.dp;
+        spacing: 4 * Theme.dp;
+        Text {
+            text: "Number type";
+            color: Theme.text;
+            font-size: Theme.font-body;
+            font-weight: 600;
+        }
+
+        Text {
+            text: root.number;
+            color: Theme.text-dim;
+            font-size: Theme.font-label;
+        }
+    }
+
+    for c[i] in root.choices: Rectangle {
+        height: Theme.list-row-h;
+        background: t.pressed ? Theme.pressed : transparent;
+        HorizontalLayout {
+            padding-left: 20 * Theme.dp;
+            padding-right: 20 * Theme.dp;
+            spacing: 16 * Theme.dp;
+            VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 22 * Theme.dp;
+                    height: self.width;
+                    border-radius: self.width / 2;
+                    border-width: 2 * Theme.dp;
+                    border-color: i == root.current ? Theme.accent : Theme.text-dim;
+                    if i == root.current: Rectangle {
+                        width: 10 * Theme.dp;
+                        height: self.width;
+                        border-radius: self.width / 2;
+                        background: Theme.accent;
+                    }
+                }
+            }
+
+            Text {
+                text: c;
+                color: Theme.text;
+                font-size: Theme.font-body;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+        }
+
+        t := TouchArea {
+            clicked => {
+                root.chosen(i);
+            }
+        }
+    }
+}
+
+// A query over the whole app: a question, a detail, check boxes, and the red action with Cancel at the right.
+export component Dialog inherits Rectangle {
+    in property <bool> open;
+    in property <string> question;
+    in property <string> detail;
+    in property <string> confirm;
+    in property <[string]> checks;
+    in property <[bool]> checked;
+    callback confirmed;
+    callback cancelled;
+    callback toggled(int);
+    // with check boxes, the red button needs one ticked (Block: Calls or Messages)
+    property <bool> can-confirm: root.checks.length == 0 || root.checked[0] || root.checked[1];
+    visible: root.open;
+    Rectangle {
+        background: Theme.scrim;
+        TouchArea {
+            clicked => {
+                root.cancelled();
+            }
+        }
+    }
+
+    Rectangle {
+        x: 24 * Theme.dp;
+        width: parent.width - 48 * Theme.dp;
+        height: box.preferred-height;
+        y: (parent.height - self.height) / 2;
+        border-radius: Theme.radius + 4 * Theme.dp;
+        background: Theme.sheet;
+        border-width: max(1px, Theme.dp / 2);
+        border-color: Theme.card-border;
+        drop-shadow-blur: 32 * Theme.dp;
+        drop-shadow-offset-y: 12 * Theme.dp;
+        drop-shadow-color: #000000cc;
+        TouchArea { }
+
+        box := VerticalLayout {
+            padding: 20 * Theme.dp;
+            spacing: 12 * Theme.dp;
+            Text {
+                text: root.question;
+                color: Theme.text;
+                font-size: 17 * Theme.dp;
+                font-weight: 600;
+                wrap: word-wrap;
+            }
+
+            if root.detail != "": Text {
+                text: root.detail;
+                color: Theme.text-secondary;
+                font-size: 14 * Theme.dp;
+                wrap: word-wrap;
+            }
+            for c[i] in root.checks: Rectangle {
+                height: 40 * Theme.dp;
+                HorizontalLayout {
+                    spacing: 12 * Theme.dp;
+                    VerticalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 24 * Theme.dp;
+                            height: self.width;
+                            border-radius: 6 * Theme.dp;
+                            background: root.checked[i] ? Theme.accent : transparent;
+                            border-width: root.checked[i] ? 0 : 2 * Theme.dp;
+                            border-color: Theme.text-dim;
+                            if root.checked[i]: Glyph {
+                                source: @image-url("@neoui/icons/sys/check.svg");
+                                size: 16 * Theme.dp;
+                            }
+                        }
+                    }
+
+                    Text {
+                        text: c;
+                        color: Theme.text;
+                        font-size: Theme.font-body;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                    }
+                }
+
+                TouchArea {
+                    clicked => {
+                        root.toggled(i);
+                    }
+                }
+            }
+            HorizontalLayout {
+                alignment: end;
+                padding-top: 6 * Theme.dp;
+                spacing: 8 * Theme.dp;
+                for b[i] in [root.confirm, "Cancel"]: Rectangle {
+                    width: max(80 * Theme.dp, t.preferred-width + 32 * Theme.dp);
+                    height: 40 * Theme.dp;
+                    border-radius: self.height / 2;
+                    background: i == 0 ? (touch.pressed && root.can-confirm ? Theme.danger.darker(20%) : Theme.danger) : touch.pressed ? Theme.pressed : Theme.dialog-button;
+                    opacity: i == 0 && !root.can-confirm ? 0.4 : 1;
+                    t := Text {
+                        text: b;
+                        color: Theme.text;
+                        font-size: 14 * Theme.dp;
+                        font-weight: 600;
+                    }
+
+                    touch := TouchArea {
+                        clicked => {
+                            if i == 0 {
+                                if root.can-confirm {
+                                    root.confirmed();
+                                }
+                            } else {
+                                root.cancelled();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

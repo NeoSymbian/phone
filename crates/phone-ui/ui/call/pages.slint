@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// The call screens (mockups 9-15): incoming, calling, active, call waiting, two calls, the in-call keypad, the
-// summary, on the deep-blue call backdrop. The UI server's status bar and toolbar frame them (an empty black toolbar
-// on 9 and 12); CallState.screen picks the screen, CallState.keypad lays the keypad over a call.
-import { Theme } from "@neoui/theme.slint";
-import { Glyph } from "@neoui/components/frame.slint";
-import { PillButton, KeyGrid, Sheet } from "../common.slint";
-import { Alphabets } from "@neoui/components/keyboard/glyphs.slint";
+// The call screens (NEOPHONE v2 p2-call-*): incoming, calling, ringing, active, held, call waiting, two calls, the
+// in-call keypad, the summary, on the deep-blue call backdrop, full screen (no status bar; in Buttons mode the shell's
+// key row peeks over it for 3 s). CallState.screen picks the screen, CallState.keypad lays the keypad over a call.
+import { Theme, Glyph, Sheet, Alphabets } from "@neoui/kit.slint";
+import { KeyGrid } from "@phone-shared/common.slint";
 import { CallState, Party } from "state.slint";
 
 // The caller's avatar: initials on the contact's colour, or a # on grey for a number without a contact. `ring`: the
@@ -36,13 +34,12 @@ component CallAvatar inherits Rectangle {
         background: party.initials == "" ? #2b3038 : party.tint;
         if party.initials != "": Text {
             text: party.initials;
-            font-family: "DejaVu Sans";
             color: white;
             font-size: root.size * 0.365;
             font-weight: 600;
         }
         if party.initials == "": Glyph {
-            source: @image-url("../icons/hash.svg");
+            source: @image-url("@phone-shared/icons/hash.svg");
             size: root.size * 0.4;
             colorize: Theme.text-secondary;
         }
@@ -78,7 +75,6 @@ component Who inherits VerticalLayout {
 
     Text {
         text: party.name;
-        font-family: "DejaVu Sans";
         color: Theme.text;
         font-size: 26 * Theme.dp;
         font-weight: 600;
@@ -178,6 +174,45 @@ component BigButton inherits VerticalLayout {
     }
 }
 
+// A pill on the call backdrop (Hold & answer, End & answer, Reject, Call again, Message): "green", "red" or grey.
+component CallPill inherits Rectangle {
+    in property <string> text;
+    in property <image> icon;
+    in property <string> kind;
+    callback clicked;
+    height: 44 * Theme.dp;
+    min-width: row.preferred-width + 30 * Theme.dp;
+    border-radius: 12 * Theme.dp;
+    property <color> fill: kind == "green" ? #17804f : kind == "red" ? #c8303a : #353a42;
+    background: touch.pressed ? self.fill.darker(20%) : self.fill;
+    row := HorizontalLayout {
+        alignment: center;
+        spacing: 8 * Theme.dp;
+        VerticalLayout {
+            alignment: center;
+            Glyph {
+                source: root.icon;
+                size: 19 * Theme.dp;
+                colorize: white;
+            }
+        }
+
+        Text {
+            text: root.text;
+            color: Theme.text;
+            font-size: 15 * Theme.dp;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
 component EndButton inherits BigButton {
     icon: @image-url("@neoui/icons/sys/end_call.svg");
     color: Theme.danger;
@@ -265,9 +300,9 @@ component Gap inherits Rectangle {
     vertical-stretch: 0;
 }
 
-// 9: a call rings.
+// A call rings (p2-call-incoming, -unknown, -private).
 component Incoming inherits VerticalLayout {
-    Gap { dp: 34; }
+    Gap { dp: 56; }
     Text {
         text: "INCOMING CALL";
         color: Theme.text-secondary;
@@ -277,7 +312,7 @@ component Incoming inherits VerticalLayout {
         horizontal-alignment: center;
     }
 
-    Gap { dp: 34; }
+    Gap { dp: 44; }
     Who {
         party: CallState.main;
         ring: true;
@@ -310,8 +345,7 @@ component Incoming inherits VerticalLayout {
         padding-left: 46 * Theme.dp;
         padding-right: 46 * Theme.dp;
         padding-top: 28 * Theme.dp;
-        // the mockup's 40 dp sit over the UI server's empty toolbar strip
-        padding-bottom: 6 * Theme.dp;
+        padding-bottom: 72 * Theme.dp;
         alignment: space-between;
         BigButton {
             icon: @image-url("@neoui/icons/sys/end_call.svg");
@@ -333,9 +367,9 @@ component Incoming inherits VerticalLayout {
     }
 }
 
-// 10: our call, before the other side answers.
+// Our call, before the other side answers (p2-call-calling, -ringing).
 component Calling inherits VerticalLayout {
-    Gap { dp: 60; }
+    Gap { dp: 96; }
     Who {
         party: CallState.main;
         extra: CallState.main-time;
@@ -348,12 +382,12 @@ component Calling inherits VerticalLayout {
     Gap { dp: 30; }
     EndButton { }
 
-    Gap { dp: 34; }
+    Gap { dp: 72; }
 }
 
-// 11: one call up.
+// One call up (p2-call-active, -held, -buttons).
 component Active inherits VerticalLayout {
-    Gap { dp: 36; }
+    Gap { dp: 64; }
     Who {
         party: CallState.main;
         avatar: 104 * Theme.dp;
@@ -390,7 +424,7 @@ component Active inherits VerticalLayout {
             }
 
             CallButton {
-                icon: @image-url("../icons/person.svg");
+                icon: @image-url("@phone-shared/icons/person.svg");
                 text: "Contacts";
                 clicked => {
                     CallState.act("contacts", "");
@@ -402,15 +436,15 @@ component Active inherits VerticalLayout {
     Gap { dp: 26; }
     EndButton { }
 
-    Gap { dp: 26; }
+    Gap { dp: 72; }
 }
 
-// 12: a second caller over the dimmed call.
+// A second caller over the dimmed call (p2-call-waiting).
 component Waiting inherits Rectangle {
     VerticalLayout {
         opacity: 0.45;
         alignment: start;
-        Gap { dp: 36; }
+        Gap { dp: 64; }
         Who {
             party: CallState.main;
             avatar: 104 * Theme.dp;
@@ -461,7 +495,6 @@ component Waiting inherits Rectangle {
 
                     Text {
                         text: CallState.other.name;
-                        font-family: "DejaVu Sans";
                         color: Theme.text;
                         font-size: 18 * Theme.dp;
                         font-weight: 600;
@@ -481,7 +514,7 @@ component Waiting inherits Rectangle {
                 padding-left: 14 * Theme.dp;
                 padding-right: 14 * Theme.dp;
                 spacing: 10 * Theme.dp;
-                PillButton {
+                CallPill {
                     text: "Hold & answer";
                     icon: @image-url("@neoui/icons/sys/pause.svg");
                     kind: "green";
@@ -492,7 +525,7 @@ component Waiting inherits Rectangle {
 
                 HorizontalLayout {
                     spacing: 10 * Theme.dp;
-                    PillButton {
+                    CallPill {
                         text: "End & answer";
                         icon: @image-url("@neoui/icons/sys/call.svg");
                         horizontal-stretch: 1;
@@ -501,7 +534,7 @@ component Waiting inherits Rectangle {
                         }
                     }
 
-                    PillButton {
+                    CallPill {
                         text: "Reject";
                         icon: @image-url("@neoui/icons/sys/end_call.svg");
                         kind: "red";
@@ -516,9 +549,9 @@ component Waiting inherits Rectangle {
     }
 }
 
-// 13: two calls; the held one is a slim bar on top (tap: swap).
+// Two calls; the held one is a slim bar on top, tap: swap (p2-call-two).
 component Two inherits VerticalLayout {
-    padding-top: 12 * Theme.dp;
+    padding-top: 16 * Theme.dp;
     HorizontalLayout {
         padding-left: 12 * Theme.dp;
         padding-right: 12 * Theme.dp;
@@ -545,7 +578,6 @@ component Two inherits VerticalLayout {
                     horizontal-stretch: 1;
                     Text {
                         text: CallState.other.name;
-                        font-family: "DejaVu Sans";
                         color: Theme.text;
                         font-size: 15 * Theme.dp;
                         font-weight: 600;
@@ -577,7 +609,7 @@ component Two inherits VerticalLayout {
         }
     }
 
-    Gap { dp: 26; }
+    Gap { dp: 30; }
     Who {
         party: CallState.main;
         avatar: 104 * Theme.dp;
@@ -593,7 +625,7 @@ component Two inherits VerticalLayout {
         spacing: 10 * Theme.dp;
         CallChip {
             text: "Swap";
-            icon: @image-url("../icons/swap.svg");
+            icon: @image-url("@phone-shared/icons/swap.svg");
             clicked => {
                 CallState.act("swap", "");
             }
@@ -601,7 +633,7 @@ component Two inherits VerticalLayout {
 
         CallChip {
             text: "Conference";
-            icon: @image-url("../icons/merge.svg");
+            icon: @image-url("@phone-shared/icons/merge.svg");
             clicked => {
                 CallState.act("merge", "");
             }
@@ -612,13 +644,13 @@ component Two inherits VerticalLayout {
 
     BasicButtons { }
 
-    Gap { dp: 22; }
+    Gap { dp: 26; }
     EndButton { }
 
-    Gap { dp: 24; }
+    Gap { dp: 72; }
 }
 
-// 14: the keypad over a call: a compact header, the tones sent so far, Hide keypad and End.
+// The keypad over a call (p2-call-keypad): a compact header, the tones sent so far, Hide keypad and End.
 component Keypad inherits VerticalLayout {
     HorizontalLayout {
         padding-left: 16 * Theme.dp;
@@ -633,7 +665,6 @@ component Keypad inherits VerticalLayout {
 
         Text {
             text: CallState.main.name;
-            font-family: "DejaVu Sans";
             color: Theme.text;
             font-size: 16 * Theme.dp;
             font-weight: 600;
@@ -680,7 +711,7 @@ component Keypad inherits VerticalLayout {
         padding-left: 40 * Theme.dp;
         padding-right: 40 * Theme.dp;
         padding-top: 12 * Theme.dp;
-        padding-bottom: 22 * Theme.dp;
+        padding-bottom: 72 * Theme.dp;
         alignment: space-between;
         VerticalLayout {
             alignment: center;
@@ -699,9 +730,9 @@ component Keypad inherits VerticalLayout {
     }
 }
 
-// 15: after the last call, for about 2.5 s.
+// After the last call, for about 2.5 s (p2-call-summary, -summary-missed).
 component Summary inherits VerticalLayout {
-    Gap { dp: 90; }
+    Gap { dp: 110; }
     Who {
         party: CallState.main;
         avatar-opacity: 0.85;
@@ -738,7 +769,7 @@ component Summary inherits VerticalLayout {
         HorizontalLayout {
             width: 290 * Theme.dp;
             spacing: 10 * Theme.dp;
-            PillButton {
+            CallPill {
                 text: "Call again";
                 icon: @image-url("@neoui/icons/sys/call.svg");
                 kind: "green";
@@ -748,7 +779,7 @@ component Summary inherits VerticalLayout {
                 }
             }
 
-            if CallState.can-message: PillButton {
+            if CallState.can-message: CallPill {
                 text: "Message";
                 icon: @image-url("@neoui/icons/sys/message.svg");
                 horizontal-stretch: 1;
@@ -759,7 +790,74 @@ component Summary inherits VerticalLayout {
         }
     }
 
-    Gap { dp: 34; }
+    Gap { dp: 72; }
+}
+
+// Reply with message (p2-call-reply): a quick reply rejects the call as busy and sends it; the last row writes one.
+component ReplySheet inherits Sheet {
+    open: true;
+    dismissed => {
+        CallState.act("reply-cancel", "");
+    }
+    VerticalLayout {
+        padding-left: 20 * Theme.dp;
+        padding-right: 20 * Theme.dp;
+        padding-top: 10 * Theme.dp;
+        padding-bottom: 8 * Theme.dp;
+        spacing: 2 * Theme.dp;
+        Text {
+            text: "Reply with message";
+            color: Theme.text;
+            font-size: Theme.font-body;
+            font-weight: 600;
+        }
+
+        Text {
+            text: "Rejects the call and sends the text to " + CallState.main.name;
+            color: Theme.text-secondary;
+            font-size: 13 * Theme.dp;
+            overflow: elide;
+        }
+    }
+
+    for r[i] in CallState.replies: Rectangle {
+        height: Theme.list-row-h;
+        background: t.pressed ? Theme.pressed : transparent;
+        HorizontalLayout {
+            padding-left: 20 * Theme.dp;
+            padding-right: 20 * Theme.dp;
+            spacing: 16 * Theme.dp;
+            VerticalLayout {
+                alignment: center;
+                Glyph {
+                    source: i == CallState.replies.length - 1 ? @image-url("@neoui/icons/sys/edit.svg") : @image-url("@neoui/icons/sys/message.svg");
+                    size: 20 * Theme.dp;
+                    colorize: Theme.text-secondary;
+                }
+            }
+
+            Text {
+                text: r;
+                color: Theme.text;
+                font-size: Theme.font-body;
+                vertical-alignment: center;
+                overflow: elide;
+                horizontal-stretch: 1;
+            }
+        }
+
+        if i < CallState.replies.length - 1: Rectangle {
+            x: 0;
+            y: parent.height - self.height;
+            height: max(1px, Theme.dp / 2);
+            background: Theme.header-hairline;
+        }
+        t := TouchArea {
+            clicked => {
+                CallState.act("reply", i);
+            }
+        }
+    }
 }
 
 export component CallPage inherits Rectangle {
@@ -775,18 +873,8 @@ export component CallPage inherits Rectangle {
     if s == "two" && !pad: Two { }
     if pad: Keypad { }
     if s == "ended": Summary { }
-    // Reply with message (mockup 33): a quick reply rejects the call as busy and sends it
-    Sheet {
-        heading: "Reply with message";
-        items: CallState.replies;
-        open: CallState.replying && s == "incoming";
-        dismissed => {
-            CallState.act("reply-cancel", "");
-        }
-        selected(i, item) => {
-            CallState.act("reply", i);
-        }
-    }
+    // made open (the kit sheet keeps its own `open`): CallState.replying shows and hides it
+    if CallState.replying && s == "incoming": ReplySheet { }
     // the glyphs of names in any keyboard language (Armenian, Cyrillic)
     Alphabets { }
 }

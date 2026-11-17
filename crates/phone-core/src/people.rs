@@ -1,19 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The Contacts page without UI (mockups 16-22, 24, 26): avatars, the list's section offsets, search hits, the card's
+//! The Contacts page without UI (NEOPHONE v2 p2-contacts-*): avatars, the list's section offsets and the letter
+//! strip's spans, search hits, the card's
 //! speed-dial key and block line, the editor's checks, vCard merging and the known-number hashes MODEMD gets.
 
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
-use contacts::index::Section;
+use contacts::index::{Mark, Section};
 use contacts::{Book, Contact, Label, NameOrder};
 use phone_rules::number;
 
 /// A section band's and a row's height on the list (dp), for scrolling to a section.
-pub const BAND_H: f32 = 30.0;
+pub const BAND_H: f32 = 34.0;
 pub const ROW_H: f32 = 56.0;
-/// The side index's pitch (dp per place).
-pub const INDEX_PITCH: f32 = 17.0;
+/// The letter strip's pitch (dp per place).
+pub const INDEX_PITCH: f32 = 15.0;
 
 /// The initials an avatar shows: the first letters of the first two words ("#" for none).
 pub fn initials(name: &str) -> String {
@@ -56,24 +57,52 @@ pub fn tops(sections: &[Section]) -> Vec<f32> {
         .collect()
 }
 
-/// How many places the side index has in a list `height` dp high.
+/// How many places the letter strip has in a list `height` dp high.
 pub fn index_room(height: f32) -> usize {
     (height / INDEX_PITCH).max(3.0) as usize
+}
+
+/// Where each strip place is lit: [start, end) of the list's scroll (dp below the first band, as [`tops`]). The first
+/// letter is lit above the first band too; a dash never is (an empty span).
+pub fn index_spans(marks: &[Mark], tops: &[f32]) -> Vec<(f32, f32)> {
+    let start = |k: &Mark| k.sections.first().map(|&i| tops[i]);
+    let mut first = true;
+    marks
+        .iter()
+        .enumerate()
+        .map(|(n, k)| {
+            let Some(s) = start(k) else {
+                return (0.0, 0.0);
+            };
+            let end = marks[n + 1..].iter().find_map(start).unwrap_or(f32::MAX);
+            let s = if core::mem::take(&mut first) {
+                f32::MIN
+            } else {
+                s
+            };
+            (s, end)
+        })
+        .collect()
 }
 
 fn low(c: char) -> char {
     c.to_lowercase().next().unwrap_or(c)
 }
 
-/// `text` cut around the first word that starts with `query` (case folded): (before, match, after).
-pub fn split_word<'a>(text: &'a str, query: &str) -> Option<(&'a str, &'a str, &'a str)> {
+/// `text` cut around the first place `query` matches (case folded): (before, match, after); `word_start`: only at the
+/// start of a word, else anywhere ([`Book::search`] matches inside words too).
+pub fn split_word<'a>(
+    text: &'a str,
+    query: &str,
+    word_start: bool,
+) -> Option<(&'a str, &'a str, &'a str)> {
     let q: Vec<char> = query.chars().map(low).collect();
     let cs: Vec<(usize, char)> = text.char_indices().collect();
     if q.is_empty() || q.len() > cs.len() {
         return None;
     }
     (0..=cs.len() - q.len())
-        .filter(|&i| i == 0 || cs[i - 1].1.is_whitespace())
+        .filter(|&i| !word_start || i == 0 || cs[i - 1].1.is_whitespace())
         .find(|&i| (0..q.len()).all(|k| low(cs[i + k].1) == q[k]))
         .map(|i| {
             let (a, b) = (cs[i].0, cs.get(i + q.len()).map_or(text.len(), |c| c.0));
@@ -98,10 +127,20 @@ pub fn hit(c: &Contact, query: &str, order: NameOrder) -> Hit {
     let words: Vec<&str> = query.split_whitespace().collect();
     let first_number =
         |(l, n): &(Label, String)| [format!("{} · ", l.text()), String::new(), n.clone()];
-    let name = words.iter().find_map(|w| split_word(&title, w));
+    let in_name = |start| words.iter().find_map(|w| split_word(&title, w, start));
+    let in_company = |start| words.iter().find_map(|w| split_word(&c.company, w, start));
+    // a word start in the name, then in the company; then inside a word, the company first (p2-contacts-search:
+    // "an" lights Vahan & Co, not Hakobyan)
+    let (name, company) = match in_name(true) {
+        Some(n) => (Some(n), None),
+        None => match in_company(true).or_else(|| in_company(false)) {
+            Some(p) => (None, Some(p)),
+            None => (in_name(false), None),
+        },
+    };
     let detail = if name.is_some() {
         None
-    } else if let Some(p) = words.iter().find_map(|w| split_word(&c.company, w)) {
+    } else if let Some(p) = company {
         Some([format!("Company: {}", p.0), p.1.into(), p.2.into()])
     } else {
         let d = number::digits(query);
@@ -168,6 +207,31 @@ pub fn worth_saving(c: &Contact) -> bool {
         && c.numbers.is_empty())
 }
 
+/// The editor's fields changed from what it opened with (spaces and empty number rows don't count): ✕ and Back ask
+/// "Discard changes?" first.
+pub fn edited(start: &Contact, now: &Contact) -> bool {
+    let (mut a, mut b) = (start.clone(), now.clone());
+    a.tidy();
+    b.tidy();
+    a != b
+}
+
+/// The file "Send as vCard" writes in `C:\Data\`: the name without what a file name can't hold, never the full
+/// export's `contacts.vcf`.
+pub fn vcard_file(name: &str) -> String {
+    let clean: String = name
+        .chars()
+        .filter(|c| !c.is_control())
+        .map(|c| if "\\/:*?\"<>|".contains(c) { '_' } else { c })
+        .collect();
+    let base = clean.trim().trim_end_matches('.');
+    match base {
+        "" => String::from("Contact.vcf"),
+        b if b.eq_ignore_ascii_case("contacts") => format!("{b} (1).vcf"),
+        b => format!("{b}.vcf"),
+    }
+}
+
 /// Add imported contacts, skipping ones the book has (same name and first number); (added, skipped).
 pub fn merge(book: &mut Book, found: Vec<Contact>) -> (usize, usize) {
     let (mut added, mut skipped) = (0, 0);
@@ -232,19 +296,23 @@ mod tests {
     #[test]
     fn hits() {
         assert_eq!(
-            split_word("Ani Petrosyan", "an"),
+            split_word("Ani Petrosyan", "an", true),
             Some(("", "An", "i Petrosyan"))
         );
         assert_eq!(
-            split_word("Ani Petrosyan", "PE"),
+            split_word("Ani Petrosyan", "PE", true),
             Some(("Ani ", "Pe", "trosyan"))
         );
-        assert_eq!(split_word("Vahan & Co", "an"), None);
+        assert_eq!(split_word("Vahan & Co", "an", true), None);
         assert_eq!(
-            split_word("Мария Ковалёва", "ков"),
+            split_word("Vahan & Co", "an", false),
+            Some(("Vah", "an", " & Co"))
+        );
+        assert_eq!(
+            split_word("Мария Ковалёва", "ков", true),
             Some(("Мария ", "Ков", "алёва"))
         );
-        assert_eq!(split_word("Ab", "abc"), None);
+        assert_eq!(split_word("Ab", "abc", false), None);
         let o = NameOrder::FirstLast;
         let ani = person("Ani", "Petrosyan", "", &["+37428123456"]);
         assert_eq!(
@@ -257,6 +325,14 @@ mod tests {
         let aram = person("Aram", "Hakobyan", "Anahit & Co", &["+37491000111"]);
         assert_eq!(hit(&aram, "an", o).detail, ["Company: ", "An", "ahit & Co"]);
         assert_eq!(hit(&aram, "an", o).name[0], "Aram Hakobyan");
+        // inside a word: the company before the name (the board's search)
+        let aram = person("Aram", "Hakobyan", "Vahan & Co", &["+37491000111"]);
+        assert_eq!(hit(&aram, "an", o).detail, ["Company: Vah", "an", " & Co"]);
+        assert_eq!(hit(&aram, "an", o).name, ["Aram Hakobyan", "", ""]);
+        assert_eq!(
+            hit(&aram, "kob", o).name,
+            ["Aram Ha", "kob", "yan"].map(String::from)
+        );
         assert_eq!(
             hit(&aram, "000", o).detail,
             ["Mobile · +37491", "000", "111"]
@@ -295,6 +371,22 @@ mod tests {
         }));
         assert!(worth_saving(&person(" ", "", "", &["+1 555"])));
         assert!(worth_saving(&person("Ani", "", "", &[])));
+        let ava = person("Ava", "Lindqvist", "", &["+1 555 0142"]);
+        let mut now = ava.clone();
+        now.first.push(' ');
+        now.numbers.push((Label::Mobile, String::new()));
+        assert!(
+            !edited(&ava, &now),
+            "a space and an empty row are no change"
+        );
+        now.numbers[0].0 = Label::Fax;
+        assert!(edited(&ava, &now));
+        assert!(edited(&ava, &person("Ava", "L", "", &["+1 555 0142"])));
+        assert_eq!(vcard_file("Ava Lindqvist"), "Ava Lindqvist.vcf");
+        assert_eq!(vcard_file("Անի Պետրոսյան"), "Անի Պետրոսյան.vcf");
+        assert_eq!(vcard_file("A/B: C?."), "A_B_ C_.vcf");
+        assert_eq!(vcard_file(" \t"), "Contact.vcf");
+        assert_eq!(vcard_file("Contacts"), "Contacts (1).vcf");
         let mut b = Book::default();
         b.add(person("Ani", "P", "", &["1"])).unwrap();
         let (a, s) = merge(
@@ -328,8 +420,13 @@ mod tests {
                 ids: vec![4],
             },
         ];
-        assert_eq!(tops(&s), [0.0, 142.0, 228.0]);
-        assert_eq!(index_room(518.0), 30);
+        assert_eq!(tops(&s), [0.0, 146.0, 236.0]);
+        assert_eq!(index_room(518.0), 34);
+        let marks = contacts::index::side_index(&s, 10);
+        assert_eq!(
+            index_spans(&marks, &tops(&s)),
+            [(f32::MIN, 146.0), (146.0, 236.0), (236.0, f32::MAX)]
+        );
         assert_eq!(index_room(10.0), 3);
         let mut b = Book::default();
         b.add(person("A", "", "", &["+37491234567", "091234567"]))

@@ -588,6 +588,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "contacts-ui"
+version = "0.1.0"
+dependencies = [
+ "neoui-kit",
+ "png",
+ "slint",
+]
+
+[[package]]
 name = "convert_case"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2389,6 +2398,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "messages-ui"
+version = "0.1.0"
+dependencies = [
+ "neoui-kit",
+ "png",
+ "slint",
+]
+
+[[package]]
 name = "minimal-lexical"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2417,7 +2435,7 @@ dependencies = [
 [[package]]
 name = "modem-ipc"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/telephony?rev=b50763850b47373083e7cea82a3d30f40feb9cea#b50763850b47373083e7cea82a3d30f40feb9cea"
+source = "git+https://github.com/NeoSymbian/telephony?rev=452a22ac5442d1976f589c14472ea87c4c6041b5#452a22ac5442d1976f589c14472ea87c4c6041b5"
 
 [[package]]
 name = "moxcms"
@@ -2568,9 +2586,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "neoui-proto"
+name = "neoui-kit"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/neoui?rev=5533c72b6310f204976fc5896aa95c036a31be34#5533c72b6310f204976fc5896aa95c036a31be34"
+source = "git+https://github.com/NeoSymbian/neoui?rev=27a90f776d32e70cd8ecc231a499da348c4eb2e8#27a90f776d32e70cd8ecc231a499da348c4eb2e8"
+dependencies = [
+ "slint-build",
+]
 
 [[package]]
 name = "nix"
@@ -3114,16 +3135,15 @@ dependencies = [
 [[package]]
 name = "phone-rules"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/telephony?rev=b50763850b47373083e7cea82a3d30f40feb9cea#b50763850b47373083e7cea82a3d30f40feb9cea"
+source = "git+https://github.com/NeoSymbian/telephony?rev=452a22ac5442d1976f589c14472ea87c4c6041b5#452a22ac5442d1976f589c14472ea87c4c6041b5"
 
 [[package]]
 name = "phone-ui"
 version = "0.1.0"
 dependencies = [
- "neoui-proto",
+ "neoui-kit",
  "png",
  "slint",
- "slint-build",
 ]
 
 [[package]]
@@ -3874,7 +3894,7 @@ dependencies = [
 [[package]]
 name = "sms"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/telephony?rev=b50763850b47373083e7cea82a3d30f40feb9cea#b50763850b47373083e7cea82a3d30f40feb9cea"
+source = "git+https://github.com/NeoSymbian/telephony?rev=452a22ac5442d1976f589c14472ea87c4c6041b5#452a22ac5442d1976f589c14472ea87c4c6041b5"
 
 [[package]]
 name = "snafu"

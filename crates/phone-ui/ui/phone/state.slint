@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Phone: the dialer, Recents, call details, speed dial: what the app shows and what the screens ask for (`act`).
+// Phone: Recents (the root), the keypad sheet, call details, speed dial: what the app shows and what the screens ask
+// for (`act`).
 
-// A call-log row (the dialer's recent list, Recents). `kind`: modem_ipc::log (1 dialled, 2 received, 3 missed,
-// 4 rejected, 5 blocked). `line`: the second line ("Mobile · 21:03", "Prefix +1 900 · 10:12"). `tint` indexes
-// the avatar palette, -1 = a number without a contact (# glyph); `private` shows a person glyph instead.
+// A Recents row. `kind`: modem_ipc::log (1 dialled, 2 received, 3 missed, 4 rejected, 5 blocked). `line`: the second
+// line after the direction glyph ("Mobile · 21:03", "Prefix +1 900 · 10:12"). `tint` indexes the avatar palette,
+// -1 = no contact (a # glyph; `private`: a person glyph). `checked`: picked in selection mode.
 export struct LogRow {
     id: int,
     section: string,
@@ -11,10 +12,10 @@ export struct LogRow {
     count: int,
     kind: int,
     line: string,
-    when: string,
     initials: string,
     tint: int,
     private: bool,
+    checked: bool,
 }
 
 // A smart-dial row: the name and number cut around the part the digits matched.
@@ -38,7 +39,7 @@ export struct DetailCall {
     duration: string,
 }
 
-// A speed-dial tile: key 1..9; `name` "" = unassigned.
+// A speed-dial key 1..9; `name` "" = unassigned.
 export struct SpeedTile {
     key: int,
     name: string,
@@ -46,26 +47,29 @@ export struct SpeedTile {
     tint: int,
 }
 
-// A contact's number in the speed-dial picker.
+// A contact's number in the speed-dial sheet.
 export struct PickRow {
     title: string,
     number: string,
+    initials: string,
+    tint: int,
 }
 
 export global DialState {
-    // the dialer: the typed number; recent calls (empty number) or the smart matches
+    // the keypad sheet: the typed number and the contacts it matches (smart dial)
     in property <string> number;
-    in property <[LogRow]> recent;
     in property <[MatchRow]> matches;
     // Recents: the chip (0 all, 1 missed, 2 received, 3 dialled, 4 blocked), the new missed calls, whether the
-    // Blocked chip shows and its count, the rows
+    // Blocked chip shows and its count, the rows, selection mode
     in property <int> filter;
     in property <int> missed-new;
     in property <bool> has-blocked;
     in property <int> blocked-count;
     in property <[LogRow]> rows;
-    // call details
-    in property <string> detail-title;
+    in property <bool> selecting;
+    // the header's search has text: `rows` are what it found (a count line replaces the chips)
+    in property <bool> searching;
+    // call details (the name is the header's title)
     in property <string> detail-number;
     in property <string> detail-initials;
     in property <int> detail-tint;
@@ -76,17 +80,15 @@ export global DialState {
     in property <[DetailCall]> detail-calls;
     // speed dial: nine tiles
     in property <[SpeedTile]> speed;
-    // a popup list over the view (a row's Block / Delete, a tile's Change / Remove)
-    in property <bool> sheet-open;
-    in property <string> sheet-heading;
-    in property <[string]> sheet-items;
-    // the speed-dial contact picker
+    // the sheet over Speed dial: the contacts to put on a key (`pick`), or an assigned key's Change / Remove
     in property <bool> pick-open;
     in property <string> pick-heading;
     in property <[PickRow]> pick;
-    // "key" | "key-long" + digit, "backspace", "clear", "match" + index, "add-contact", "recent" + id (call back),
-    // "filter" + index, "row" + id (details), "row-call" + id, "row-hold" + id, "detail-call", "detail-message", "detail-contact",
-    // "detail-block", "detail-delete", "speed" + key, "sheet" + item, "sheet-dismiss", "pick" + index,
-    // "pick-dismiss"
+    in property <bool> key-open;
+    // "key" | "key-long" + digit, "backspace", "clear", "call" (the sheet's Call), "keypad" (the Fab),
+    // "keypad-close", "match" + index, "match-call" + index, "add-contact", "filter" + index, "row" + id (details,
+    // or a toggle in selection mode), "row-call" + id, "row-hold" + id (selection mode), "detail-call",
+    // "detail-message", "detail-contact", "detail-block", "detail-delete", "speed" + key, "pick" + index,
+    // "pick-dismiss", "key-change", "key-remove", "key-dismiss"
     callback act(string, string);
 }

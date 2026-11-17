@@ -1,72 +1,32 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// NeoPhone (NEOPHONE.EXE): Phone, Contacts and Messages as one app behind three home icons, plus the call screens and their
-// settings. Drawn by its own process into the surface the UI server shows between its status bar and strip; the app
-// describes each page (neoui protocol 1.7: title, primary action, Options, page dots) and the UI server draws them, so
-// no page has a header of its own.
-import "@neoui/fonts/Inter-VariableFont.ttf";
+// NEOPHONE.EXE (Phone): Recents and the dialer, call details, speed dial, the call screens and the Phone & Contacts
+// settings (Contacts and Messages are apps of their own: NEOCONT, NEOMSG; the footer opens them). Drawn by its own
+// process into the surface the UI server shows between its status bar and the key row or gesture band.
+import "@neoui/fonts/NeoSans-Regular.ttf";
+import "@neoui/fonts/NeoSans-Medium.ttf";
+import "@neoui/fonts/NeoSans-SemiBold.ttf";
+import "@neoui/fonts/NeoSans-Bold.ttf";
 import "@neoui/fonts/DejaVuSans.ttf";
-import { Theme } from "@neoui/theme.slint";
-import { Scroll } from "@neoui/components/scroll.slint";
-import { KeyboardFocus } from "@neoui/components/keyboard/focus.slint";
-import { Nav } from "nav.slint";
-import { Note } from "common.slint";
+import { Theme, Scroll, KeyboardFocus, Kit } from "@neoui/kit.slint";
+import { Nav } from "@phone-shared/nav.slint";
+import { AppFrame } from "@phone-shared/frame.slint";
+import { Icons } from "@phone-shared/icons.slint";
 import { DialState } from "phone/state.slint";
 import { PhonePage } from "phone/pages.slint";
-import { ContactsState } from "contacts/state.slint";
-import { ContactsPage } from "contacts/pages.slint";
 import { CallState } from "call/state.slint";
 import { CallPage } from "call/pages.slint";
 import { SettingsState } from "settings/state.slint";
 import { SettingsPage } from "settings/pages.slint";
-import { MessagesState } from "messages/state.slint";
-import { MessagesPage } from "messages/pages.slint";
 
-export { Theme, Scroll, KeyboardFocus, Nav, DialState, ContactsState, CallState, SettingsState, MessagesState }
+export { Theme, Scroll, KeyboardFocus, Kit, Nav, Icons, DialState, CallState, SettingsState }
 
 export component PhoneApp inherits Window {
-    default-font-family: "Inter";
+    default-font-family: "NeoSans";
     background: Theme.bg;
-    // A tap that no row or button takes lands here, below the pages: the focus moves to `sink`, the field loses it
-    // and the keyboard closes. A page or view change does the same (a field removed with its `if` never reports
-    // losing focus).
-    sink := FocusScope { }
-    TouchArea {
-        clicked => {
-            root.leave-fields();
-        }
-    }
-
-    property <string> place: Nav.page + "/" + Nav.view;
-    changed place => {
-        root.leave-fields();
-    }
-
-    public function leave-fields() {
-        sink.focus();
-        KeyboardFocus.open = false;
-    }
-
-    // Phone | Contacts: a sideways swipe on the dialer or the contact list (the UI server shows the dots beside the
-    // title); taps and the lists' own scrolling still reach the page
-    property <bool> paged: (Nav.page == 0 || Nav.page == 1) && Nav.view == "";
-    SwipeGestureHandler {
-        handle-swipe-left: root.paged && Nav.page == 0;
-        handle-swipe-right: root.paged && Nav.page == 1;
-        swiped => {
-            if (abs(self.current-position.x - self.pressed-position.x) > 60 * Theme.dp) {
-                Nav.act("switch", Nav.page == 0 ? "1" : "0");
-            }
-        }
-
+    AppFrame {
+        own: 0;
         if Nav.page == 0: PhonePage { }
-        if Nav.page == 1: ContactsPage { }
         if Nav.page == 3: CallPage { }
         if Nav.page == 4: SettingsPage { }
-        if Nav.page == 6: MessagesPage { }
-    }
-    Note {
-        x: (parent.width - self.width) / 2;
-        y: parent.height - self.height - 16 * Theme.dp;
-        text: Nav.note;
     }
 }

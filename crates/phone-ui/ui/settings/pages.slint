@@ -1,203 +1,103 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Phone & Contacts settings (mockups 23, 34) and Blocked numbers (mockup 25), with the pickers, the voicemail and
-// message centre editors, the add row and the Remove all query; Quick replies.
-import { Theme } from "@neoui/theme.slint";
-import { NeoList } from "@neoui/components/scroll.slint";
-import { TextField } from "@neoui/components/controls.slint";
-import { Alphabets } from "@neoui/components/keyboard/glyphs.slint";
-import { Nav } from "../nav.slint";
-import { Band, Sheet, Avatar, Glyph } from "../common.slint";
+// Settings (NEOPHONE v2 p2-phone-settings: Calls, Log, Contacts; p2-msg-settings from Messages: Messages, Blocking,
+// caller ID), Blocked numbers
+// (p2-phone-blocked), Quick replies (p2-phone-settings-replies), the forms under a [✕ title ✓] header (Voicemail number,
+// Message centre, Block a number, a new reply) and the pickers (p2-phone-settings-clir, -log).
+import { Theme, NeoList, SectionHeader, ListRow, TextField, Glyph, Alphabets } from "@neoui/kit.slint";
+import { Nav } from "@phone-shared/nav.slint";
+import { Face, SwitchRow, RadioSheet, ValueRow } from "../parts.slint";
 import { SettingsState } from "state.slint";
 
-// The mockups' switch: green when on; `busy` dims it while the network answers.
-component Toggle inherits Rectangle {
-    in property <bool> on;
-    in property <bool> busy;
-    callback toggled(bool);
-    width: 44 * Theme.dp;
-    height: 26 * Theme.dp;
-    border-radius: self.height / 2;
-    background: on ? Theme.ok : #3a3f47;
-    opacity: busy ? 0.45 : 1;
-    Rectangle {
-        x: on ? parent.width - self.width - 3 * Theme.dp : 3 * Theme.dp;
-        width: 20 * Theme.dp;
-        height: self.width;
-        border-radius: self.width / 2;
-        background: white;
-    }
+// The pickers' choices, as the rows show them.
+global Names {
+    out property <[string]> clir: ["Network", "Hidden", "Shown"];
+    out property <[string]> log: ["Don't keep", "1 day", "10 days", "30 days"];
+    out property <[string]> order: ["First Last", "Last First"];
+    out property <[string]> alerts: ["Tone + vibrate", "Vibrate", "Silent"];
+}
 
-    TouchArea {
-        enabled: !busy;
-        clicked => {
-            root.toggled(!on);
+component Note inherits HorizontalLayout {
+    in property <string> text;
+    in property <length> size: Theme.font-label;
+    padding-left: 16 * Theme.dp;
+    padding-right: 16 * Theme.dp;
+    padding-top: 14 * Theme.dp;
+    padding-bottom: 14 * Theme.dp;
+    Text {
+        text: root.text;
+        color: Theme.text-secondary;
+        font-size: root.size;
+        wrap: word-wrap;
+    }
+}
+
+// Call waiting: the network's answer; unknown or unanswered, a tap asks again (the switch only flips a known state).
+component WaitingRow inherits SwitchRow {
+    property <int> w: SettingsState.waiting;
+    title: "Call waiting";
+    subtitle: w == 0 ? "Unknown · tap to check" : w == 1 ? "Checking with network…"
+        : w == 4 ? "Couldn't check" : "Checked with network";
+    on: w == 2;
+    busy: w == 1;
+    toggled(v) => {
+        if w == 0 || w == 4 {
+            SettingsState.act("waiting-check", "");
+        } else {
+            SettingsState.act("waiting", v ? "1" : "0");
         }
     }
 }
 
-// A settings row: a title (and a subtitle), then a value with a chevron or a switch. `first`: no line above.
-component Row inherits Rectangle {
-    in property <string> title;
-    in property <string> subtitle;
-    in property <string> value;
-    in property <bool> toggle;
-    in property <bool> on;
-    in property <bool> busy;
-    in property <bool> first;
-    callback clicked;
-    callback toggled(bool);
-    height: 48 * Theme.dp;
-    background: touch.pressed && !toggle ? Theme.pressed : transparent;
-    touch := TouchArea {
-        clicked => {
-            if toggle {
-                if !busy {
-                    root.toggled(!on);
-                }
-            } else {
-                root.clicked();
-            }
-        }
-    }
-
-    if !first: Rectangle {
-        x: 14 * Theme.dp;
-        y: 0;
-        width: parent.width - self.x;
-        height: max(1px, Theme.dp / 2);
-        background: Theme.hairline;
-    }
-    HorizontalLayout {
-        padding-left: 14 * Theme.dp;
-        padding-right: 14 * Theme.dp;
-        spacing: 12 * Theme.dp;
-        VerticalLayout {
-            alignment: center;
-            spacing: 2 * Theme.dp;
-            horizontal-stretch: 1;
-            Text {
-                text: title;
-                color: Theme.text;
-                font-size: Theme.font-body;
-                overflow: elide;
-            }
-
-            if subtitle != "": Text {
-                text: subtitle;
-                color: Theme.text-secondary;
-                font-size: Theme.font-label;
-                overflow: elide;
-            }
-        }
-
-        if value != "": HorizontalLayout {
-            spacing: 2 * Theme.dp;
-            Text {
-                text: value;
-                color: Theme.text-secondary;
-                font-size: 14 * Theme.dp;
-                vertical-alignment: center;
-            }
-
-            Glyph {
-                source: @image-url("@neoui/icons/sys/chevron_right.svg");
-                size: 18 * Theme.dp;
-                colorize: Theme.text-dim;
-                y: (parent.height - self.height) / 2;
-            }
-        }
-        if toggle: Toggle {
-            y: (parent.height - self.height) / 2;
-            on: on;
-            busy: busy;
-            toggled(v) => {
-                root.toggled(v);
-            }
-        }
-    }
-}
-
-component Main inherits NeoList {
-    property <[string]> clir-names: ["Network", "Hidden", "Shown"];
+// The settings opened from Phone (p2-phone-settings): Calls, Log, Contacts; from Contacts it opens at Contacts.
+component PhoneMain inherits NeoList {
     init => {
+        self.arrive();
+    }
+    property <int> opens: SettingsState.opens;
+    changed opens => {
+        self.arrive();
+    }
+    // opened (again): read what may have changed, and Contacts on top when Contacts asked for it
+    function arrive() {
         SettingsState.act("opened", "");
+        self.content-y = SettingsState.section == "contacts" ? -contacts.y : 0;
     }
     VerticalLayout {
         alignment: start;
-        Band { text: "CALLS"; }
-        Row {
+        SectionHeader {
+            text: "Calls";
+        }
+
+        ListRow {
             title: "Send my caller ID";
-            value: clir-names[SettingsState.clir];
-            first: true;
+            subtitle: Names.clir[SettingsState.clir];
+            chevron: true;
             clicked => {
                 SettingsState.picker = "clir";
             }
         }
 
-        Row {
-            height: 60 * Theme.dp;
-            title: "Call waiting";
-            subtitle: SettingsState.waiting == 1 ? "Checking with network…"
-                : SettingsState.waiting == 4 ? "Couldn't check" : "Checked with network";
-            toggle: true;
-            on: SettingsState.waiting == 2;
-            busy: SettingsState.waiting == 1;
-            toggled(v) => {
-                SettingsState.act("waiting", v ? "1" : "0");
-            }
-        }
+        WaitingRow { }
 
-        Row {
+        SwitchRow {
             title: "Summary after call";
-            toggle: true;
+            subtitle: "Show call duration";
             on: SettingsState.summary;
             toggled(v) => {
                 SettingsState.act("summary", v ? "1" : "0");
             }
         }
 
-        Row {
-            title: "Show call duration";
-            toggle: true;
-            on: SettingsState.show-duration;
-            toggled(v) => {
-                SettingsState.act("duration", v ? "1" : "0");
-            }
-        }
-
-        if !SettingsState.editing: Row {
+        ListRow {
             title: "Voicemail number";
-            value: SettingsState.voicemail == "" ? "Not set" : SettingsState.voicemail;
+            subtitle: SettingsState.voicemail == "" ? "Not set" : SettingsState.voicemail;
+            chevron: true;
             clicked => {
-                SettingsState.draft = SettingsState.voicemail;
-                SettingsState.editing = true;
+                SettingsState.act("form", "voicemail");
             }
         }
-        if SettingsState.editing: Rectangle {
-            height: 64 * Theme.dp;
-            background: Theme.bg-raised;
-            HorizontalLayout {
-                padding-left: 14 * Theme.dp;
-                padding-right: 14 * Theme.dp;
-                spacing: 12 * Theme.dp;
-                Text {
-                    text: "Voicemail";
-                    color: Theme.text;
-                    font-size: Theme.font-body;
-                    vertical-alignment: center;
-                }
 
-                TextField {
-                    y: (parent.height - self.height) / 2;
-                    horizontal-stretch: 1;
-                    text <=> SettingsState.draft;
-                    placeholder: "Number";
-                    keys: 4;
-                    autofocus: true;
-                }
-            }
-        }
-        Row {
+        ValueRow {
             title: "Blocked numbers";
             value: SettingsState.blocked-count;
             clicked => {
@@ -205,94 +105,93 @@ component Main inherits NeoList {
             }
         }
 
-        Band { text: "LOG"; }
-        Row {
+        SectionHeader {
+            text: "Log";
+        }
+
+        ListRow {
             title: "Keep call log";
-            value: SettingsState.log-days == 0 ? "Don't keep" : SettingsState.log-days == 1 ? "1 day"
+            subtitle: SettingsState.log-days == 0 ? "Don't keep" : SettingsState.log-days == 1 ? "1 day"
                 : "\{SettingsState.log-days} days";
-            first: true;
+            chevron: true;
             clicked => {
                 SettingsState.picker = "log";
             }
         }
 
-        Band { text: "CONTACTS"; }
-        Row {
+        contacts := SectionHeader {
+            text: "Contacts";
+        }
+
+        ListRow {
             title: "Name display";
-            value: SettingsState.name-order == 1 ? "Last First" : "First Last";
-            first: true;
+            subtitle: SettingsState.name-order == 1 ? "Last First" : "First Last";
+            chevron: true;
             clicked => {
                 SettingsState.picker = "order";
             }
         }
 
-        Row {
+        SwitchRow {
             title: "Smart dial";
-            toggle: true;
             on: SettingsState.smart-dial;
             toggled(v) => {
                 SettingsState.act("smart-dial", v ? "1" : "0");
             }
         }
 
-        Row {
+        ListRow {
             title: "Default number type";
-            value: SettingsState.labels[SettingsState.default-label];
+            subtitle: SettingsState.labels[SettingsState.default-label];
+            chevron: true;
+            divider: false;
             clicked => {
                 SettingsState.picker = "label";
             }
         }
 
-        // mockup 34
-        Band { text: "MESSAGES"; }
-        Row {
-            height: 60 * Theme.dp;
+        // room under Contacts, so the page can open with it on top
+        if SettingsState.section == "contacts": Rectangle {
+            height: max(0px, root.height - Theme.section-h - 2 * Theme.list-row-double-h - Theme.list-row-h);
+        }
+    }
+}
+
+// The same settings opened from Messages (p2-msg-settings): Messages, Blocking, then Calls' caller ID.
+component MessagesMain inherits NeoList {
+    init => {
+        SettingsState.act("opened", "");
+    }
+    property <int> opens: SettingsState.opens;
+    changed opens => {
+        SettingsState.act("opened", "");
+        self.content-y = 0;
+    }
+    VerticalLayout {
+        alignment: start;
+        SectionHeader {
+            text: "Messages";
+        }
+
+        SwitchRow {
             title: "Delivery reports";
             subtitle: "Shows ✓✓ when a message arrives";
-            toggle: true;
             on: SettingsState.sms-reports;
-            first: true;
             toggled(v) => {
                 SettingsState.act("reports", v ? "1" : "0");
             }
         }
 
-        if !SettingsState.editing-smsc: Row {
-            height: 60 * Theme.dp;
+        ValueRow {
             title: "Message centre";
             subtitle: "From the SIM";
             value: SettingsState.smsc == "" ? "Unknown" : SettingsState.smsc;
             clicked => {
-                SettingsState.draft = SettingsState.smsc;
-                SettingsState.editing = false;
-                SettingsState.editing-smsc = true;
+                SettingsState.act("form", "smsc");
             }
         }
-        if SettingsState.editing-smsc: Rectangle {
-            height: 64 * Theme.dp;
-            background: Theme.bg-raised;
-            HorizontalLayout {
-                padding-left: 14 * Theme.dp;
-                padding-right: 14 * Theme.dp;
-                spacing: 12 * Theme.dp;
-                Text {
-                    text: "Centre";
-                    color: Theme.text;
-                    font-size: Theme.font-body;
-                    vertical-alignment: center;
-                }
 
-                TextField {
-                    y: (parent.height - self.height) / 2;
-                    horizontal-stretch: 1;
-                    text <=> SettingsState.draft;
-                    placeholder: "Number";
-                    keys: 4;
-                    autofocus: true;
-                }
-            }
-        }
-        Row {
+        ValueRow {
             title: "Quick replies";
             value: SettingsState.replies.length;
             clicked => {
@@ -300,59 +199,87 @@ component Main inherits NeoList {
             }
         }
 
-        Row {
+        ValueRow {
             title: "New message alert";
-            value: SettingsState.sms-alert == 1 ? "Vibrate" : SettingsState.sms-alert == 2 ? "Silent" : "Tone + vibrate";
+            value: Names.alerts[SettingsState.sms-alert];
+            divider: false;
             clicked => {
                 SettingsState.picker = "alert";
             }
         }
 
-        HorizontalLayout {
-            padding: 14 * Theme.dp;
-            Text {
-                text: "Blocked numbers apply to messages when their Messages box is ticked.";
-                color: Theme.text-secondary;
-                font-size: 13 * Theme.dp;
-                wrap: word-wrap;
+        SectionHeader {
+            text: "Blocking";
+        }
+
+        ValueRow {
+            title: "Blocked numbers";
+            value: SettingsState.blocked-count;
+            divider: false;
+            clicked => {
+                SettingsState.act("blocked", "");
+            }
+        }
+
+        Note {
+            text: "Blocked numbers apply to messages when their Messages box is ticked.";
+            size: 13 * Theme.dp;
+            padding-top: 8 * Theme.dp;
+            padding-bottom: 4 * Theme.dp;
+        }
+
+        SectionHeader {
+            text: "Calls";
+        }
+
+        ValueRow {
+            title: "Send my caller ID";
+            value: Names.clir[SettingsState.clir];
+            divider: false;
+            clicked => {
+                SettingsState.picker = "clir";
             }
         }
     }
 }
 
-// Quick replies: the texts Reply with message offers (up to 6), the add row on top.
+// A round ✕ that removes a row (a blocked number, a quick reply).
+component Remove inherits Rectangle {
+    in property <bool> red;
+    callback clicked;
+    width: 40 * Theme.dp;
+    height: self.width;
+    border-radius: self.width / 2;
+    background: t.pressed ? Theme.pressed : red ? Theme.danger.with-alpha(0.15) : transparent;
+    Glyph {
+        source: @image-url("@neoui/icons/sys/close.svg");
+        size: (red ? 16 : 22) * Theme.dp;
+        colorize: red ? Theme.danger : Theme.text-secondary;
+    }
+
+    t := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// Quick replies (p2-phone-settings-replies): the texts Reply with message offers (up to 6).
 component Replies inherits NeoList {
     VerticalLayout {
         alignment: start;
-        if SettingsState.adding: Rectangle {
-            background: Theme.bg-raised;
-            VerticalLayout {
-                padding: 14 * Theme.dp;
-                padding-top: 12 * Theme.dp;
-                TextField {
-                    text <=> SettingsState.add-text;
-                    placeholder: "A short reply";
-                    autofocus: true;
-                }
-            }
+        SectionHeader {
+            text: "Reply with message · \{SettingsState.replies.length}";
         }
-        Band { text: "REPLY WITH MESSAGE · \{SettingsState.replies.length}"; }
+
         for r[i] in SettingsState.replies: Rectangle {
-            height: 56 * Theme.dp;
-            if i > 0: Rectangle {
-                x: 14 * Theme.dp;
-                y: 0;
-                width: parent.width - self.x;
-                height: max(1px, Theme.dp / 2);
-                background: Theme.hairline;
-            }
+            height: Theme.list-row-h;
             HorizontalLayout {
-                padding-left: 14 * Theme.dp;
-                padding-right: 14 * Theme.dp;
+                padding-left: 16 * Theme.dp;
+                padding-right: 10 * Theme.dp;
                 spacing: 12 * Theme.dp;
                 Text {
                     text: r;
-                    font-family: "DejaVu Sans";
                     color: Theme.text;
                     font-size: Theme.font-body;
                     vertical-alignment: center;
@@ -360,157 +287,83 @@ component Replies inherits NeoList {
                     horizontal-stretch: 1;
                 }
 
-                Rectangle {
-                    y: (parent.height - self.height) / 2;
-                    width: 34 * Theme.dp;
-                    height: self.width;
-                    border-radius: self.width / 2;
-                    background: rm.pressed ? Theme.danger.with-alpha(0.35) : Theme.danger.with-alpha(0.15);
-                    Glyph {
-                        source: @image-url("@neoui/icons/sys/close.svg");
-                        size: 16 * Theme.dp;
-                        colorize: Theme.danger;
-                    }
-
-                    rm := TouchArea {
+                VerticalLayout {
+                    alignment: center;
+                    Remove {
+                        red: true;
+                        width: 34 * Theme.dp;
                         clicked => {
                             SettingsState.act("remove-reply", i);
                         }
                     }
                 }
             }
-        }
-    }
-}
 
-// A check box with its label ("Whole prefix").
-component Check inherits Rectangle {
-    in property <string> text;
-    in property <bool> checked;
-    callback toggled;
-    height: 40 * Theme.dp;
-    HorizontalLayout {
-        spacing: 12 * Theme.dp;
-        Rectangle {
-            width: 22 * Theme.dp;
-            height: 22 * Theme.dp;
-            y: (parent.height - self.height) / 2;
-            border-radius: 6 * Theme.dp;
-            background: checked ? Theme.accent : transparent;
-            border-width: checked ? 0 : 2 * Theme.dp;
-            border-color: Theme.text-dim;
-            if checked: Glyph {
-                source: @image-url("@neoui/icons/sys/check.svg");
-                size: 16 * Theme.dp;
+            Rectangle {
+                x: 16 * Theme.dp;
+                y: parent.height - self.height;
+                width: parent.width - self.x;
+                height: max(1px, Theme.dp / 2);
+                background: Theme.header-hairline;
             }
         }
-
-        Text {
-            text: root.text;
-            color: Theme.text;
-            font-size: Theme.font-body;
-            vertical-alignment: center;
-        }
-    }
-
-    TouchArea {
-        clicked => {
-            root.toggled();
-        }
     }
 }
 
+// Blocked numbers (p2-phone-blocked).
 component Blocked inherits NeoList {
     VerticalLayout {
-        min-height: root.height;
-        if SettingsState.adding: Rectangle {
-            background: Theme.bg-raised;
-            VerticalLayout {
-                padding-left: 14 * Theme.dp;
-                padding-right: 14 * Theme.dp;
-                padding-top: 12 * Theme.dp;
-                padding-bottom: 6 * Theme.dp;
-                spacing: 6 * Theme.dp;
-                TextField {
-                    text <=> SettingsState.add-text;
-                    placeholder: "Number or prefix";
-                    keys: 4;
-                    autofocus: true;
-                }
-
-                Check {
-                    text: "Whole prefix";
-                    checked: SettingsState.add-prefix;
-                    toggled => {
-                        SettingsState.add-prefix = !SettingsState.add-prefix;
-                    }
-                }
-            }
+        alignment: start;
+        SectionHeader {
+            text: "Block automatically";
         }
-        Band { text: "BLOCK AUTOMATICALLY"; }
-        Row {
-            height: 62 * Theme.dp;
+
+        SwitchRow {
             title: "Private numbers";
             subtitle: "Callers who hide their number";
-            toggle: true;
             on: SettingsState.block-private;
-            first: true;
             toggled(v) => {
                 SettingsState.act("private", v ? "1" : "0");
             }
         }
 
-        Row {
-            height: 62 * Theme.dp;
+        SwitchRow {
             title: "Unknown numbers";
             subtitle: "Anyone not in your contacts";
-            toggle: true;
             on: SettingsState.block-unknown;
             toggled(v) => {
                 SettingsState.act("unknown", v ? "1" : "0");
             }
         }
 
-        Band { text: "BLOCKED · \{SettingsState.rules.length}"; }
+        SectionHeader {
+            text: "Blocked · \{SettingsState.rules.length}";
+        }
+
         for r[i] in SettingsState.rules: Rectangle {
-            height: 72 * Theme.dp;
-            if i > 0: Rectangle {
-                x: 70 * Theme.dp;
-                y: 0;
-                width: parent.width - self.x;
-                height: max(1px, Theme.dp / 2);
-                background: Theme.hairline;
-            }
+            height: Theme.list-row-double-h;
             HorizontalLayout {
-                padding-left: 14 * Theme.dp;
-                padding-right: 14 * Theme.dp;
-                spacing: 12 * Theme.dp;
-                if r.kind == 0: Avatar {
-                    y: (parent.height - self.height) / 2;
-                    initials: r.initials;
-                    tint: r.tint;
-                }
-                if r.kind != 0: Rectangle {
-                    y: (parent.height - self.height) / 2;
-                    width: Theme.avatar;
-                    height: self.width;
-                    border-radius: self.width / 2;
-                    background: #2b3038;
-                    Glyph {
-                        source: r.kind == 2 ? @image-url("../icons/block.svg") : @image-url("../icons/hash.svg");
-                        size: 22 * Theme.dp;
-                        colorize: Theme.text-secondary;
-                    }
-                }
+                padding-left: 16 * Theme.dp;
+                padding-right: 10 * Theme.dp;
+                spacing: 14 * Theme.dp;
                 VerticalLayout {
                     alignment: center;
-                    spacing: 2 * Theme.dp;
+                    Face {
+                        initials: r.initials;
+                        tint: r.kind == 0 ? r.tint : -1;
+                        glyph: r.kind == 2 ? 2 : 0;
+                    }
+                }
+
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 3 * Theme.dp;
                     horizontal-stretch: 1;
                     Text {
                         text: r.title;
-                        font-family: r.kind == 0 ? "DejaVu Sans" : "";
                         color: Theme.text;
                         font-size: Theme.font-body;
+                        font-weight: 500;
                         overflow: elide;
                     }
 
@@ -522,65 +375,99 @@ component Blocked inherits NeoList {
                     }
                 }
 
-                Rectangle {
-                    y: (parent.height - self.height) / 2;
-                    width: 34 * Theme.dp;
-                    height: self.width;
-                    border-radius: self.width / 2;
-                    background: rm.pressed ? Theme.danger.with-alpha(0.35) : Theme.danger.with-alpha(0.15);
-                    Glyph {
-                        source: @image-url("@neoui/icons/sys/close.svg");
-                        size: 16 * Theme.dp;
-                        colorize: Theme.danger;
-                    }
-
-                    rm := TouchArea {
+                VerticalLayout {
+                    alignment: center;
+                    Remove {
                         clicked => {
                             SettingsState.act("remove", i);
                         }
                     }
                 }
             }
+
+            Rectangle {
+                x: 74 * Theme.dp;
+                y: parent.height - self.height;
+                width: parent.width - self.x;
+                height: max(1px, Theme.dp / 2);
+                background: Theme.header-hairline;
+            }
         }
-        Rectangle {
-            vertical-stretch: 1;
+        Note {
+            text: "Blocked calls are kept under Recent calls ▸ Blocked for 7 days. Emergency numbers are never blocked.";
+        }
+    }
+}
+
+// A form under the header's [✕ title ✓] (p2-phone-settings-voicemail, p2-phone-blocked-add): one field, the phone
+// keyboard (letters for a reply), "Whole prefix" for a blocked number.
+component Form inherits VerticalLayout {
+    alignment: start;
+    padding-left: 16 * Theme.dp;
+    padding-right: 16 * Theme.dp;
+    padding-top: 12 * Theme.dp;
+    spacing: 10 * Theme.dp;
+    TextField {
+        text <=> SettingsState.draft;
+        placeholder: SettingsState.form == "reply" ? "A short reply" : SettingsState.form == "block" ? "Number or prefix" : "Number";
+        keys: SettingsState.form == "reply" ? 1 : 4;
+        autofocus: true;
+    }
+
+    if SettingsState.form == "block": Rectangle {
+        height: 40 * Theme.dp;
+        HorizontalLayout {
+            spacing: 12 * Theme.dp;
+            VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 20 * Theme.dp;
+                    height: self.width;
+                    border-radius: 4 * Theme.dp;
+                    background: SettingsState.add-prefix ? Theme.accent : transparent;
+                    border-width: SettingsState.add-prefix ? 0 : 2 * Theme.dp;
+                    border-color: Theme.text-dim;
+                    if SettingsState.add-prefix: Glyph {
+                        source: @image-url("@neoui/icons/sys/check.svg");
+                        size: 15 * Theme.dp;
+                        colorize: white;
+                    }
+                }
+            }
+
+            Text {
+                text: "Whole prefix";
+                color: Theme.text;
+                font-size: Theme.font-body;
+                vertical-alignment: center;
+            }
         }
 
-        HorizontalLayout {
-            padding-left: 14 * Theme.dp;
-            padding-right: 14 * Theme.dp;
-            padding-bottom: 14 * Theme.dp;
-            Text {
-                text: "Blocked calls are kept under Recent calls ▸ Blocked for 7 days. Emergency numbers are never blocked.";
-                font-family: "DejaVu Sans";
-                color: Theme.text-secondary;
-                font-size: 13 * Theme.dp;
-                wrap: word-wrap;
+        TouchArea {
+            clicked => {
+                SettingsState.add-prefix = !SettingsState.add-prefix;
             }
         }
     }
 }
 
 export component SettingsPage inherits Rectangle {
-    // the open picker's heading, choices and the one chosen
     property <string> picker: SettingsState.picker;
     // bakes in the glyphs of contacts' names (Armenian, Cyrillic) for the blocked rows
     Alphabets { }
-    VerticalLayout {
-        if Nav.view == "": Main { }
-        if Nav.view == "blocked": Blocked { }
-        if Nav.view == "replies": Replies { }
-    }
-
-    Sheet {
-        open: picker != "";
+    if SettingsState.form != "": Form { }
+    if SettingsState.form == "" && Nav.view == "" && SettingsState.section != "messages": PhoneMain { }
+    if SettingsState.form == "" && Nav.view == "" && SettingsState.section == "messages": MessagesMain { }
+    if SettingsState.form == "" && Nav.view == "blocked": Blocked { }
+    if SettingsState.form == "" && Nav.view == "replies": Replies { }
+    // made open (the kit sheet keeps its own `open`): `picker` shows and hides it, and Back closes it in the app
+    if picker != "": RadioSheet {
+        open: true;
         heading: picker == "clir" ? "Send my caller ID" : picker == "log" ? "Keep call log"
             : picker == "order" ? "Name display" : picker == "alert" ? "New message alert" : "Default number type";
-        items: picker == "clir" ? ["Network", "Hidden", "Shown"]
-            : picker == "log" ? ["Don't keep", "1 day", "10 days", "30 days"]
-            : picker == "order" ? ["First Last", "Last First"]
-            : picker == "alert" ? ["Tone + vibrate", "Vibrate", "Silent"] : SettingsState.labels;
-        marked: picker == "clir" ? SettingsState.clir
+        choices: picker == "clir" ? Names.clir : picker == "log" ? Names.log : picker == "order" ? Names.order
+            : picker == "alert" ? Names.alerts : SettingsState.labels;
+        current: picker == "clir" ? SettingsState.clir
             : picker == "log" ? (SettingsState.log-days == 0 ? 0 : SettingsState.log-days == 1 ? 1
                 : SettingsState.log-days == 10 ? 2 : 3)
             : picker == "order" ? SettingsState.name-order
@@ -588,8 +475,8 @@ export component SettingsPage inherits Rectangle {
         dismissed => {
             SettingsState.picker = "";
         }
-        selected(i, item) => {
-            SettingsState.act(picker, i);
+        chosen(i) => {
+            SettingsState.act(root.picker, i);
             SettingsState.picker = "";
         }
     }

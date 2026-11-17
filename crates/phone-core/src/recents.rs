@@ -56,6 +56,41 @@ impl Filter {
     }
 }
 
+/// What Recents asks before it deletes or blocks (the shell's destructive QUERY): ⋮ ▸ Clear list for a chip, and
+/// selection mode's Delete and Block for `n` rows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Ask {
+    Clear(Filter),
+    Delete(usize),
+    Block(usize),
+}
+
+impl Ask {
+    /// The question, the line under it, the red button.
+    pub fn text(self) -> (String, &'static str, &'static str) {
+        let s = |n: usize| if n == 1 { "" } else { "s" };
+        match self {
+            Ask::Clear(f) => (
+                "Clear the call list?".into(),
+                match f {
+                    Filter::All => "Every call in Recents is deleted.",
+                    Filter::Missed => "The missed calls are deleted.",
+                    Filter::Received => "The received calls are deleted.",
+                    Filter::Dialled => "The dialled calls are deleted.",
+                    Filter::Blocked => "The blocked calls are deleted.",
+                },
+                "Clear",
+            ),
+            Ask::Delete(n) => (format!("Delete {n} call{}?", s(n)), "", "Delete"),
+            Ask::Block(n) => (
+                format!("Block {n} number{}?", s(n)),
+                "Their calls and messages won't come through.",
+                "Block",
+            ),
+        }
+    }
+}
+
 /// A day band.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Section {
@@ -145,6 +180,15 @@ pub fn newest(log: &[LogEntry]) -> u32 {
     log.iter().map(|e| e.id).max().unwrap_or(0)
 }
 
+/// The number dialled last (the log is newest first): Call on an empty dialer puts it in the field (N8).
+pub fn last_dialled(log: &[LogEntry]) -> Option<&str> {
+    log.iter()
+        .filter(|e| e.kind == log::DIALLED)
+        .max_by_key(|e| e.id)
+        .map(|e| e.number.as_str())
+        .filter(|n| !n.is_empty())
+}
+
 /// Every call of the row `id` belongs to (the same number), newest first: the details' list.
 pub fn calls_of(log: &[LogEntry], id: u32) -> Vec<usize> {
     let Some(e) = log.iter().find(|e| e.id == id) else {
@@ -179,12 +223,24 @@ pub fn label_of(contact: &Contact, n: &str) -> Option<Label> {
         .map(|(l, _)| *l)
 }
 
-/// The second line's word: missed, rejected and dialled calls say so, a received call its number's label.
+/// The second line's word: a contact's received or dialled call its number's label (the glyph gives the
+/// direction), anything else its kind.
 pub fn second_line(e: &LogEntry, label: Option<Label>) -> String {
     match (e.kind, label) {
-        (log::RECEIVED, Some(l)) => l.text().into(),
+        (log::RECEIVED | log::DIALLED, Some(l)) => l.text().into(),
         (k, _) => kind_text(k).into(),
     }
+}
+
+/// The header's search on Recents: `query` in the row's name (any case) or in its number's digits.
+pub fn found(title: &str, n: &str, query: &str) -> bool {
+    let q = query.trim();
+    if q.is_empty() {
+        return true;
+    }
+    let digits = number::digits(q);
+    title.to_lowercase().contains(&q.to_lowercase())
+        || (!digits.is_empty() && number::digits(n).contains(digits.as_str()))
 }
 
 /// Why a blocked call was blocked (mockup 27): the rule that matched.
@@ -262,6 +318,27 @@ mod tests {
     }
 
     #[test]
+    fn questions() {
+        assert_eq!(
+            Ask::Clear(Filter::All).text(),
+            (
+                "Clear the call list?".into(),
+                "Every call in Recents is deleted.",
+                "Clear"
+            )
+        );
+        assert_eq!(Ask::Delete(1).text().0, "Delete 1 call?");
+        assert_eq!(Ask::Delete(3).text().0, "Delete 3 calls?");
+        assert_eq!(Ask::Block(2).text().0, "Block 2 numbers?");
+    }
+
+    #[test]
+    fn last_dialled_number() {
+        assert_eq!(last_dialled(&log()), Some("+15550123"));
+        assert_eq!(last_dialled(&log()[..4]), None);
+    }
+
+    #[test]
     fn folded_per_section() {
         let l = log();
         let r = rows(&l, Filter::All, NOW, 0);
@@ -298,6 +375,15 @@ mod tests {
         assert_eq!(initials("+1 555"), "");
         assert_eq!(second_line(&l[0], Some(Label::Mobile)), "Mobile");
         assert_eq!(second_line(&l[1], Some(Label::Mobile)), "Missed");
+        assert_eq!(
+            second_line(&l[4], Some(Label::MobileWork)),
+            Label::MobileWork.text()
+        );
+        assert_eq!(second_line(&l[4], None), "Dialled");
+        assert!(found("Ava Lindqvist", "+15550142", "lind"));
+        assert!(found("Ava Lindqvist", "+15550142", "0142"));
+        assert!(!found("Ava Lindqvist", "+15550142", "boris"));
+        assert!(found("Борис", "", "бор"));
         assert_eq!(tint(None, "+15550142", 8), tint(None, "15550142", 8));
     }
 

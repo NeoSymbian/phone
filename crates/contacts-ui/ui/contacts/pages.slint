@@ -1,0 +1,458 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Contacts (NEOPHONE v2 p2-contacts-*): the list with my card, favourites, per-script sections and the letter strip,
+// the header's search results, selection mode ("" and "mark"); the card ("card"); the editor ("edit"). The header and
+// footer are the frame's; the number-type sheet and the query are drawn over the whole app (app.slint).
+import { Theme, Glyph, Avatar, NeoList, ListRow, Alphabets } from "@neoui/kit.slint";
+import { Nav } from "@phone-shared/nav.slint";
+import { ContactsState } from "state.slint";
+import {
+    Band, BlockedBanner, CardPill, Favourites, GlyphButton, HitRow, IconButton, InfoRow, LetterStrip, MyCardRow,
+    Field, PhotoSlot, RowAction, TypeChip
+} from "parts.slint";
+
+component Results inherits VerticalLayout {
+    if ContactsState.results.length > 0: Band {
+        text: ContactsState.results.length == 1 ? "1 RESULT" : ContactsState.results.length + " RESULTS";
+    }
+    if ContactsState.results.length == 0: Text {
+        height: 120 * Theme.dp;
+        text: "No contact matches “" + Nav.query + "”";
+        color: Theme.text-dim;
+        font-size: Theme.font-body;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    if ContactsState.results.length == 0: Rectangle {
+        vertical-stretch: 1;
+    }
+
+    if ContactsState.results.length > 0: NeoList {
+        vertical-stretch: 1;
+        VerticalLayout {
+            alignment: start;
+            for h in ContactsState.results: HitRow {
+                initials: h.initials;
+                tint: h.tint;
+                name: [h.name-pre, h.name-hit, h.name-post];
+                detail: [h.detail-pre, h.detail-hit, h.detail-post];
+                clicked => {
+                    ContactsState.act("open", h.id);
+                }
+            }
+        }
+    }
+}
+
+// No contacts yet: my card stays on top, New contact in the middle.
+component Empty inherits VerticalLayout {
+    MyCardRow {
+        clicked => {
+            ContactsState.act("open", -1);
+        }
+    }
+
+    VerticalLayout {
+        vertical-stretch: 1;
+        alignment: center;
+        padding-left: 32 * Theme.dp;
+        padding-right: 32 * Theme.dp;
+        padding-bottom: 60 * Theme.dp;
+        spacing: 14 * Theme.dp;
+        HorizontalLayout {
+            alignment: center;
+            Rectangle {
+                width: 88 * Theme.dp;
+                height: self.width;
+                border-radius: self.width / 2;
+                background: Theme.card;
+                Glyph {
+                    source: @image-url("@neoui/icons/sys/contacts.svg");
+                    size: 44 * Theme.dp;
+                    colorize: Theme.text-dim;
+                }
+            }
+        }
+
+        Text {
+            text: "No contacts yet";
+            color: Theme.text;
+            font-size: Theme.font-body;
+            font-weight: 600;
+            horizontal-alignment: center;
+        }
+
+        HorizontalLayout {
+            alignment: center;
+            GlyphButton {
+                text: "New contact";
+                icon: @image-url("@neoui/icons/sys/person_add.svg");
+                filled: true;
+                clicked => {
+                    ContactsState.act("new", "");
+                }
+            }
+        }
+
+        // ⋮ as the header's glyph: NeoSans has no U+22EE
+        HorizontalLayout {
+            alignment: center;
+            spacing: 3 * Theme.dp;
+            Text {
+                text: "or import vCards from the";
+                color: Theme.text-dim;
+                font-size: 14 * Theme.dp;
+            }
+
+            Glyph {
+                source: @image-url("@neoui/icons/sys/more.svg");
+                size: 14 * Theme.dp;
+                colorize: Theme.text-dim;
+            }
+
+            Text {
+                text: "menu";
+                color: Theme.text-dim;
+                font-size: 14 * Theme.dp;
+            }
+        }
+    }
+}
+
+component ListView inherits Rectangle {
+    property <bool> marking: Nav.view == "mark";
+    property <bool> results: Nav.searching && ContactsState.has-query && !marking;
+    if results: Results {
+        width: parent.width;
+        height: parent.height;
+    }
+    if !results && !marking && ContactsState.total == 0: Empty {
+        width: parent.width;
+        height: parent.height;
+    }
+    if !results && (marking || ContactsState.total > 0): Rectangle {
+        list := NeoList {
+            VerticalLayout {
+                alignment: start;
+                if !marking: MyCardRow {
+                    clicked => {
+                        ContactsState.act("open", -1);
+                    }
+                }
+                if !marking && ContactsState.favourites.length > 0: Band {
+                    text: "FAVOURITES";
+                }
+                if !marking && ContactsState.favourites.length > 0: Favourites {
+                    people: ContactsState.favourites;
+                    open(id) => {
+                        ContactsState.act("open", id);
+                    }
+                }
+                secs := VerticalLayout {
+                    for s in ContactsState.sections: VerticalLayout {
+                        Band {
+                            text: s.letter;
+                        }
+
+                        for p[j] in s.people: ListRow {
+                            title: p.name;
+                            avatar: p.initials;
+                            avatar-tint: p.tint;
+                            // the letter strip's 24 dp and its gap (the board's 44 dp at the right)
+                            trailing-room: ContactsState.index.length > 0 ? 28 * Theme.dp : 0;
+                            divider: j < s.people.length - 1;
+                            selecting: marking;
+                            checked: marking && p.marked;
+                            clicked => {
+                                ContactsState.act(marking ? "mark" : "open", p.id);
+                            }
+                            long-pressed => {
+                                ContactsState.act(marking ? "mark" : "hold", p.id);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if ContactsState.index.length > 0: LetterStrip {
+            x: parent.width - self.width - 16 * Theme.dp;
+            y: 12 * Theme.dp;
+            marks: ContactsState.index;
+            at: (-list.content-y - secs.y) / Theme.dp;
+            jump(top) => {
+                list.content-y = min(0px, max(list.height - list.content-height, -(secs.y + top * Theme.dp)));
+            }
+        }
+    }
+}
+
+component CardView inherits NeoList {
+    property <bool> has-numbers: ContactsState.card-numbers.length > 0;
+    VerticalLayout {
+        alignment: start;
+        Rectangle {
+            background: @linear-gradient(180deg, #0f1622 0%, #000000 100%);
+            VerticalLayout {
+                // the board's gaps less what NeoSans' line height adds over the browser's
+                padding-top: 18 * Theme.dp;
+                padding-bottom: 14 * Theme.dp;
+                padding-left: 14 * Theme.dp;
+                padding-right: 14 * Theme.dp;
+                spacing: 1 * Theme.dp;
+                HorizontalLayout {
+                    alignment: center;
+                    padding-bottom: 12 * Theme.dp;
+                    Avatar {
+                        initials: ContactsState.card-initials;
+                        tint: ContactsState.card-tint;
+                        size: Theme.avatar-large;
+                    }
+                }
+
+                Text {
+                    text: ContactsState.card-name;
+                    color: Theme.text;
+                    font-size: 24 * Theme.dp;
+                    font-weight: 600;
+                    horizontal-alignment: center;
+                    overflow: elide;
+                }
+
+                if ContactsState.card-company != "": Text {
+                    text: ContactsState.card-company;
+                    color: Theme.text-secondary;
+                    font-size: 14.5 * Theme.dp;
+                    horizontal-alignment: center;
+                    overflow: elide;
+                }
+            }
+        }
+
+        if ContactsState.card-blocked != "": HorizontalLayout {
+            padding-left: 14 * Theme.dp;
+            padding-right: 14 * Theme.dp;
+            padding-bottom: 14 * Theme.dp;
+            BlockedBanner {
+                detail: ContactsState.card-blocked;
+                unblock => {
+                    ContactsState.act("unblock", "");
+                }
+            }
+        }
+        // Call and Message are for the first number; the others have their own round buttons
+        if has-numbers && !ContactsState.card-mine: HorizontalLayout {
+            padding-top: 4 * Theme.dp;
+            padding-left: 14 * Theme.dp;
+            padding-right: 14 * Theme.dp;
+            padding-bottom: 14 * Theme.dp;
+            spacing: 12 * Theme.dp;
+            CardPill {
+                text: "Call";
+                icon: @image-url("@neoui/icons/sys/call.svg");
+                green: true;
+                horizontal-stretch: 1;
+                clicked => {
+                    ContactsState.act("call", ContactsState.card-numbers[0].number);
+                }
+            }
+
+            CardPill {
+                text: "Message";
+                icon: @image-url("@neoui/icons/sys/message.svg");
+                horizontal-stretch: 1;
+                clicked => {
+                    ContactsState.act("message", ContactsState.card-numbers[0].number);
+                }
+            }
+        }
+        Rectangle {
+            height: max(1px, Theme.dp / 2);
+            background: Theme.hairline;
+        }
+
+        for n[i] in ContactsState.card-numbers: InfoRow {
+            label: n.label;
+            value: n.number;
+            divider: i > 0;
+            if i > 0 && !ContactsState.card-mine: HorizontalLayout {
+                spacing: 12 * Theme.dp;
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    RowAction {
+                        icon: @image-url("@neoui/icons/sys/message.svg");
+                        clicked => {
+                            ContactsState.act("message", n.number);
+                        }
+                    }
+                }
+
+                VerticalLayout {
+                    alignment: center;
+                    RowAction {
+                        icon: @image-url("@neoui/icons/sys/call.svg");
+                        tint: Theme.ok;
+                        clicked => {
+                            ContactsState.act("call", n.number);
+                        }
+                    }
+                }
+            }
+        }
+        if ContactsState.card-email != "": InfoRow {
+            label: "Email";
+            value: ContactsState.card-email;
+            size: Theme.font-body;
+            divider: has-numbers;
+            // shortcut: no Email app yet, so its button only says so; open it once there is one
+            VerticalLayout {
+                alignment: center;
+                RowAction {
+                    icon: @image-url("@phone-shared/icons/mail.svg");
+                    clicked => {
+                        ContactsState.act("email", "");
+                    }
+                }
+            }
+        }
+        if ContactsState.card-note != "": InfoRow {
+            label: "Note";
+            value: ContactsState.card-note;
+            size: 15 * Theme.dp;
+        }
+        if ContactsState.card-speed > 0: InfoRow {
+            label: "Speed dial";
+            value: "Key " + ContactsState.card-speed;
+            size: 15 * Theme.dp;
+        }
+    }
+}
+
+component EditView inherits NeoList {
+    VerticalLayout {
+        alignment: start;
+        HorizontalLayout {
+            padding-top: 12 * Theme.dp;
+            padding-left: 12 * Theme.dp;
+            padding-right: 12 * Theme.dp;
+            padding-bottom: 8 * Theme.dp;
+            spacing: 12 * Theme.dp;
+            VerticalLayout {
+                alignment: center;
+                PhotoSlot {
+                    clicked => {
+                        ContactsState.act("photo", "");
+                    }
+                }
+            }
+
+            VerticalLayout {
+                alignment: center;
+                spacing: 8 * Theme.dp;
+                Field {
+                    placeholder: "First name";
+                    text <=> ContactsState.edit-first;
+                }
+
+                Field {
+                    placeholder: "Last name";
+                    text <=> ContactsState.edit-last;
+                }
+            }
+        }
+
+        HorizontalLayout {
+            padding-left: 12 * Theme.dp;
+            padding-right: 12 * Theme.dp;
+            Field {
+                placeholder: "Company";
+                text <=> ContactsState.edit-company;
+            }
+        }
+
+        Band {
+            text: "NUMBERS";
+        }
+
+        VerticalLayout {
+            spacing: 8 * Theme.dp;
+            for n[i] in ContactsState.edit-numbers: HorizontalLayout {
+                padding-left: 12 * Theme.dp;
+                padding-right: 4 * Theme.dp;
+                spacing: 8 * Theme.dp;
+                TypeChip {
+                    text: ContactsState.short-labels[n.kind];
+                    clicked => {
+                        ContactsState.act("label", i);
+                    }
+                }
+
+                Field {
+                    placeholder: "Number";
+                    keys: 4;
+                    horizontal-stretch: 1;
+                    text <=> n.number;
+                }
+
+                IconButton {
+                    icon: @image-url("@neoui/icons/sys/close.svg");
+                    clicked => {
+                        ContactsState.act("remove-number", i);
+                    }
+                }
+            }
+        }
+
+        if ContactsState.edit-numbers.length < 4: HorizontalLayout {
+            padding-left: 6 * Theme.dp;
+            alignment: start;
+            GlyphButton {
+                text: "Add number";
+                icon: @image-url("@neoui/icons/sys/add.svg");
+                clicked => {
+                    ContactsState.act("add-number", "");
+                }
+            }
+        }
+        Band {
+            text: "MORE";
+        }
+
+        VerticalLayout {
+            padding-left: 12 * Theme.dp;
+            padding-right: 12 * Theme.dp;
+            padding-bottom: 16 * Theme.dp;
+            spacing: 8 * Theme.dp;
+            Field {
+                placeholder: "Email";
+                text <=> ContactsState.edit-email;
+            }
+
+            Field {
+                placeholder: "Note";
+                text <=> ContactsState.edit-note;
+            }
+        }
+    }
+}
+
+export component ContactsPage inherits Rectangle {
+    // names come in any keyboard language, and from vCards with accents: their glyphs must be baked in
+    Alphabets { }
+    // the same letters in NeoSans (names) and DejaVu Sans (the kit's fields, typed text)
+    Text {
+        visible: false;
+        text: "•–·⋮ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿĄąĆćČčĘęĞğİıŁłŃńŇňŐőŒœŘřŚśŞşŠšŢţŰűŸŹźŻżŽž";
+    }
+
+    Text {
+        visible: false;
+        font-family: "DejaVu Sans";
+        text: "•–·⋮ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿĄąĆćČčĘęĞğİıŁłŃńŇňŐőŒœŘřŚśŞşŠšŢţŰűŸŹźŻżŽž";
+    }
+
+    if Nav.view == "" || Nav.view == "mark": ListView { }
+    if Nav.view == "card": CardView { }
+    if Nav.view == "edit": EditView { }
+}

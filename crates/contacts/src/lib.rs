@@ -256,8 +256,8 @@ impl Book {
         v.into_iter().map(|(_, _, id)| id).collect()
     }
 
-    /// Contacts for the list's search field, in [`Book::sorted`] order: every word of `text` starts a word of a name
-    /// (case folded), or `text` is part of a number.
+    /// Contacts for the list's search field, in [`Book::sorted`] order: every word of `text` is part of a word of a
+    /// name (anywhere in it, case folded), or `text` is part of a number.
     pub fn search(&self, text: &str, order: NameOrder) -> Vec<u32> {
         let q: Vec<String> = text.split_whitespace().map(fold).collect();
         if q.is_empty() {
@@ -270,7 +270,7 @@ impl Book {
                 let c = self.get(*id).unwrap();
                 let words: Vec<String> = c.words().map(fold).collect();
                 q.iter()
-                    .all(|w| words.iter().any(|x| x.starts_with(w.as_str())))
+                    .all(|w| words.iter().any(|x| x.contains(w.as_str())))
                     || (digits.len() >= 3
                         && digits.len() == text.trim().trim_start_matches('+').len()
                         && c.numbers.iter().any(|(_, n)| n.contains(digits.as_str())))
@@ -451,6 +451,18 @@ mod tests {
         assert_eq!(b.search("пет", NameOrder::FirstLast), [2]);
         assert_eq!(b.search("1234567", NameOrder::FirstLast), [1, 2]);
         assert_eq!(b.search("  ", NameOrder::FirstLast).len(), 4);
+        // inside a word too: "an" is in Ani, Ivan, and Aram Hakobyan's company Vahan & Co
+        let mut b = book();
+        let aram = b
+            .add(Contact {
+                company: "Vahan & Co".into(),
+                ..person("Aram", "Hakobyan", &["+37491000111"])
+            })
+            .unwrap();
+        assert_eq!(b.search("an", NameOrder::FirstLast), [1, aram, 2]);
+        assert_eq!(b.search("kob", NameOrder::FirstLast), [aram]);
+        assert_eq!(b.search("ВАН", NameOrder::FirstLast), []);
+        assert_eq!(b.search("етр", NameOrder::FirstLast), [2]);
     }
 
     #[test]

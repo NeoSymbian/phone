@@ -1,0 +1,106 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Contacts (NEOPHONE v2 p2-contacts-*): what the app shows and what the screens ask for (`act`). The app
+// (symbian/contacts/src/people.rs) fills it; the editor's fields are written by the screens. The search text comes
+// through the header (Nav.searched).
+
+// A row of the list: a contact (`id`), its name and avatar; `marked` in selection mode.
+export struct ContactRow {
+    id: int,
+    name: string,
+    initials: string,
+    tint: color,
+    marked: bool,
+}
+
+// A section of the list: its letter and rows; `top` is where its band starts below the first band (dp).
+export struct ContactSection {
+    letter: string,
+    top: float,
+    people: [ContactRow],
+}
+
+// A place on the letter strip: a letter, "•" (several `letters`, one `tops` each) or the dash between scripts. It is
+// lit while the list's top is in [start, end) (dp below the first band).
+export struct ContactMark {
+    text: string,
+    letters: [string],
+    tops: [float],
+    start: float,
+    end: float,
+}
+
+// A search result: the name and a detail line, each cut around what matched (pre, hit, post).
+export struct ContactHit {
+    id: int,
+    initials: string,
+    tint: color,
+    name-pre: string,
+    name-hit: string,
+    name-post: string,
+    detail-pre: string,
+    detail-hit: string,
+    detail-post: string,
+}
+
+// One of the card's numbers.
+export struct ContactNumber {
+    label: string,
+    number: string,
+}
+
+// One of the editor's numbers: its contacts::Label (`kind`) and the typed number.
+export struct ContactEditNumber {
+    kind: int,
+    number: string,
+}
+
+export global ContactsState {
+    // the list (view "" and "mark"): the contacts count, favourites, sections, the letter strip
+    in property <int> total;
+    in property <[ContactRow]> favourites;
+    in property <[ContactSection]> sections;
+    in property <[ContactMark]> index;
+    // the header's search: the results while a query is typed
+    in property <bool> has-query;
+    in property <[ContactHit]> results;
+
+    // the card (view "card"): my card shows the same card
+    in property <bool> card-mine;
+    in property <string> card-name;
+    in property <string> card-company;
+    in property <string> card-initials;
+    in property <color> card-tint;
+    in property <[ContactNumber]> card-numbers;
+    in property <string> card-email;
+    in property <string> card-note;
+    // its speed-dial key (2..9; 0: none)
+    in property <int> card-speed;
+    // what blocks it ("Calls and messages", "Calls", "Messages"; "" not blocked)
+    in property <string> card-blocked;
+
+    // the editor (view "edit"), filled when it opens and read back on Save
+    in-out property <string> edit-first;
+    in-out property <string> edit-last;
+    in-out property <string> edit-company;
+    in-out property <string> edit-email;
+    in-out property <string> edit-note;
+    in-out property <[ContactEditNumber]> edit-numbers;
+    // the number-type sheet: the row it is open for (-1: closed); the label texts in contacts::Label order (the
+    // app fills them; the chips show the short ones)
+    in property <int> picking: -1;
+    in property <[string]> labels;
+    in property <[string]> short-labels: ["Mobile", "Home", "Work", "Phone", "Home tel.", "Work tel.", "Fax"];
+
+    // the app's own query (Block, with its check boxes): its question, detail, red button text and check boxes
+    in property <bool> dialog-open;
+    in property <string> dialog-question;
+    in property <string> dialog-detail;
+    in property <string> dialog-confirm;
+    in property <[string]> dialog-checks;
+    in property <[bool]> dialog-checked;
+
+    // "open" + id (-1: my card), "hold" + id (a long press: selection mode), "mark" + id, "new", "call" + number,
+    // "message" + number, "email", "photo" (the editor's slot), "unblock", "label" + row (opens the sheet), "pick" + label index,
+    // "pick-cancel", "add-number", "remove-number" + row, "confirm", "cancel", "check" + index
+    callback act(string, string);
+}

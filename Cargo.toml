@@ -1,9 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0
-# NeoPhone's host workspace: the pure parts (contacts, phone-core: Apache-2.0) and the Slint UI (phone-ui: GPL-3.0,
-# it links Slint), tested on the host. The app EXE is the separate symbian/ workspace (armv5te, nightly build-std).
+# The host workspace of Phone, Contacts and Messages: the pure parts (contacts, phone-core: Apache-2.0) and each
+# app's Slint UI (phone-ui, contacts-ui, messages-ui: GPL-3.0, they link Slint), tested on the host. The app EXEs are
+# the separate symbian/ workspace (armv5te, nightly build-std).
 [workspace]
 resolver = "3"
-members = ["crates/contacts", "crates/phone-core", "crates/phone-ui"]
+members = [
+    "crates/contacts",
+    "crates/phone-core",
+    "crates/phone-ui",
+    "crates/contacts-ui",
+    "crates/messages-ui",
+]
 
 [workspace.package]
 version = "0.1.0"
@@ -14,13 +21,14 @@ license = "Apache-2.0"
 contacts = { path = "crates/contacts" }
 phone-core = { path = "crates/phone-core" }
 phone-ui = { path = "crates/phone-ui" }
+contacts-ui = { path = "crates/contacts-ui" }
+messages-ui = { path = "crates/messages-ui" }
 # NeoSymbian/telephony (Apache-2.0): the NeoModem contract, dial rules, number matching, the blocklist
-modem-ipc = { git = "https://github.com/NeoSymbian/telephony", rev = "b50763850b47373083e7cea82a3d30f40feb9cea" }
-phone-rules = { git = "https://github.com/NeoSymbian/telephony", rev = "b50763850b47373083e7cea82a3d30f40feb9cea" }
-sms = { git = "https://github.com/NeoSymbian/telephony", rev = "b50763850b47373083e7cea82a3d30f40feb9cea" }
-# NeoSymbian/neoui: the app protocol and (DEP_NEOUI_UI) the shared theme, fonts and components
-neoui-proto = { git = "https://github.com/NeoSymbian/neoui", rev = "5533c72b6310f204976fc5896aa95c036a31be34" }
+modem-ipc = { git = "https://github.com/NeoSymbian/telephony", rev = "452a22ac5442d1976f589c14472ea87c4c6041b5" }
+phone-rules = { git = "https://github.com/NeoSymbian/telephony", rev = "452a22ac5442d1976f589c14472ea87c4c6041b5" }
+sms = { git = "https://github.com/NeoSymbian/telephony", rev = "452a22ac5442d1976f589c14472ea87c4c6041b5" }
+# NeoSymbian/neoui: the kit (the shared theme, fonts and components, as a build helper)
+neoui-kit = { git = "https://github.com/NeoSymbian/neoui", rev = "27a90f776d32e70cd8ecc231a499da348c4eb2e8" }
 # the same Slint as neoui (one copy in the ROM, no_std)
 slint = { version = "=1.18.1", default-features = false, features = ["compat-1-2", "unsafe-single-threaded", "libm", "renderer-software"] }
-slint-build = { version = "=1.18.1", features = ["sdf-fonts"] }
 png = "=0.18.1"
