@@ -168,6 +168,18 @@ impl Split {
             post: s[to..].into(),
         }
     }
+
+    /// The three parts for a row of texts: a part's trailing spaces move to the next part's front (a text's own
+    /// trailing space takes no room on screen).
+    pub fn spaced(&self) -> [String; 3] {
+        let mut parts = [self.pre.clone(), self.hit.clone(), self.post.clone()];
+        for i in 0..2 {
+            let kept = parts[i].trim_end().len();
+            let spaces = parts[i].split_off(kept);
+            parts[i + 1].insert_str(0, &spaces);
+        }
+        parts
+    }
 }
 
 /// One smart-dial row: a contact and the number Call on it dials.
@@ -256,6 +268,13 @@ fn name_split(title: &str, digits: &str) -> Split {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn spaced_parts() {
+        let s = Split::at("+374 28 123456", 5, 7);
+        assert_eq!(s.spaced(), ["+374", " 28", " 123456"]);
+        assert_eq!(Split::plain("Ava").spaced(), ["Ava", "", ""]);
+    }
+
     use super::*;
     use contacts::Contact;
 

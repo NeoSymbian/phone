@@ -179,12 +179,24 @@ pub fn label_of(contact: &Contact, n: &str) -> Option<Label> {
         .map(|(l, _)| *l)
 }
 
-/// The second line's word: missed, rejected and dialled calls say so, a received call its number's label.
+/// The second line's word: a contact's received or dialled call its number's label (the glyph gives the
+/// direction), anything else its kind.
 pub fn second_line(e: &LogEntry, label: Option<Label>) -> String {
     match (e.kind, label) {
-        (log::RECEIVED, Some(l)) => l.text().into(),
+        (log::RECEIVED | log::DIALLED, Some(l)) => l.text().into(),
         (k, _) => kind_text(k).into(),
     }
+}
+
+/// The header's search on Recents: `query` in the row's name (any case) or in its number's digits.
+pub fn found(title: &str, n: &str, query: &str) -> bool {
+    let q = query.trim();
+    if q.is_empty() {
+        return true;
+    }
+    let digits = number::digits(q);
+    title.to_lowercase().contains(&q.to_lowercase())
+        || (!digits.is_empty() && number::digits(n).contains(digits.as_str()))
 }
 
 /// Why a blocked call was blocked (mockup 27): the rule that matched.
@@ -298,6 +310,15 @@ mod tests {
         assert_eq!(initials("+1 555"), "");
         assert_eq!(second_line(&l[0], Some(Label::Mobile)), "Mobile");
         assert_eq!(second_line(&l[1], Some(Label::Mobile)), "Missed");
+        assert_eq!(
+            second_line(&l[4], Some(Label::MobileWork)),
+            Label::MobileWork.text()
+        );
+        assert_eq!(second_line(&l[4], None), "Dialled");
+        assert!(found("Ava Lindqvist", "+15550142", "lind"));
+        assert!(found("Ava Lindqvist", "+15550142", "0142"));
+        assert!(!found("Ava Lindqvist", "+15550142", "boris"));
+        assert!(found("Борис", "", "бор"));
         assert_eq!(tint(None, "+15550142", 8), tint(None, "15550142", 8));
     }
 
