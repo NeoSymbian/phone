@@ -22,7 +22,8 @@ pub fn ask(text: &str, detail: &str, confirm: &str) -> neoapp::Query {
     }
 }
 
-/// A view's action glyph and style, for [`Chrome`] (the app draws its own header with the kit, ui-shared/frame.slint).
+/// A view's action glyphs and style, for [`Chrome`] (the app draws its own header with the kit, ui-shared/frame.slint;
+/// the numbers are ui-shared/icons.slint's).
 pub mod tool {
     pub const NONE: i32 = 0;
     pub const CALL: i32 = 1;
@@ -31,6 +32,15 @@ pub mod tool {
     pub const EDIT: i32 = 4;
     pub const CHECK: i32 = 5;
     pub const DELETE: i32 = 6;
+    pub const STAR: i32 = 7;
+    pub const STAR_FULL: i32 = 8;
+    pub const MESSAGE: i32 = 9;
+    pub const BLOCK: i32 = 10;
+    pub const SELECT_ALL: i32 = 11;
+    pub const ARCHIVE: i32 = 12;
+    pub const SHARE: i32 = 13;
+    pub const SEARCH: i32 = 14;
+    pub const KEYPAD: i32 = 15;
     /// the action is a big pill in the content (the dialer's Call, D14)
     pub const PILL: i32 = 1;
     /// a form: [✕ title ✓]
@@ -49,6 +59,15 @@ pub struct Chrome {
     /// [`tool`]'s style bits: `CANCEL` a form, `PILL` the action in the content, `EMPTY` no action
     pub style: i32,
     pub label: String,
+    /// more header icons after the action (a card's ★ and ✎): a [`tool`] glyph and the name the area's `option`
+    /// runs when it is tapped (as if picked from ⋮)
+    pub more: Vec<(i32, &'static str)>,
+    /// the header's search: its placeholder (None: no 🔍); the typed text goes to the area's `searched`
+    pub search: Option<&'static str>,
+    /// selection mode: how many are selected (0: off; the header shows [✕ N selected · `selection`]), and its
+    /// actions as [`tool`] glyphs and `option` names; ✕ is Back
+    pub selected: i32,
+    pub selection: Vec<(i32, &'static str)>,
 }
 
 impl Chrome {
@@ -63,6 +82,22 @@ impl Chrome {
         self.style = style;
         self.label = label.into();
         self
+    }
+
+    /// The action is a header icon (not a form's ✓, not the content's pill, not none).
+    pub fn icon_action(&self) -> bool {
+        self.icon != tool::NONE && self.style & (tool::PILL | tool::CANCEL | tool::EMPTY) == 0
+    }
+
+    /// What the header's icon `i` does: `None` the action (the area's `action`), `Some(name)` an `option`.
+    pub fn header_action(&self, i: usize) -> Option<Option<&'static str>> {
+        if self.icon_action() {
+            if i == 0 {
+                return Some(None);
+            }
+            return self.more.get(i - 1).map(|(_, n)| Some(*n));
+        }
+        self.more.get(i).map(|(_, n)| Some(*n))
     }
 }
 

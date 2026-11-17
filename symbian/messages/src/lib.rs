@@ -77,14 +77,26 @@ fn run() -> Result<(), i32> {
     msgs::sync(&ctx);
     {
         // the frame's taps: ← or a form's ✕ (Back), the action (an icon or ✓), ⋮'s items, the footer's other apps
-        let ctx = Rc::downgrade(&ctx);
+        let weak = Rc::downgrade(&ctx);
+        let ctx = weak.clone();
+        ui.global::<Nav>().on_searched(move |q| {
+            if let Some(ctx) = ctx.upgrade() {
+                ctx.searched(&q);
+            }
+        });
+        let ctx = weak;
         ui.global::<Nav>().on_header(move |kind, i| {
             let Some(ctx) = ctx.upgrade() else { return };
             match kind.as_str() {
                 "back" => {
                     ctx.back();
                 }
-                "action" => ctx.action(),
+                "action" => ctx.header_action(usize::try_from(i).unwrap_or(usize::MAX)),
+                "selection" => ctx.selection_action(usize::try_from(i).unwrap_or(usize::MAX)),
+                // ✕ in selection mode: Back clears it
+                "selection-closed" => {
+                    ctx.back();
+                }
                 "tab" => match i {
                     0 => ctx.go(Page::Phone(PhoneView::Dial)),
                     1 => ctx.go(Page::Contacts(phone_core::page::ContactsView::List)),

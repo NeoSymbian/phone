@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
+import { Act } from "@neoui/kit.slint";
 // Where the app is (each of Phone, Contacts and Messages has its own). The app's Rust (symbian/<app>) owns the truth
 // and mirrors it here; the screens ask for moves through `act`.
 
@@ -22,12 +23,24 @@ export global Nav {
     in property <string> action-label;
     in property <bool> pill;
     in property <[string]> options;
+    // more header icons after the action (the card's ★ and ✎): "action" i from 1
+    in property <[Act]> actions;
+    // the header's search (🔍 opens a field over the title): typed text comes through `searched`
+    in property <bool> search;
+    in property <string> search-hint: "Search";
+    in-out property <string> query;
+    in-out property <bool> searching;
+    // selection mode: [✕ N selected · selection-actions]; "selection" i, "selection-closed"
+    in property <int> selected;
+    in property <[Act]> selection-actions;
     in property <bool> full;
     // a root view: the footer that switches between Phone, Contacts and Messages, with their badges
     in property <bool> footer;
     in property <int> missed;
     in property <int> unread;
-    // the frame's taps: "back" (← or ✕), "action" (the icon, ✓ or the pill), "option" i (an item of ⋮), "tab" i (the
-    // footer: 0 Phone, 1 Contacts, 2 Messages)
+    // the frame's taps: "back" (← or ✕), "action" i (0 the action: the icon, ✓ or the pill; 1.. the `actions`),
+    // "option" i (an item of ⋮), "selection" i, "selection-closed", "tab" i (the footer: 0 Phone, 1 Contacts,
+    // 2 Messages)
     callback header(string, int);
+    callback searched(string);
 }

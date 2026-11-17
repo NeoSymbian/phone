@@ -1,0 +1,56 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// The header's glyphs by number, so the apps' Rust can name them (symbian/common ui.rs `tool`: the same numbers).
+import { Act } from "@neoui/kit.slint";
+
+export global Icons {
+    // tool `id` (1 call ... 15 keypad) as a header action labelled `label`
+    public pure function act(id: int, label: string) -> Act {
+        return { icon: self.icon(id), label: label };
+    }
+
+    public pure function icon(id: int) -> image {
+        if id == 1 {
+            return @image-url("@neoui/icons/sys/call.svg");
+        }
+        if id == 2 {
+            return @image-url("@neoui/icons/sys/add.svg");
+        }
+        if id == 3 {
+            return @image-url("@neoui/icons/sys/person_add.svg");
+        }
+        if id == 4 {
+            return @image-url("@neoui/icons/sys/edit.svg");
+        }
+        if id == 5 {
+            return @image-url("@neoui/icons/sys/check.svg");
+        }
+        if id == 6 {
+            return @image-url("@neoui/icons/sys/delete.svg");
+        }
+        if id == 7 {
+            return @image-url("@neoui/icons/sys/star.svg");
+        }
+        if id == 8 {
+            return @image-url("icons/star_full.svg");
+        }
+        if id == 9 {
+            return @image-url("@neoui/icons/sys/message.svg");
+        }
+        if id == 10 {
+            return @image-url("icons/block.svg");
+        }
+        if id == 11 {
+            return @image-url("@neoui/icons/sys/select_all.svg");
+        }
+        if id == 12 {
+            return @image-url("@neoui/icons/sys/archive.svg");
+        }
+        if id == 13 {
+            return @image-url("@neoui/icons/sys/share.svg");
+        }
+        if id == 14 {
+            return @image-url("@neoui/icons/sys/search.svg");
+        }
+        return @image-url("@neoui/icons/sys/keypad.svg");
+    }
+}

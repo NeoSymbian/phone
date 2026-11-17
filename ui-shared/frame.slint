@@ -7,6 +7,7 @@ import { Theme, KeyboardFocus, Header, FormHeader } from "@neoui/kit.slint";
 import { Nav } from "nav.slint";
 import { PillButton } from "common.slint";
 import { AppsFooter } from "footer.slint";
+import { Icons } from "icons.slint";
 
 export component AppFrame inherits Rectangle {
     // 0 Phone, 1 Contacts, 2 Messages: the app's footer tab
@@ -33,12 +34,6 @@ export component AppFrame inherits Rectangle {
 
     property <bool> has-header: !Nav.full;
     property <bool> has-footer: !Nav.full && Nav.footer;
-    property <image> action-icon: Nav.action-tool == 1 ? @image-url("@neoui/icons/sys/call.svg")
-        : Nav.action-tool == 2 ? @image-url("@neoui/icons/sys/add.svg")
-        : Nav.action-tool == 3 ? @image-url("@neoui/icons/sys/person_add.svg")
-        : Nav.action-tool == 4 ? @image-url("@neoui/icons/sys/edit.svg")
-        : Nav.action-tool == 5 ? @image-url("@neoui/icons/sys/check.svg")
-        : @image-url("@neoui/icons/sys/delete.svg");
     if root.has-header && Nav.form: FormHeader {
         y: 0;
         title: Nav.title;
@@ -54,18 +49,32 @@ export component AppFrame inherits Rectangle {
         y: 0;
         title: Nav.title;
         has-back: Nav.sub;
-        search: false;
+        search: Nav.search;
+        search-placeholder: Nav.search-hint;
+        query <=> Nav.query;
+        searching <=> Nav.searching;
         tap-to-top: false;
-        actions: Nav.has-action && !Nav.pill ? [{ icon: root.action-icon, label: Nav.action-label }] : [];
+        actions: Nav.actions;
         menu: Nav.options;
+        selected: Nav.selected;
+        selection-actions: Nav.selection-actions;
         back => {
             Nav.header("back", 0);
         }
         action(i) => {
-            Nav.header("action", 0);
+            Nav.header("action", i);
         }
         menu-picked(i) => {
             Nav.header("option", i);
+        }
+        searched(q) => {
+            Nav.searched(q);
+        }
+        selection-action(i) => {
+            Nav.header("selection", i);
+        }
+        selection-closed => {
+            Nav.header("selection-closed", 0);
         }
     }
 
@@ -84,7 +93,7 @@ export component AppFrame inherits Rectangle {
         y: root.height - (root.has-footer ? Theme.footer-h : 0) - (root.pill-band + self.height) / 2;
         width: 160 * Theme.dp;
         text: Nav.action-label;
-        icon: root.action-icon;
+        icon: Icons.icon(Nav.action-tool);
         kind: "green";
         clicked => {
             Nav.header("action", 0);

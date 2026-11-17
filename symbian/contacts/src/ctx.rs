@@ -8,7 +8,7 @@ use crate::people;
 use alloc::string::String;
 use alloc::vec::Vec;
 use contacts::{Book, NameOrder};
-use contacts_ui::{ContactsApp, KeyboardFocus, Kit, Nav};
+use contacts_ui::{ContactsApp, Icons, KeyboardFocus, Kit, Nav};
 use core::cell::{Cell, RefCell};
 use e32::dprintln;
 use modem_ipc::{LogEntry, Status};
@@ -179,6 +179,28 @@ impl Ctx {
         }
     }
 
+    /// The header's icon `i` (the action, then `Chrome::more`).
+    pub fn header_action(&self, i: usize) {
+        match people::chrome(self).header_action(i) {
+            Some(None) => self.action(),
+            Some(Some(name)) => people::option(self, name),
+            None => {}
+        }
+    }
+
+    /// The selection header's action `i` (`Chrome::selection`).
+    pub fn selection_action(&self, i: usize) {
+        let name = people::chrome(self).selection.get(i).map(|(_, n)| *n);
+        if let Some(name) = name {
+            people::option(self, name);
+        }
+    }
+
+    /// The header's search field changed (each keystroke; "" when it closed).
+    pub fn searched(&self, query: &str) {
+        let _ = query; // the area's own search field, until it moves into the header
+    }
+
     /// The UI server's dialog was answered: `yes` is its first (confirming) button.
     pub fn answer(&self, yes: bool) {
         *self.asked.borrow_mut() = None; // the UI server closed it
@@ -256,7 +278,11 @@ impl Ctx {
         nav.set_action_label(chrome.label.as_str().into());
         nav.set_pill(chrome.style & tool::PILL != 0);
         // the footer (Phone · Contacts · Messages) on the root view
-        nav.set_footer(self.page() == Page::Contacts(ContactsView::List));
+        nav.set_footer(
+            self.page() == Page::Contacts(ContactsView::List)
+                && chrome.selected == 0
+                && !nav.get_searching(),
+        );
         let (missed, unread) = {
             let m = self.m.borrow();
             (
@@ -266,6 +292,29 @@ impl Ctx {
         };
         nav.set_missed(missed as i32);
         nav.set_unread(i32::from(unread));
+        // the header's icons (the action first), its search and its selection mode (kit Header)
+        let icons = ui.global::<Icons>();
+        let mut acts = Vec::new();
+        if chrome.icon_action() {
+            acts.push(icons.invoke_act(chrome.icon, chrome.label.as_str().into()));
+        }
+        for (t, n) in &chrome.more {
+            acts.push(icons.invoke_act(*t, (*n).into()));
+        }
+        if nav.get_actions().iter().ne(acts.iter().cloned()) {
+            nav.set_actions(phone_common::ui::model(acts));
+        }
+        nav.set_search(chrome.search.is_some());
+        nav.set_search_hint(chrome.search.unwrap_or("Search").into());
+        nav.set_selected(chrome.selected);
+        let sel: Vec<_> = chrome
+            .selection
+            .iter()
+            .map(|(t, n)| icons.invoke_act(*t, (*n).into()))
+            .collect();
+        if nav.get_selection_actions().iter().ne(sel.iter().cloned()) {
+            nav.set_selection_actions(phone_common::ui::model(sel));
+        }
         let options = people::options(self);
         if nav
             .get_options()

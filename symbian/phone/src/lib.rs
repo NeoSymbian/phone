@@ -84,14 +84,26 @@ fn run() -> Result<(), i32> {
     {
         // the frame's taps: ← or a form's ✕ (Back), the action (an icon, ✓ or the content's pill), ⋮'s items, the
         // footer's Contacts and Messages
-        let ctx = Rc::downgrade(&ctx);
+        let weak = Rc::downgrade(&ctx);
+        let ctx = weak.clone();
+        nav.on_searched(move |q| {
+            if let Some(ctx) = ctx.upgrade() {
+                ctx.searched(&q);
+            }
+        });
+        let ctx = weak;
         nav.on_header(move |kind, i| {
             let Some(ctx) = ctx.upgrade() else { return };
             match kind.as_str() {
                 "back" => {
                     ctx.back();
                 }
-                "action" => ctx.action(),
+                "action" => ctx.header_action(usize::try_from(i).unwrap_or(usize::MAX)),
+                "selection" => ctx.selection_action(usize::try_from(i).unwrap_or(usize::MAX)),
+                // ✕ in selection mode: Back clears it
+                "selection-closed" => {
+                    ctx.back();
+                }
                 "tab" => match i {
                     1 => ctx.go(Page::Contacts(phone_core::page::ContactsView::List)),
                     2 => ctx.go(Page::Messages(phone_core::page::MessagesView::List)),
