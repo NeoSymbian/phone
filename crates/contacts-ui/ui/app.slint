@@ -2,7 +2,9 @@
 // NEOCONT.EXE (Contacts): the list with search, favourites and the letter strip, the card, the editor, selection mode
 // (Phone and Messages are apps of their own; the footer and the card's Call and Message open them). The number-type
 // sheet and the Block query cover the whole app, header too.
-import "@neoui/fonts/Inter-VariableFont.ttf";
+import "@neoui/fonts/NeoSans-Regular.ttf";
+import "@neoui/fonts/NeoSans-Medium.ttf";
+import "@neoui/fonts/NeoSans-SemiBold.ttf";
 import "@neoui/fonts/DejaVuSans.ttf";
 import { Theme, Scroll, KeyboardFocus, Kit } from "@neoui/kit.slint";
 import { Nav } from "@phone-shared/nav.slint";
@@ -15,7 +17,7 @@ import { Dialog, TypeSheet } from "contacts/parts.slint";
 export { Theme, Scroll, KeyboardFocus, Kit, Nav, Icons, ContactsState }
 
 export component ContactsApp inherits Window {
-    default-font-family: "Inter";
+    default-font-family: "NeoSans";
     background: Theme.bg;
     AppFrame {
         own: 1;

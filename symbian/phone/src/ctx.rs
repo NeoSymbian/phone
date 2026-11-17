@@ -51,6 +51,8 @@ pub struct Model {
     pub prefs: prefs::State,
     pub msgs: Sms,
     pub visible: bool,
+    /// the Return to call bar's clock
+    pub call_bar: phone_common::CallBar,
     /// another app opened the call screens (OPEN): when the call ends, the user goes back there (DONE)
     pub call_opened: bool,
     /// Contacts opened speed dial to put a number on a key: leaving it goes back there (DONE)
@@ -330,6 +332,19 @@ impl Ctx {
         let nav = ui.global::<Nav>();
         let empty = chrome.style & tool::EMPTY != 0;
         nav.set_title(chrome.title.as_str().into());
+        // Return to call: a call goes on and its screen isn't showing
+        let bar = {
+            let mut m = self.m.borrow_mut();
+            let m = &mut *m;
+            if m.page != Page::Call {
+                m.call_bar
+                    .text(m.status.as_ref(), &m.book, m.order, e32::time::millis())
+            } else {
+                String::new()
+            }
+        };
+        nav.set_call_bar(bar.as_str().into());
+
         nav.set_title_font(phone_common::ui::title_font(&chrome.title).into());
         // the keypad sheet is a layer over Recents, not a page: no ←
         nav.set_sub(self.page().back().is_some() && self.page() != Page::Phone(PhoneView::Dial));
@@ -416,7 +431,8 @@ impl Ctx {
             // another app's pages (go() opens them there)
             Page::Contacts(_) | Page::Messages(_) => false,
             Page::Phone(_) => dial::wants_back(self),
-            Page::Call => false,
+            // Back hides the call screen (Return to call brings it back)
+            Page::Call => true,
             Page::Settings(_) => prefs::wants_back(self),
         }
     }
@@ -453,7 +469,9 @@ impl Ctx {
 
     pub fn next_wake_us(&self) -> i32 {
         let now = e32::time::millis();
-        let at = [call::next_wake(self), dial::next_wake(self)]
+        // the Return to call bar's clock, every second
+        let bar = self.m.borrow().call_bar.live().then_some(now + 1000);
+        let at = [call::next_wake(self), dial::next_wake(self), bar]
             .into_iter()
             .flatten()
             .min()

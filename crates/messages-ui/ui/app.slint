@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // NEOMSG.EXE (Messages): the conversations, the archived ones, a thread, a message's details, a new message, the
 // blocked messages (Phone and Contacts are apps of their own; the footer and a thread's Call and Contact open them).
-import "@neoui/fonts/Inter-VariableFont.ttf";
+import "@neoui/fonts/NeoSans-Regular.ttf";
+import "@neoui/fonts/NeoSans-Medium.ttf";
+import "@neoui/fonts/NeoSans-SemiBold.ttf";
 import "@neoui/fonts/DejaVuSans.ttf";
 import { Theme, Scroll, KeyboardFocus, Kit, Toast } from "@neoui/kit.slint";
 import { Shade, ShadeNote } from "@neoui/components/shade.slint";
@@ -14,7 +16,7 @@ import { MessagesPage } from "messages/pages.slint";
 export { Theme, Scroll, KeyboardFocus, Kit, Nav, Icons, MessagesState, ShadeNote }
 
 export component MessagesApp inherits Window {
-    default-font-family: "Inter";
+    default-font-family: "NeoSans";
     background: Theme.bg;
     AppFrame {
         own: 2;

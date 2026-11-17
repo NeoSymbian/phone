@@ -76,6 +76,7 @@ fn run() -> Result<(), i32> {
         prefs: Default::default(),
         people: Default::default(),
         visible: false,
+        call_bar: Default::default(),
     };
     let ctx = Rc::new(Ctx::new(app, &ui, model));
     ctx.reload_prefs();
@@ -98,6 +99,15 @@ fn run() -> Result<(), i32> {
                 }
                 // a form's ✓ or the content's pill
                 "save" => ctx.action(),
+                // Return to call
+                "call-bar" => {
+                    let _ = phone_common::open_number(
+                        &ctx.app,
+                        key::PHONE,
+                        phone_core::page::number::phone::CALL,
+                        "",
+                    );
+                }
                 "action" => ctx.header_action(usize::try_from(i).unwrap_or(usize::MAX)),
                 "selection" => ctx.selection_action(usize::try_from(i).unwrap_or(usize::MAX)),
                 // ✕ in selection mode: Back clears it
@@ -133,7 +143,7 @@ fn run() -> Result<(), i32> {
                         next.as_mut(),
                         rt::select(
                             watch.as_mut(),
-                            time::delay(phone_common::wait_us(&ctx.app, 60_000_000)),
+                            time::delay(phone_common::wait_us(&ctx.app, own_wait(&ctx))),
                         ),
                     )
                     .await
@@ -215,5 +225,14 @@ fn opened(ctx: &Ctx, n: u16, p: Page, arg: &str) {
             people::opened_on(ctx, arg, n == contacts::NEW);
         }
         _ => ctx.go(p),
+    }
+}
+
+/// The loop's own wake (µs): every second while the Return to call bar's clock runs.
+fn own_wait(ctx: &Ctx) -> i32 {
+    if ctx.m.borrow().call_bar.live() {
+        1_000_000
+    } else {
+        60_000_000
     }
 }

@@ -675,6 +675,7 @@ fn post_alerts(ctx: &Ctx) {
             text: cut(&a.text, neoui_proto::page::TEXT_MAX),
             page: number::messages::THREAD,
             actions: alloc::vec!["Reply".into(), "Call".into()],
+            ..neoapp::Notification::default()
         };
         if let Err(e) = ctx.app.notify(&n) {
             dprintln!("neomsg: entry not posted ({})", e);

@@ -69,6 +69,7 @@ fn run() -> Result<(), i32> {
         prefs: Default::default(),
         msgs: Default::default(),
         visible: false,
+        call_bar: Default::default(),
         opened: false,
     };
     let ctx = Rc::new(Ctx::new(app, &ui, model));
@@ -93,6 +94,15 @@ fn run() -> Result<(), i32> {
                 }
                 // a form's ✓ or the content's pill
                 "save" => ctx.action(),
+                // Return to call
+                "call-bar" => {
+                    let _ = phone_common::open_number(
+                        &ctx.app,
+                        key::PHONE,
+                        phone_core::page::number::phone::CALL,
+                        "",
+                    );
+                }
                 "action" => ctx.header_action(usize::try_from(i).unwrap_or(usize::MAX)),
                 "selection" => ctx.selection_action(usize::try_from(i).unwrap_or(usize::MAX)),
                 // ✕ in selection mode: Back clears it
@@ -128,7 +138,10 @@ fn run() -> Result<(), i32> {
                         next.as_mut(),
                         rt::select(
                             watch.as_mut(),
-                            time::delay(phone_common::wait_us(&ctx.app, msgs::wait_us(&ctx))),
+                            time::delay(phone_common::wait_us(
+                                &ctx.app,
+                                msgs::wait_us(&ctx).min(bar_wait(&ctx)),
+                            )),
                         ),
                     )
                     .await
@@ -232,5 +245,14 @@ fn opened(ctx: &Ctx, n: u16, p: Page, arg: &str) {
             ctx.m.borrow_mut().opened = false;
             ctx.go(p);
         }
+    }
+}
+
+/// The loop's own wake (µs): every second while the Return to call bar's clock runs.
+fn bar_wait(ctx: &Ctx) -> i32 {
+    if ctx.m.borrow().call_bar.live() {
+        1_000_000
+    } else {
+        i32::MAX
     }
 }

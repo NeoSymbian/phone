@@ -76,6 +76,7 @@ fn run() -> Result<(), i32> {
         prefs: Default::default(),
         msgs: Default::default(),
         visible: false,
+        call_bar: Default::default(),
         call_opened: false,
         speed_opened: false,
         settings_opened: false,
@@ -103,6 +104,8 @@ fn run() -> Result<(), i32> {
                 }
                 // a form's ✓ or the content's pill
                 "save" => ctx.action(),
+                // Return to call
+                "call-bar" => ctx.go(Page::Call),
                 "action" => ctx.header_action(usize::try_from(i).unwrap_or(usize::MAX)),
                 "selection" => ctx.selection_action(usize::try_from(i).unwrap_or(usize::MAX)),
                 // ✕ in selection mode: Back clears it

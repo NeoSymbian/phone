@@ -3,7 +3,7 @@
 // itself (Nav: Header, SubHeader or FormHeader, ⋮ as the kit's menu), the page, the view's big action in a band of its
 // own (Call, D14), and the footer that switches between the three apps on a root view. A full-screen view (a call)
 // has none of it. Toasts and dialogs are the shell's (NOTE, QUERY).
-import { Theme, KeyboardFocus, Header, FormHeader } from "@neoui/kit.slint";
+import { Theme, KeyboardFocus, Header, FormHeader, Glyph } from "@neoui/kit.slint";
 import { Nav } from "nav.slint";
 import { PillButton } from "common.slint";
 import { AppsFooter } from "footer.slint";
@@ -89,8 +89,49 @@ export component AppFrame inherits Rectangle {
     property <bool> has-pill: root.has-header && Nav.pill && Nav.has-action;
     property <length> pill-band: 72 * Theme.dp;
     property <length> bottom: (root.has-pill ? root.pill-band : 0) + (root.has-footer ? Theme.footer-h : 0);
+    property <bool> has-call-bar: root.has-header && Nav.call-bar != "";
+    // Return to call (the prototype's hidden call): 36 dp of green under the header
+    if root.has-call-bar: Rectangle {
+        y: Theme.header-h;
+        height: 36 * Theme.dp;
+        background: bar-touch.pressed ? #1e9e5d.darker(20%) : #1e9e5d;
+        HorizontalLayout {
+            padding-left: 16 * Theme.dp;
+            padding-right: 16 * Theme.dp;
+            spacing: 8 * Theme.dp;
+            VerticalLayout {
+                alignment: center;
+                Glyph {
+                    source: @image-url("@neoui/icons/sys/call.svg");
+                    size: 16 * Theme.dp;
+                    colorize: white;
+                }
+            }
+            Text {
+                text: Nav.call-bar;
+                color: white;
+                font-size: 13.5 * Theme.dp;
+                font-weight: 600;
+                vertical-alignment: center;
+                overflow: elide;
+                horizontal-stretch: 1;
+            }
+            Text {
+                text: "Return to call";
+                color: white;
+                font-size: 13.5 * Theme.dp;
+                font-weight: 600;
+                vertical-alignment: center;
+            }
+        }
+        bar-touch := TouchArea {
+            clicked => {
+                Nav.header("call-bar", 0);
+            }
+        }
+    }
     Rectangle {
-        y: root.has-header ? Theme.header-h : 0;
+        y: (root.has-header ? Theme.header-h : 0) + (root.has-call-bar ? 36 * Theme.dp : 0);
         height: root.height - self.y - root.bottom;
         @children
     }

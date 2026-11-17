@@ -2,7 +2,9 @@
 // NEOPHONE.EXE (Phone): Recents and the dialer, call details, speed dial, the call screens and the Phone & Contacts
 // settings (Contacts and Messages are apps of their own: NEOCONT, NEOMSG; the footer opens them). Drawn by its own
 // process into the surface the UI server shows between its status bar and the key row or gesture band.
-import "@neoui/fonts/Inter-VariableFont.ttf";
+import "@neoui/fonts/NeoSans-Regular.ttf";
+import "@neoui/fonts/NeoSans-Medium.ttf";
+import "@neoui/fonts/NeoSans-SemiBold.ttf";
 import "@neoui/fonts/DejaVuSans.ttf";
 import { Theme, Scroll, KeyboardFocus, Kit } from "@neoui/kit.slint";
 import { Nav } from "@phone-shared/nav.slint";
@@ -18,7 +20,7 @@ import { SettingsPage } from "settings/pages.slint";
 export { Theme, Scroll, KeyboardFocus, Kit, Nav, Icons, DialState, CallState, SettingsState }
 
 export component PhoneApp inherits Window {
-    default-font-family: "Inter";
+    default-font-family: "NeoSans";
     background: Theme.bg;
     AppFrame {
         own: 0;

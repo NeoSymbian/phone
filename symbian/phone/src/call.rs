@@ -381,8 +381,14 @@ pub fn option(ctx: &Ctx, item: &str) {
 pub fn action(_ctx: &Ctx) {}
 
 /// Back leaves the call running (the UI server goes home; the status bar shows the call).
-pub fn back(_ctx: &Ctx) -> bool {
-    false
+/// Back on the call screen hides it: the call goes on and the green bar under the header returns to it.
+pub fn back(ctx: &Ctx) -> bool {
+    let before = ctx.m.borrow().before_call;
+    if before == Page::Call {
+        return false;
+    }
+    ctx.go(before);
+    true
 }
 
 /// The summary is over (or off): back where the app was before the call.

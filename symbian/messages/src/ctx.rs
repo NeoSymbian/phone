@@ -35,6 +35,8 @@ pub struct Model {
     pub prefs: phone_common::prefs::State,
     pub msgs: msgs::State,
     pub visible: bool,
+    /// the Return to call bar's clock
+    pub call_bar: phone_common::CallBar,
     /// another app opened the conversation showing (OPEN): Back from it goes back there (DONE)
     pub opened: bool,
 }
@@ -277,6 +279,19 @@ impl Ctx {
         let nav = ui.global::<Nav>();
         let empty = chrome.style & tool::EMPTY != 0;
         nav.set_title(chrome.title.as_str().into());
+        // Return to call: a call goes on and its screen isn't showing
+        let bar = {
+            let mut m = self.m.borrow_mut();
+            let m = &mut *m;
+            if true {
+                m.call_bar
+                    .text(m.status.as_ref(), &m.book, m.order, e32::time::millis())
+            } else {
+                String::new()
+            }
+        };
+        nav.set_call_bar(bar.as_str().into());
+
         nav.set_title_font(phone_common::ui::title_font(&chrome.title).into());
         nav.set_sub(self.page().back().is_some());
         nav.set_form(chrome.style & tool::CANCEL != 0);
