@@ -325,6 +325,7 @@ impl Ctx {
         let nav = ui.global::<Nav>();
         let empty = chrome.style & tool::EMPTY != 0;
         nav.set_title(chrome.title.as_str().into());
+        nav.set_title_font(phone_common::ui::title_font(&chrome.title).into());
         // the keypad sheet is a layer over Recents, not a page: no ←
         nav.set_sub(self.page().back().is_some() && self.page() != Page::Phone(PhoneView::Dial));
         nav.set_form(chrome.style & tool::CANCEL != 0);

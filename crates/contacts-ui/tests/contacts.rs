@@ -354,7 +354,8 @@ fn contacts() {
         &[(7, "Favourite"), (4, "Edit")],
         &["Delete", "Speed dial", "Unblock contact", "Send as vCard"],
     );
-    c.set_armenian(true);
+    // an Armenian name's title takes DejaVu Sans (phone_common::ui::title_font)
+    s.ui.global::<Nav>().set_title_font("DejaVu Sans".into());
     c.set_card_name("Անի Պետրոսյան".into());
     c.set_card_company("".into());
     c.set_card_initials("ԱՊ".into());
@@ -383,7 +384,7 @@ fn contacts() {
     c.set_dialog_open(false);
 
     // the editor and its number-type sheet
-    c.set_armenian(false);
+    s.ui.global::<Nav>().set_title_font("".into());
     editor(&s);
     s.shoot("p2-contacts-editor");
     c.set_picking(1);

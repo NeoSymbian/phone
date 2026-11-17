@@ -2607,7 +2607,7 @@ dependencies = [
 [[package]]
 name = "neoapp"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/neoui?rev=2f3f001d93e202c570949d5c6b075feb0af387c4#2f3f001d93e202c570949d5c6b075feb0af387c4"
+source = "git+https://github.com/NeoSymbian/neoui?rev=87659283c2b1ea906ab1f8bf43a308e7314b5819#87659283c2b1ea906ab1f8bf43a308e7314b5819"
 dependencies = [
  "e32",
  "neoui-proto",
@@ -2666,7 +2666,7 @@ dependencies = [
 [[package]]
 name = "neoui-kit"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/neoui?rev=2f3f001d93e202c570949d5c6b075feb0af387c4#2f3f001d93e202c570949d5c6b075feb0af387c4"
+source = "git+https://github.com/NeoSymbian/neoui?rev=87659283c2b1ea906ab1f8bf43a308e7314b5819#87659283c2b1ea906ab1f8bf43a308e7314b5819"
 dependencies = [
  "slint-build",
 ]
@@ -2674,7 +2674,7 @@ dependencies = [
 [[package]]
 name = "neoui-proto"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/neoui?rev=2f3f001d93e202c570949d5c6b075feb0af387c4#2f3f001d93e202c570949d5c6b075feb0af387c4"
+source = "git+https://github.com/NeoSymbian/neoui?rev=87659283c2b1ea906ab1f8bf43a308e7314b5819#87659283c2b1ea906ab1f8bf43a308e7314b5819"
 
 [[package]]
 name = "nix"

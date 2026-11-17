@@ -5,7 +5,8 @@ import { Act } from "@neoui/kit.slint";
 export global Icons {
     // tool `id` (1 call ... 15 keypad) as a header action labelled `label`
     public pure function act(id: int, label: string) -> Act {
-        return { icon: self.icon(id), label: label };
+        // a favourite's ★ is amber (p2-contacts-card)
+        return { icon: self.icon(id), label: label, tint: id == 8 ? #f59e0b : transparent };
     }
 
     public pure function icon(id: int) -> image {

@@ -109,6 +109,16 @@ pub fn strings(items: &[&str]) -> ModelRc<SharedString> {
     model(items.iter().map(|s| SharedString::from(*s)).collect())
 }
 
+/// The header title's font: DejaVu Sans when it has a script Inter lacks (Armenian; Slint has no fallback), else the
+/// window's ("").
+pub fn title_font(title: &str) -> &'static str {
+    if title.chars().any(|c| ('\u{531}'..='\u{58f}').contains(&c)) {
+        "DejaVu Sans"
+    } else {
+        ""
+    }
+}
+
 /// A toast text cut to what NOTE takes.
 pub fn note_text(text: &str) -> String {
     let mut t = String::from(text);

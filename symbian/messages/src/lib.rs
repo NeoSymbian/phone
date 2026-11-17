@@ -98,7 +98,7 @@ fn run() -> Result<(), i32> {
                     ctx.back();
                 }
                 "tab" => match i {
-                    0 => ctx.go(Page::Phone(PhoneView::Dial)),
+                    0 => ctx.go(Page::Phone(PhoneView::Recents)),
                     1 => ctx.go(Page::Contacts(phone_core::page::ContactsView::List)),
                     2 => ctx.go(Page::Messages(MessagesView::List)),
                     _ => {}

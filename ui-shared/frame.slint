@@ -37,6 +37,10 @@ export component AppFrame inherits Rectangle {
     if root.has-header && Nav.form: FormHeader {
         y: 0;
         title: Nav.title;
+        title-font: Nav.title-font;
+        alt: true;
+        // a form whose action is in its content (a new message's Send) has no ✓
+        has-save: Nav.action-tool != 0;
         can-save: Nav.has-action;
         cancel => {
             Nav.header("back", 0);
@@ -48,6 +52,9 @@ export component AppFrame inherits Rectangle {
     if root.has-header && !Nav.form: Header {
         y: 0;
         title: Nav.title;
+        title-font: Nav.title-font;
+        // the boards' #0b0c0e header and footer
+        alt: true;
         has-back: Nav.sub;
         search: Nav.search;
         search-placeholder: Nav.search-hint;
@@ -102,6 +109,7 @@ export component AppFrame inherits Rectangle {
 
     if root.has-footer: AppsFooter {
         y: root.height - self.height;
+        alt: true;
         own: root.own;
         missed: Nav.missed;
         unread: Nav.unread;

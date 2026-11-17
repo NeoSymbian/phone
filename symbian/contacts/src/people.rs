@@ -519,12 +519,6 @@ pub fn show(ctx: &Ctx) {
             ctx.m.borrow_mut().people.query.clear();
         }
     }
-    // Inter has no Armenian: an Armenian name in the header needs DejaVu Sans
-    let armenian = chrome(ctx)
-        .title
-        .chars()
-        .any(|c| ('\u{531}'..='\u{58f}').contains(&c));
-    ctx.ui().global::<ContactsState>().set_armenian(armenian);
     match v {
         ContactsView::List | ContactsView::Mark => {
             show_list(ctx);
