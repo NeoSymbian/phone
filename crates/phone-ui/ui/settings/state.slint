@@ -37,6 +37,8 @@ export global SettingsState {
 
     // the section the page opens at (AppEvent::Open's arg): "" the top, "messages", "contacts"
     in property <string> section;
+    // bumped by every open (prefs::open_at): a page already showing scrolls to `section` and reads again
+    in property <int> opens;
     // the open picker: "" none, "clir", "log", "order", "label", "alert"
     in-out property <string> picker;
     // the open form, under the header's [✕ title ✓]: "" none, "voicemail", "smsc" (the message centre), "block"

@@ -46,7 +46,7 @@ export component AppFrame inherits Rectangle {
             Nav.header("back", 0);
         }
         save => {
-            Nav.header("action", 0);
+            Nav.header("save", 0);
         }
     }
     if root.has-header && !Nav.form: Header {
@@ -103,7 +103,7 @@ export component AppFrame inherits Rectangle {
         icon: Icons.icon(Nav.action-tool);
         kind: "green";
         clicked => {
-            Nav.header("action", 0);
+            Nav.header("save", 0);
         }
     }
 

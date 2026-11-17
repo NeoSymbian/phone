@@ -330,7 +330,13 @@ fn save_edit(ctx: &Ctx) {
             changed(ctx);
             let ok = save(ctx);
             send_known(ctx);
-            let back = (!matches!(from, Page::Contacts(_))).then_some(from);
+            // back where the card was opened from: another app (a new contact it asked for), or whoever opened the
+            // card that was edited
+            let back = if matches!(from, Page::Contacts(_)) {
+                ctx.m.borrow().people.card_from
+            } else {
+                Some(from)
+            };
             open_card(ctx, who, back);
             if ok {
                 ctx.note("Saved");
@@ -447,7 +453,12 @@ fn forget(ctx: &Ctx, gone: Vec<Contact>) {
     let ok = save(ctx);
     send_known(ctx);
     ctx.m.borrow_mut().people.marked.clear();
-    ctx.go(Page::Contacts(ContactsView::List));
+    // a card another app opened: back there
+    let from = ctx.m.borrow_mut().people.card_from.take();
+    match from {
+        Some(from) => ctx.back_to(from),
+        None => ctx.go(Page::Contacts(ContactsView::List)),
+    }
     if ok {
         ctx.note(&match gone.len() {
             1 => String::from("Deleted"),
@@ -970,13 +981,16 @@ pub fn back(ctx: &Ctx) -> bool {
             true
         }
         // opened from another app's page (Phone's call details): back there
-        Some(ContactsView::Card) => match ctx.m.borrow_mut().people.card_from.take() {
-            Some(p) => {
-                ctx.back_to(p);
-                true
+        Some(ContactsView::Card) => {
+            let from = ctx.m.borrow_mut().people.card_from.take();
+            match from {
+                Some(p) => {
+                    ctx.back_to(p);
+                    true
+                }
+                None => false,
             }
-            None => false,
-        },
+        }
         Some(ContactsView::Mark) => {
             ctx.m.borrow_mut().people.marked.clear();
             changed(ctx);

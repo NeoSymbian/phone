@@ -51,7 +51,6 @@ fn act(ctx: &Ctx, action: &str, value: &str) {
             let _ = ctx.m.borrow_mut().modem.waiting(None);
             // the message centre may have come from the SIM since
             crate::ctx::load_sms(ctx);
-            return;
         }
         "clir" => {
             save(ctx, keys::PHONE_CLIR, i.min(2) as i32);
@@ -319,6 +318,7 @@ pub fn open_at(ctx: &Ctx, section: &str) {
     let ui = ctx.ui();
     let s = ui.global::<SettingsState>();
     s.set_section(section.into());
+    s.set_opens(s.get_opens().wrapping_add(1));
     s.set_form(SharedString::new());
     ctx.go(Page::Settings(SettingsView::Main));
 }

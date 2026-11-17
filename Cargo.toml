@@ -28,7 +28,7 @@ modem-ipc = { git = "https://github.com/NeoSymbian/telephony", rev = "e18187a69f
 phone-rules = { git = "https://github.com/NeoSymbian/telephony", rev = "e18187a69f7b3c6cf60305430861a0c082ac8283" }
 sms = { git = "https://github.com/NeoSymbian/telephony", rev = "e18187a69f7b3c6cf60305430861a0c082ac8283" }
 # NeoSymbian/neoui: the kit (the shared theme, fonts and components, as a build helper)
-neoui-kit = { git = "https://github.com/NeoSymbian/neoui", rev = "87659283c2b1ea906ab1f8bf43a308e7314b5819" }
+neoui-kit = { git = "https://github.com/NeoSymbian/neoui", rev = "621320368c858ede9cd29e290ccf0037e352997b" }
 # the same Slint as neoui (one copy in the ROM, no_std)
 slint = { version = "=1.18.1", default-features = false, features = ["compat-1-2", "unsafe-single-threaded", "libm", "renderer-software"] }
 png = "=0.18.1"

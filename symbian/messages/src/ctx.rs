@@ -78,7 +78,13 @@ impl Ctx {
         if page.app() != app::MESSAGES {
             return self.open(page, "");
         }
-        self.m.borrow_mut().page = page;
+        {
+            let mut m = self.m.borrow_mut();
+            if page != Page::Messages(MessagesView::Thread) {
+                m.opened = false;
+            }
+            m.page = page;
+        }
         let ui = self.ui();
         let nav = ui.global::<Nav>();
         let (p, v) = page.nav();

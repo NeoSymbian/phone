@@ -26,12 +26,21 @@ component Main inherits NeoList {
     property <[string]> clir-names: ["Network", "Hidden", "Shown"];
     property <[string]> alerts: ["Tone + vibrate", "Vibrate", "Silent"];
     init => {
+        self.arrive();
+    }
+    property <int> opens: SettingsState.opens;
+    changed opens => {
+        self.arrive();
+    }
+    // opened (again): read what may have changed, and the section asked for on top (from Messages or Contacts)
+    function arrive() {
         SettingsState.act("opened", "");
-        // opened at a section (from Messages or Contacts): that section on top
         if SettingsState.section == "messages" {
             self.content-y = -messages.y;
         } else if SettingsState.section == "contacts" {
             self.content-y = -contacts.y;
+        } else {
+            self.content-y = 0;
         }
     }
     VerticalLayout {

@@ -53,6 +53,8 @@ pub struct Model {
     pub visible: bool,
     /// another app opened the call screens (OPEN): when the call ends, the user goes back there (DONE)
     pub call_opened: bool,
+    /// Contacts opened speed dial to put a number on a key: leaving it goes back there (DONE)
+    pub speed_opened: bool,
     /// another app opened Settings (OPEN): Back from its top goes back there (DONE)
     pub settings_opened: bool,
 }
@@ -101,9 +103,12 @@ impl Ctx {
             if page == Page::Call && m.page != Page::Call {
                 m.before_call = m.page;
             }
-            let done = m.page == Page::Call && page != Page::Call && m.call_opened;
+            let speed = Page::Phone(PhoneView::Speed);
+            let done = (m.page == Page::Call && page != Page::Call && m.call_opened)
+                || (m.page == speed && page != speed && m.speed_opened);
             if done {
                 m.call_opened = false;
+                m.speed_opened = false;
             }
             m.page = page;
             done
@@ -453,7 +458,8 @@ impl Ctx {
             .flatten()
             .min()
             .unwrap_or(now + 60_000);
-        i32::try_from(at.saturating_sub(now).max(20) * 1000).unwrap_or(i32::MAX)
+        let own = i32::try_from(at.saturating_sub(now).max(20) * 1000).unwrap_or(i32::MAX);
+        phone_common::wait_us(&self.app, own)
     }
 }
 

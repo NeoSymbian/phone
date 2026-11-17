@@ -169,6 +169,8 @@ fn settle(ctx: &Ctx) {
 pub fn open_thread(ctx: &Ctx, number: &str, write: bool) {
     {
         let mut m = ctx.m.borrow_mut();
+        // a thread opened here: Back goes to the list (lib.rs sets it again when another app opened it)
+        m.opened = false;
         m.msgs.open = String::from(number.trim());
         m.msgs.held = None;
         m.msgs.details = None;

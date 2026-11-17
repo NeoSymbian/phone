@@ -77,6 +77,7 @@ fn run() -> Result<(), i32> {
         msgs: Default::default(),
         visible: false,
         call_opened: false,
+        speed_opened: false,
         settings_opened: false,
     };
     let ctx = Rc::new(Ctx::new(app, &ui, model));
@@ -100,6 +101,8 @@ fn run() -> Result<(), i32> {
                 "back" => {
                     ctx.back();
                 }
+                // a form's ✓ or the content's pill
+                "save" => ctx.action(),
                 "action" => ctx.header_action(usize::try_from(i).unwrap_or(usize::MAX)),
                 "selection" => ctx.selection_action(usize::try_from(i).unwrap_or(usize::MAX)),
                 // ✕ in selection mode: Back clears it
@@ -168,7 +171,11 @@ fn run() -> Result<(), i32> {
                     ctx.m.borrow_mut().call_opened = false;
                     ctx.m.borrow_mut().settings_opened = false;
                     match Page::from_number(key::PHONE, page) {
-                        Some(Page::Settings(_)) => prefs::open_at(&ctx, ""),
+                        // the system Settings app's row: Back returns there (DONE)
+                        Some(Page::Settings(_)) => {
+                            ctx.m.borrow_mut().settings_opened = true;
+                            prefs::open_at(&ctx, "");
+                        }
                         Some(p) => ctx.go(p),
                         None => {}
                     }
@@ -185,6 +192,7 @@ fn run() -> Result<(), i32> {
                             dial::place_call(&ctx, &arg);
                         }
                         Some(Page::Phone(PhoneView::Speed)) if !arg.is_empty() => {
+                            ctx.m.borrow_mut().speed_opened = true;
                             dial::start_assign(&ctx, &arg);
                         }
                         // Settings at a section ("messages", "contacts"); Back returns to the app that opened it

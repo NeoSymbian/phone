@@ -91,6 +91,8 @@ fn run() -> Result<(), i32> {
                 "back" => {
                     ctx.back();
                 }
+                // a form's ✓ or the content's pill
+                "save" => ctx.action(),
                 "action" => ctx.header_action(usize::try_from(i).unwrap_or(usize::MAX)),
                 "selection" => ctx.selection_action(usize::try_from(i).unwrap_or(usize::MAX)),
                 // ✕ in selection mode: Back clears it
@@ -124,7 +126,10 @@ fn run() -> Result<(), i32> {
                 loop {
                     match rt::select(
                         next.as_mut(),
-                        rt::select(watch.as_mut(), time::delay(msgs::wait_us(&ctx))),
+                        rt::select(
+                            watch.as_mut(),
+                            time::delay(phone_common::wait_us(&ctx.app, msgs::wait_us(&ctx))),
+                        ),
                     )
                     .await
                     {
@@ -190,7 +195,10 @@ fn run() -> Result<(), i32> {
                 }
                 Some(AppEvent::Answer { i }) => ctx.answer(i == 0),
                 // the navigation mode changed the app's height (Buttons 639 dp, Gestures 679 dp)
-                Some(e @ AppEvent::Area { .. }) => ctx.app.handle(&e),
+                Some(e @ AppEvent::Area { .. }) => {
+                    ctx.app.handle(&e);
+                    ctx.show();
+                }
                 Some(AppEvent::Input(input)) => match input {
                     InputEvent::Key { code, down: true } => ctx.app.dispatch_key(code),
                     InputEvent::Key { .. } => {}

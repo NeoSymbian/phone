@@ -40,7 +40,8 @@ export global Nav {
     in property <bool> footer;
     in property <int> missed;
     in property <int> unread;
-    // the frame's taps: "back" (← or ✕), "action" i (0 the action: the icon, ✓ or the pill; 1.. the `actions`),
+    // the frame's taps: "back" (← or ✕), "save" (a form's ✓ or the content's pill: the view's action), "action" i (the
+    // header's icons: the action first when it is one, then the others),
     // "option" i (an item of ⋮), "selection" i, "selection-closed", "tab" i (the footer: 0 Phone, 1 Contacts,
     // 2 Messages)
     callback header(string, int);

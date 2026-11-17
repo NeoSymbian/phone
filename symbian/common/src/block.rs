@@ -16,6 +16,10 @@ pub fn edit(
     f: impl FnOnce(&mut List) -> Result<(), Refusal>,
     done: &str,
 ) -> Result<String, String> {
+    // the list as MODEMD has it now: another of the three apps may have changed it since this one read it
+    if let Ok(now) = modem.block_list() {
+        *list = now;
+    }
     let mut copy = list.clone();
     f(&mut copy).map_err(|r| String::from(r.text()))?;
     let r = modem.set_block_list(&copy);

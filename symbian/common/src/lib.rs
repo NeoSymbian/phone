@@ -25,6 +25,15 @@ pub fn name_of(book: &Book, order: NameOrder, number: &str) -> Option<String> {
     book.lookup(number).map(|c| c.title(order))
 }
 
+/// How long an app's loop may sleep (µs): its own next wake `own_us`, or sooner when Slint needs it (a timer, an
+/// animation: neoapp `App::wake_us`). On waking the loop draws, so switches flip and long-presses fire.
+pub fn wait_us(app: &neoapp::App, own_us: i32) -> i32 {
+    let slint = app
+        .wake_us()
+        .map_or(i32::MAX, |us| i32::try_from(us).unwrap_or(i32::MAX));
+    own_us.min(slint).max(1000)
+}
+
 /// Open `page` in the app it belongs to (neoui ipc OPEN) with `arg` (a number, a settings section).
 pub fn open(app: &neoapp::App, page: Page, arg: &str) -> Result<(), i32> {
     open_number(app, page.app(), page.number(), arg)

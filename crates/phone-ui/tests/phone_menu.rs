@@ -62,6 +62,29 @@ fn phone_menu() {
         ),
     ]));
     s.shoot("p2-phone-recents");
+    // what the frame reports to the app's Rust (symbian/phone lib.rs on_header)
+    let taps: std::rc::Rc<std::cell::RefCell<Vec<(String, i32)>>> = Default::default();
+    let sink = taps.clone();
+    nav.on_header(move |kind, i| sink.borrow_mut().push((kind.into(), i)));
     s.tap(360.0 - 4.0 - 24.0, 24.0); // ⋮
     s.shoot("p2-phone-menu");
+    // ⋮ ▸ Settings (the fourth item: 8 dp + 3.5 rows of 48 dp under the header) reaches the app
+    s.tap(360.0 - 4.0 - 110.0, 48.0 + 8.0 + 3.5 * 48.0);
+    assert_eq!(
+        taps.borrow().last(),
+        Some(&("option".into(), 3)),
+        "⋮ ▸ Settings"
+    );
+    // a form's ✓ is the view's action ("save"), whatever its style
+    nav.set_form(true);
+    nav.set_title("Voicemail number".into());
+    nav.set_has_action(true);
+    nav.set_action_tool(5);
+    s.tap(360.0 - 24.0, 24.0);
+    assert_eq!(
+        taps.borrow().last(),
+        Some(&("save".into(), 0)),
+        "the form's ✓"
+    );
+    nav.set_form(false);
 }
