@@ -68,6 +68,10 @@ pub struct Chrome {
     /// actions as [`tool`] glyphs and `option` names; ✕ is Back
     pub selected: i32,
     pub selection: Vec<(i32, &'static str)>,
+    /// selection mode with nothing ticked yet (⋮ ▸ Select): the selection header shows 0
+    pub selecting: bool,
+    /// ⋮ in selection mode (Select all, Export): the `option` names
+    pub selection_menu: Vec<&'static str>,
 }
 
 impl Chrome {

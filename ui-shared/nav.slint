@@ -32,7 +32,11 @@ export global Nav {
     in-out property <bool> searching;
     // selection mode: [✕ N selected · selection-actions]; "selection" i, "selection-closed"
     in property <int> selected;
+    // selection mode before anything is ticked (⋮ ▸ Select): the selection header with 0
+    in property <bool> selecting;
     in property <[Act]> selection-actions;
+    // ⋮ in selection mode (Select all, Export): "selection-option" i
+    in property <[string]> selection-menu;
     in property <bool> full;
     // a call goes on and its screen isn't showing: the green bar under the header ("Ava Lindqvist · 04:12"); a tap is
     // "call-bar"

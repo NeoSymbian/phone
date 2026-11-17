@@ -237,6 +237,14 @@ impl Ctx {
         }
     }
 
+    /// Item `i` of the selection header's ⋮ (`Chrome::selection_menu`).
+    pub fn selection_option(&self, i: usize) {
+        let name = self.chrome().selection_menu.get(i).copied();
+        if let Some(name) = name {
+            self.option(name);
+        }
+    }
+
     /// The header's search field changed (each keystroke; "" when it closed).
     pub fn searched(&self, query: &str) {
         if let Page::Phone(_) = self.page() {
@@ -358,6 +366,7 @@ impl Ctx {
         nav.set_footer(
             self.page() == Page::Phone(PhoneView::Recents)
                 && chrome.selected == 0
+                && !chrome.selecting
                 && !nav.get_searching(),
         );
         let (missed, unread) = {
@@ -384,6 +393,15 @@ impl Ctx {
         nav.set_search(chrome.search.is_some());
         nav.set_search_hint(chrome.search.unwrap_or("Search").into());
         nav.set_selected(chrome.selected);
+        nav.set_selecting(chrome.selecting);
+        let sel_menu: Vec<&str> = chrome.selection_menu.clone();
+        if nav
+            .get_selection_menu()
+            .iter()
+            .ne(sel_menu.iter().map(|o| SharedString::from(*o)))
+        {
+            nav.set_selection_menu(strings(&sel_menu));
+        }
         let sel: Vec<_> = chrome
             .selection
             .iter()

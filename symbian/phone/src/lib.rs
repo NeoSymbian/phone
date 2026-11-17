@@ -108,6 +108,9 @@ fn run() -> Result<(), i32> {
                 "call-bar" => ctx.go(Page::Call),
                 "action" => ctx.header_action(usize::try_from(i).unwrap_or(usize::MAX)),
                 "selection" => ctx.selection_action(usize::try_from(i).unwrap_or(usize::MAX)),
+                "selection-option" => {
+                    ctx.selection_option(usize::try_from(i).unwrap_or(usize::MAX))
+                }
                 // ✕ in selection mode: Back clears it
                 "selection-closed" => {
                     ctx.back();

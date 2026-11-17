@@ -64,7 +64,9 @@ export component AppFrame inherits Rectangle {
         actions: Nav.actions;
         menu: Nav.options;
         selected: Nav.selected;
+        selecting: Nav.selecting;
         selection-actions: Nav.selection-actions;
+        selection-menu: Nav.selection-menu;
         back => {
             Nav.header("back", 0);
         }
@@ -82,6 +84,9 @@ export component AppFrame inherits Rectangle {
         }
         selection-closed => {
             Nav.header("selection-closed", 0);
+        }
+        selection-menu-picked(i) => {
+            Nav.header("selection-option", i);
         }
     }
 
