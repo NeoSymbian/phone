@@ -5,8 +5,8 @@ import { Theme } from "@neoui/theme.slint";
 import { NeoList } from "@neoui/components/scroll.slint";
 import { TextField } from "@neoui/components/controls.slint";
 import { Alphabets } from "@neoui/components/keyboard/glyphs.slint";
-import { Nav } from "../nav.slint";
-import { Band, Sheet, Avatar, Glyph } from "../common.slint";
+import { Nav } from "@phone-shared/nav.slint";
+import { Band, Sheet, Avatar, Glyph } from "@phone-shared/common.slint";
 import { SettingsState } from "state.slint";
 
 // The mockups' switch: green when on; `busy` dims it while the network answers.
@@ -497,7 +497,7 @@ component Blocked inherits NeoList {
                     border-radius: self.width / 2;
                     background: #2b3038;
                     Glyph {
-                        source: r.kind == 2 ? @image-url("../icons/block.svg") : @image-url("../icons/hash.svg");
+                        source: r.kind == 2 ? @image-url("@phone-shared/icons/block.svg") : @image-url("@phone-shared/icons/hash.svg");
                         size: 22 * Theme.dp;
                         colorize: Theme.text-secondary;
                     }

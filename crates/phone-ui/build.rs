@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! Compiles NeoPhone's screens with the neoui kit (`@neoui/kit.slint`, from the neoui checkout cargo fetched for
-//! neoui-kit): one theme and one set of components for the shell and this app.
+//! Compiles the screens with the neoui kit (`@neoui`) and the parts Phone, Contacts and Messages share
+//! (`@phone-shared`, the repo's `ui-shared/`).
 
 fn main() {
-    neoui_kit::compile("ui/app.slint");
+    let shared = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../ui-shared");
+    neoui_kit::compile_with("ui/app.slint", &[("phone-shared", shared)]);
 }

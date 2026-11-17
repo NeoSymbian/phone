@@ -3,8 +3,8 @@
 // chips and day bands, call details, speed dial; a popup list and a contact picker over them.
 import { Theme } from "@neoui/theme.slint";
 import { NeoList } from "@neoui/components/scroll.slint";
-import { Nav } from "../nav.slint";
-import { Band, RowAction, PillButton, KeyGrid, Sheet, Avatar, Glyph } from "../common.slint";
+import { Nav } from "@phone-shared/nav.slint";
+import { Band, RowAction, PillButton, KeyGrid, Sheet, Avatar, Glyph } from "@phone-shared/common.slint";
 import { DialState, LogRow, MatchRow } from "state.slint";
 import { Alphabets } from "@neoui/components/keyboard/glyphs.slint";
 
@@ -31,7 +31,7 @@ component Face inherits Rectangle {
         border-radius: self.width / 2;
         background: #2b3038;
         Glyph {
-            source: private ? @image-url("../icons/person.svg") : @image-url("../icons/hash.svg");
+            source: private ? @image-url("@phone-shared/icons/person.svg") : @image-url("@phone-shared/icons/hash.svg");
             size: root.size * 0.48;
             colorize: Theme.text-secondary;
         }
@@ -41,9 +41,9 @@ component Face inherits Rectangle {
 // The direction of a call (modem_ipc::log kind).
 component Direction inherits Glyph {
     in property <int> kind;
-    source: kind == 1 ? @image-url("../icons/outgoing.svg")
-        : kind == 2 ? @image-url("../icons/incoming.svg")
-        : kind == 5 ? @image-url("../icons/block.svg")
+    source: kind == 1 ? @image-url("@phone-shared/icons/outgoing.svg")
+        : kind == 2 ? @image-url("@phone-shared/icons/incoming.svg")
+        : kind == 5 ? @image-url("@phone-shared/icons/block.svg")
         : @image-url("@neoui/icons/sys/missed_call.svg");
     colorize: kind == 3 || kind == 4 || kind == 5 ? Theme.danger : Theme.text-secondary;
 }
@@ -659,7 +659,7 @@ component Details inherits VerticalLayout {
 
     if DialState.detail-can-call: ActionRow {
         text: DialState.detail-known ? "Open contact" : "Save as contact";
-        icon: DialState.detail-known ? @image-url("../icons/person.svg") : @image-url("@neoui/icons/sys/person_add.svg");
+        icon: DialState.detail-known ? @image-url("@phone-shared/icons/person.svg") : @image-url("@neoui/icons/sys/person_add.svg");
         chevron: true;
         clicked => {
             DialState.act("detail-contact", "");
@@ -667,7 +667,7 @@ component Details inherits VerticalLayout {
     }
     if DialState.detail-can-call: ActionRow {
         text: DialState.detail-blocked ? "Unblock number" : "Block number";
-        icon: @image-url("../icons/block.svg");
+        icon: @image-url("@phone-shared/icons/block.svg");
         clicked => {
             DialState.act("detail-block", "");
         }

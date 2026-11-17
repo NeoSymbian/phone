@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: GPL-3.0-only
+[package]
+name = "phone-common"
+description = "What Phone, Contacts and Messages share on the device: MODEMD's client, the contacts file, the settings they read, blocking, opening each other"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+publish = false
+
+[lib]
+test = false
+
+[dependencies]
+e32.workspace = true
+neoui-proto.workspace = true
+neoapp.workspace = true
+slint.workspace = true
+modem-ipc.workspace = true
+phone-rules.workspace = true
+contacts.workspace = true
+phone-core.workspace = true

@@ -1,0 +1,424 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// The Contacts page's pieces (mockups 16-26): the text field, the list's rows, the side index, the card's rows and
+// banner, the editor's label chip and remove button.
+import { Theme } from "@neoui/theme.slint";
+import { KeyboardFocus } from "@neoui/components/keyboard/focus.slint";
+import { Avatar, Glyph } from "@phone-shared/common.slint";
+import { Field } from "@phone-shared/field.slint";
+
+export { Field }
+import { ContactMark } from "state.slint";
+
+export component CheckBox inherits Rectangle {
+    in property <bool> on;
+    width: 22 * Theme.dp;
+    height: 22 * Theme.dp;
+    border-radius: 6 * Theme.dp;
+    background: on ? Theme.accent : transparent;
+    border-width: on ? 0 : 2 * Theme.dp;
+    border-color: Theme.text-dim;
+    if on: Glyph {
+        source: @image-url("@neoui/icons/sys/check.svg");
+        size: 16 * Theme.dp;
+    }
+}
+
+// Text in three parts, the middle one lit (accent). Slint's text measure drops a part's trailing spaces, so each
+// part is measured with a bar after it.
+component Lit inherits Rectangle {
+    in property <[string]> parts;
+    in property <length> size;
+    in property <color> base;
+    height: pre.preferred-height;
+    bar := Text {
+        visible: false;
+        text: "|";
+        font-family: "DejaVu Sans";
+        font-size: root.size;
+    }
+
+    pre-m := Text {
+        visible: false;
+        text: parts[0] + "|";
+        font-family: "DejaVu Sans";
+        font-size: root.size;
+    }
+
+    hit-m := Text {
+        visible: false;
+        text: parts[1] + "|";
+        font-family: "DejaVu Sans";
+        font-size: root.size;
+    }
+
+    pre := Text {
+        x: 0;
+        width: min(root.width, pre-m.preferred-width - bar.preferred-width);
+        text: parts[0];
+        font-family: "DejaVu Sans";
+        font-size: root.size;
+        color: root.base;
+        overflow: elide;
+    }
+
+    hit := Text {
+        x: pre.width;
+        width: max(0px, min(root.width - self.x, hit-m.preferred-width - bar.preferred-width));
+        text: parts[1];
+        font-family: "DejaVu Sans";
+        font-size: root.size;
+        color: Theme.accent;
+        overflow: elide;
+    }
+
+    Text {
+        x: hit.x + hit.width;
+        width: max(0px, root.width - self.x);
+        text: parts[2];
+        font-family: "DejaVu Sans";
+        font-size: root.size;
+        color: root.base;
+        overflow: elide;
+    }
+}
+
+// A list row: avatar and name (the list, Mark several), or a check box when marking.
+export component PersonRow inherits Rectangle {
+    in property <string> name;
+    in property <string> initials;
+    in property <color> tint;
+    in property <bool> divider;
+    in property <bool> marking;
+    in property <bool> marked;
+    callback clicked;
+    height: 56 * Theme.dp;
+    background: touch.pressed ? Theme.pressed : transparent;
+    if divider: Rectangle {
+        x: 70 * Theme.dp;
+        y: 0;
+        width: parent.width - self.x;
+        height: max(1px, Theme.dp / 2);
+        background: Theme.hairline;
+    }
+    HorizontalLayout {
+        padding-left: 14 * Theme.dp;
+        padding-right: 14 * Theme.dp;
+        spacing: 12 * Theme.dp;
+        Avatar {
+            initials: root.initials;
+            tint: root.tint;
+            y: (parent.height - self.height) / 2;
+        }
+
+        Text {
+            text: root.name;
+            font-family: "DejaVu Sans";
+            color: Theme.text;
+            font-size: 16 * Theme.dp;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+        }
+
+        if marking: CheckBox {
+            on: root.marked;
+            y: (parent.height - self.height) / 2;
+        }
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// A search result: two lines, the matched part lit.
+export component HitRow inherits Rectangle {
+    in property <string> initials;
+    in property <color> tint;
+    in property <[string]> name;
+    in property <[string]> detail;
+    in property <bool> divider;
+    callback clicked;
+    height: 72 * Theme.dp;
+    background: touch.pressed ? Theme.pressed : transparent;
+    if divider: Rectangle {
+        x: 70 * Theme.dp;
+        y: 0;
+        width: parent.width - self.x;
+        height: max(1px, Theme.dp / 2);
+        background: Theme.hairline;
+    }
+    HorizontalLayout {
+        padding-left: 14 * Theme.dp;
+        padding-right: 14 * Theme.dp;
+        spacing: 12 * Theme.dp;
+        Avatar {
+            initials: root.initials;
+            tint: root.tint;
+            y: (parent.height - self.height) / 2;
+        }
+
+        VerticalLayout {
+            alignment: center;
+            spacing: 2 * Theme.dp;
+            horizontal-stretch: 1;
+            Lit {
+                parts: root.name;
+                size: 16 * Theme.dp;
+                base: Theme.text;
+            }
+
+            if root.detail[0] != "" || root.detail[2] != "": Lit {
+                parts: root.detail;
+                size: 13.5 * Theme.dp;
+                base: Theme.text-secondary;
+            }
+        }
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// The side index: tap or drag over a letter to jump to its section; over "•", a bubble shows the letters it stands
+// for and the finger's height picks one.
+export component SideIndex inherits Rectangle {
+    in property <[ContactMark]> marks;
+    callback jump(float);
+    property <length> pad: 4 * Theme.dp;
+    property <length> pitch: (self.height - 2 * pad) / max(1, marks.length);
+    property <int> at: -1;
+    property <int> sub: 0;
+    for m[i] in marks: Text {
+        x: 0;
+        width: root.width;
+        y: pad + i * pitch;
+        height: pitch;
+        text: m.text;
+        font-family: "DejaVu Sans";
+        font-size: 10.5 * Theme.dp;
+        font-weight: 600;
+        color: m.tops.length == 0 ? Theme.text-dim : (touch.pressed && i == at ? Theme.text : Theme.accent);
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    function pick(y: length) {
+        if marks.length == 0 {
+            return;
+        }
+        at = clamp(floor((y - pad) / pitch), 0, marks.length - 1);
+        let n = marks[at].tops.length;
+        if n == 0 {
+            return;
+        }
+        sub = clamp(floor((y - pad - at * pitch) / pitch * n), 0, n - 1);
+        jump(marks[at].tops[sub]);
+    }
+    touch := TouchArea {
+        pointer-event(e) => {
+            if e.kind == PointerEventKind.down {
+                root.pick(self.mouse-y);
+            }
+        }
+        moved => {
+            root.pick(self.mouse-y);
+        }
+    }
+
+    // the bubble left of the index while a finger is on a letter
+    if touch.pressed && at >= 0 && marks[at].letters.length > 0: Rectangle {
+        property <int> n: marks[at].letters.length;
+        property <int> cols: min(n, 6);
+        width: cols * 34 * Theme.dp + 12 * Theme.dp;
+        height: ceil(n / 6) * 34 * Theme.dp + 12 * Theme.dp;
+        x: -self.width - 10 * Theme.dp;
+        y: clamp(pad + at * pitch - self.height / 2, 0, root.height - self.height);
+        border-radius: 14 * Theme.dp;
+        background: #2b3038;
+        border-width: max(1px, Theme.dp / 2);
+        border-color: #ffffff1a;
+        for l[k] in marks[at].letters: Rectangle {
+            x: 6 * Theme.dp + mod(k, 6) * 34 * Theme.dp;
+            y: 6 * Theme.dp + floor(k / 6) * 34 * Theme.dp;
+            width: 34 * Theme.dp;
+            height: 34 * Theme.dp;
+            border-radius: 9 * Theme.dp;
+            background: k == sub ? Theme.accent : transparent;
+            Text {
+                text: l;
+                font-family: "DejaVu Sans";
+                font-size: 18 * Theme.dp;
+                font-weight: 600;
+                color: Theme.text;
+            }
+        }
+    }
+}
+
+// One line of the card: a label above its value, round actions at the right.
+export component InfoRow inherits Rectangle {
+    in property <string> label;
+    in property <string> value;
+    in property <length> size: 17 * Theme.dp;
+    in property <bool> divider;
+    in property <bool> wrap;
+    min-height: 72 * Theme.dp;
+    if divider: Rectangle {
+        x: 14 * Theme.dp;
+        y: 0;
+        width: parent.width - self.x;
+        height: max(1px, Theme.dp / 2);
+        background: Theme.hairline;
+    }
+    HorizontalLayout {
+        padding-left: 14 * Theme.dp;
+        padding-right: 14 * Theme.dp;
+        padding-top: 12 * Theme.dp;
+        padding-bottom: 12 * Theme.dp;
+        spacing: 12 * Theme.dp;
+        VerticalLayout {
+            alignment: center;
+            spacing: 2 * Theme.dp;
+            horizontal-stretch: 1;
+            Text {
+                text: root.label;
+                color: Theme.text-secondary;
+                font-size: 13.5 * Theme.dp;
+            }
+
+            Text {
+                text: root.value;
+                font-family: "DejaVu Sans";
+                color: Theme.text;
+                font-size: root.size;
+                wrap: root.wrap ? word-wrap : no-wrap;
+                overflow: elide;
+            }
+        }
+
+        @children
+    }
+}
+
+// The red "Blocked" banner on a blocked contact's card (mockup 26).
+export component BlockedBanner inherits Rectangle {
+    in property <string> detail;
+    callback unblock;
+    height: 60 * Theme.dp;
+    border-radius: 12 * Theme.dp;
+    background: Theme.danger.with-alpha(0.12);
+    border-width: max(1px, Theme.dp / 2);
+    border-color: Theme.danger.with-alpha(0.35);
+    HorizontalLayout {
+        padding-left: 12 * Theme.dp;
+        padding-right: 12 * Theme.dp;
+        spacing: 10 * Theme.dp;
+        Glyph {
+            source: @image-url("@phone-shared/icons/block.svg");
+            size: 24 * Theme.dp;
+            colorize: Theme.danger;
+            y: (parent.height - self.height) / 2;
+        }
+
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Text {
+                text: "Blocked";
+                color: Theme.text;
+                font-size: 15 * Theme.dp;
+                font-weight: 600;
+            }
+
+            Text {
+                text: root.detail;
+                color: Theme.text-secondary;
+                font-size: 13 * Theme.dp;
+            }
+        }
+
+        Rectangle {
+            y: (parent.height - self.height) / 2;
+            height: 36 * Theme.dp;
+            width: unblock-label.preferred-width + 28 * Theme.dp;
+            border-radius: 12 * Theme.dp;
+            background: ut.pressed ? #4a505a : #353a42;
+            border-width: max(1px, Theme.dp / 2);
+            border-color: #ffffff14;
+            unblock-label := Text {
+                text: "Unblock";
+                color: Theme.text;
+                font-size: 14 * Theme.dp;
+                font-weight: 600;
+            }
+
+            ut := TouchArea {
+                clicked => {
+                    root.unblock();
+                }
+            }
+        }
+    }
+}
+
+// The editor's number-type chip.
+export component LabelChip inherits Rectangle {
+    in property <string> text;
+    callback clicked;
+    width: 104 * Theme.dp;
+    height: 44 * Theme.dp;
+    border-radius: 10 * Theme.dp;
+    background: touch.pressed ? #353a42 : #262a31;
+    HorizontalLayout {
+        padding-left: 12 * Theme.dp;
+        padding-right: 10 * Theme.dp;
+        spacing: 4 * Theme.dp;
+        Text {
+            text: root.text;
+            color: Theme.text;
+            font-size: 14 * Theme.dp;
+            font-weight: 600;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+        }
+
+        Glyph {
+            source: @image-url("@phone-shared/icons/chevron_down.svg");
+            size: 16 * Theme.dp;
+            colorize: Theme.text-dim;
+            y: (parent.height - self.height) / 2;
+        }
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// The editor's red remove button.
+export component Minus inherits Rectangle {
+    callback clicked;
+    width: 28 * Theme.dp;
+    height: 28 * Theme.dp;
+    border-radius: self.width / 2;
+    background: Theme.danger.with-alpha(touch.pressed ? 0.3 : 0.15);
+    Glyph {
+        source: @image-url("@neoui/icons/sys/close.svg");
+        size: 16 * Theme.dp;
+        colorize: Theme.danger;
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}

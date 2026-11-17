@@ -588,6 +588,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "contacts-ui"
+version = "0.1.0"
+dependencies = [
+ "neoui-kit",
+ "png",
+ "slint",
+]
+
+[[package]]
 name = "convert_case"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2389,6 +2398,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "messages-ui"
+version = "0.1.0"
+dependencies = [
+ "neoui-kit",
+ "png",
+ "slint",
+]
+
+[[package]]
 name = "minimal-lexical"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2570,7 +2588,7 @@ dependencies = [
 [[package]]
 name = "neoui-kit"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/neoui?rev=51cf64d841e152cf7c2b39b3432b804522bbe2f4#51cf64d841e152cf7c2b39b3432b804522bbe2f4"
+source = "git+https://github.com/NeoSymbian/neoui?rev=2f3f001d93e202c570949d5c6b075feb0af387c4#2f3f001d93e202c570949d5c6b075feb0af387c4"
 dependencies = [
  "slint-build",
 ]

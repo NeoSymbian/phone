@@ -1,0 +1,21 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// NEOCONT.EXE (Contacts): the list with search and the side index, the card, the editor, Mark several (Phone and
+// Messages are apps of their own; the footer and the card's Call and Message open them).
+import "@neoui/fonts/Inter-VariableFont.ttf";
+import "@neoui/fonts/DejaVuSans.ttf";
+import { Theme, Scroll, KeyboardFocus, Kit } from "@neoui/kit.slint";
+import { Nav } from "@phone-shared/nav.slint";
+import { AppFrame } from "@phone-shared/frame.slint";
+import { ContactsState } from "contacts/state.slint";
+import { ContactsPage } from "contacts/pages.slint";
+
+export { Theme, Scroll, KeyboardFocus, Kit, Nav, ContactsState }
+
+export component ContactsApp inherits Window {
+    default-font-family: "Inter";
+    background: Theme.bg;
+    AppFrame {
+        own: 1;
+        ContactsPage { }
+    }
+}

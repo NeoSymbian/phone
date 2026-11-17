@@ -2,7 +2,7 @@
 # GPL-3.0 because it links Slint under GPL-3.0 (NeoSymbian decision 2026-11-06), like neoui's apps.
 [package]
 name = "phone-ui"
-description = "NeoPhone's screens in Slint (no_std): the Phone and Contacts pages, the call screens, settings"
+description = "Phone's screens in Slint (no_std): Recents and the dialer, the call screens, settings"
 version.workspace = true
 edition.workspace = true
 license = "GPL-3.0-only"

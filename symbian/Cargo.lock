@@ -588,6 +588,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "contacts-ui"
+version = "0.1.0"
+dependencies = [
+ "neoui-kit",
+ "slint",
+]
+
+[[package]]
 name = "convert_case"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2410,6 +2418,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "messages-ui"
+version = "0.1.0"
+dependencies = [
+ "neoui-kit",
+ "slint",
+]
+
+[[package]]
 name = "minimal-lexical"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2591,11 +2607,44 @@ dependencies = [
 [[package]]
 name = "neoapp"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/neoui?rev=51cf64d841e152cf7c2b39b3432b804522bbe2f4#51cf64d841e152cf7c2b39b3432b804522bbe2f4"
+source = "git+https://github.com/NeoSymbian/neoui?rev=2f3f001d93e202c570949d5c6b075feb0af387c4#2f3f001d93e202c570949d5c6b075feb0af387c4"
 dependencies = [
  "e32",
  "neoui-proto",
  "slint",
+]
+
+[[package]]
+name = "neocont"
+version = "0.1.0"
+dependencies = [
+ "contacts",
+ "contacts-ui",
+ "e32",
+ "modem-ipc",
+ "neoapp",
+ "neoui-proto",
+ "phone-common",
+ "phone-core",
+ "phone-rules",
+ "slint",
+]
+
+[[package]]
+name = "neomsg"
+version = "0.1.0"
+dependencies = [
+ "contacts",
+ "e32",
+ "messages-ui",
+ "modem-ipc",
+ "neoapp",
+ "neoui-proto",
+ "phone-common",
+ "phone-core",
+ "phone-rules",
+ "slint",
+ "sms",
 ]
 
 [[package]]
@@ -2607,17 +2656,17 @@ dependencies = [
  "modem-ipc",
  "neoapp",
  "neoui-proto",
+ "phone-common",
  "phone-core",
  "phone-rules",
  "phone-ui",
  "slint",
- "sms",
 ]
 
 [[package]]
 name = "neoui-kit"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/neoui?rev=51cf64d841e152cf7c2b39b3432b804522bbe2f4#51cf64d841e152cf7c2b39b3432b804522bbe2f4"
+source = "git+https://github.com/NeoSymbian/neoui?rev=2f3f001d93e202c570949d5c6b075feb0af387c4#2f3f001d93e202c570949d5c6b075feb0af387c4"
 dependencies = [
  "slint-build",
 ]
@@ -2625,7 +2674,7 @@ dependencies = [
 [[package]]
 name = "neoui-proto"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/neoui?rev=51cf64d841e152cf7c2b39b3432b804522bbe2f4#51cf64d841e152cf7c2b39b3432b804522bbe2f4"
+source = "git+https://github.com/NeoSymbian/neoui?rev=2f3f001d93e202c570949d5c6b075feb0af387c4#2f3f001d93e202c570949d5c6b075feb0af387c4"
 
 [[package]]
 name = "nix"
@@ -3155,6 +3204,20 @@ name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
+
+[[package]]
+name = "phone-common"
+version = "0.1.0"
+dependencies = [
+ "contacts",
+ "e32",
+ "modem-ipc",
+ "neoapp",
+ "neoui-proto",
+ "phone-core",
+ "phone-rules",
+ "slint",
+]
 
 [[package]]
 name = "phone-core"

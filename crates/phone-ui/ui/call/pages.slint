@@ -4,7 +4,7 @@
 // on 9 and 12); CallState.screen picks the screen, CallState.keypad lays the keypad over a call.
 import { Theme } from "@neoui/theme.slint";
 import { Glyph } from "@neoui/components/frame.slint";
-import { PillButton, KeyGrid, Sheet } from "../common.slint";
+import { PillButton, KeyGrid, Sheet } from "@phone-shared/common.slint";
 import { Alphabets } from "@neoui/components/keyboard/glyphs.slint";
 import { CallState, Party } from "state.slint";
 
@@ -42,7 +42,7 @@ component CallAvatar inherits Rectangle {
             font-weight: 600;
         }
         if party.initials == "": Glyph {
-            source: @image-url("../icons/hash.svg");
+            source: @image-url("@phone-shared/icons/hash.svg");
             size: root.size * 0.4;
             colorize: Theme.text-secondary;
         }
@@ -390,7 +390,7 @@ component Active inherits VerticalLayout {
             }
 
             CallButton {
-                icon: @image-url("../icons/person.svg");
+                icon: @image-url("@phone-shared/icons/person.svg");
                 text: "Contacts";
                 clicked => {
                     CallState.act("contacts", "");
@@ -593,7 +593,7 @@ component Two inherits VerticalLayout {
         spacing: 10 * Theme.dp;
         CallChip {
             text: "Swap";
-            icon: @image-url("../icons/swap.svg");
+            icon: @image-url("@phone-shared/icons/swap.svg");
             clicked => {
                 CallState.act("swap", "");
             }
@@ -601,7 +601,7 @@ component Two inherits VerticalLayout {
 
         CallChip {
             text: "Conference";
-            icon: @image-url("../icons/merge.svg");
+            icon: @image-url("@phone-shared/icons/merge.svg");
             clicked => {
                 CallState.act("merge", "");
             }

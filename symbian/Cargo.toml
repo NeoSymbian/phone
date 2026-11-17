@@ -1,15 +1,16 @@
 # SPDX-License-Identifier: GPL-3.0-only
-# NEOPHONE.EXE: built only for armv5te-none-eabi with a pinned nightly (build-std), like neoui/symbian. GPL-3.0
+# NEOPHONE.EXE, NEOCONT.EXE and NEOMSG.EXE (Phone, Contacts, Messages): built only for armv5te-none-eabi with a
+# pinned nightly (build-std), like neoui/symbian. GPL-3.0
 # because it links Slint under GPL-3.0 (NeoSymbian decision 2026-11-06). The pins must match neoui's: one e32 (it
 # defines the global allocator) and one Slint in the ROM.
 [workspace]
 resolver = "3"
-members = ["app"]
+members = ["common", "phone", "contacts", "messages"]
 
 [workspace.dependencies]
 e32 = { git = "https://github.com/NeoSymbian/e32-rs", rev = "e97e2ebcb242f5365d1b3f9d520646603e1e9056", features = ["critical-section"] }
-neoui-proto = { git = "https://github.com/NeoSymbian/neoui", rev = "51cf64d841e152cf7c2b39b3432b804522bbe2f4" }
-neoapp = { git = "https://github.com/NeoSymbian/neoui", rev = "51cf64d841e152cf7c2b39b3432b804522bbe2f4" }
+neoui-proto = { git = "https://github.com/NeoSymbian/neoui", rev = "2f3f001d93e202c570949d5c6b075feb0af387c4" }
+neoapp = { git = "https://github.com/NeoSymbian/neoui", rev = "2f3f001d93e202c570949d5c6b075feb0af387c4" }
 slint = { version = "=1.18.1", default-features = false, features = ["compat-1-2", "unsafe-single-threaded", "libm", "renderer-software"] }
 modem-ipc = { git = "https://github.com/NeoSymbian/telephony", rev = "b50763850b47373083e7cea82a3d30f40feb9cea" }
 phone-rules = { git = "https://github.com/NeoSymbian/telephony", rev = "b50763850b47373083e7cea82a3d30f40feb9cea" }
@@ -17,6 +18,9 @@ sms = { git = "https://github.com/NeoSymbian/telephony", rev = "b50763850b473730
 contacts = { path = "../crates/contacts" }
 phone-core = { path = "../crates/phone-core" }
 phone-ui = { path = "../crates/phone-ui" }
+contacts-ui = { path = "../crates/contacts-ui" }
+messages-ui = { path = "../crates/messages-ui" }
+phone-common = { path = "common" }
 
 [profile.release]
 panic = "abort"

@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: GPL-3.0-only
+[package]
+name = "neomsg"
+description = "NEOMSG.EXE: Messages (conversations, threads, a new message), with Phone and Contacts as apps of their own (NeoSymbian)"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+publish = false
+
+[lib]
+crate-type = ["staticlib"]
+test = false
+
+[dependencies]
+e32.workspace = true
+neoui-proto.workspace = true
+neoapp.workspace = true
+slint.workspace = true
+modem-ipc.workspace = true
+phone-rules.workspace = true
+sms.workspace = true
+contacts.workspace = true
+phone-core.workspace = true
+messages-ui.workspace = true
+phone-common.workspace = true

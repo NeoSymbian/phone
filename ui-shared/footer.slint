@@ -1,0 +1,27 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// The footer Phone, Contacts and Messages share (NEOPHONE v2 p2-*: Phone · Contacts · Messages). They are three apps
+// (NEOPHONE, NEOCONT, NEOMSG); a tab opens the other app (neoui ipc OPEN), so the tab of the app drawing it stays
+// selected. Root views only: sub-pages, forms and selection hide it.
+import { Footer } from "@neoui/kit.slint";
+
+export component AppsFooter inherits Footer {
+    // 0 Phone, 1 Contacts, 2 Messages: the app drawing it
+    in property <int> own;
+    // the badges: missed calls on Phone, unread messages on Messages
+    in property <int> missed;
+    in property <int> unread;
+    // another app's tab: 0 Phone, 1 Contacts, 2 Messages
+    callback open(int);
+    current: root.own;
+    tabs: [
+        { icon: @image-url("@neoui/icons/sys/call.svg"), label: "Phone", badge: root.missed },
+        { icon: @image-url("@neoui/icons/sys/contacts.svg"), label: "Contacts" },
+        { icon: @image-url("@neoui/icons/sys/message.svg"), label: "Messages", badge: root.unread },
+    ];
+    picked(i) => {
+        self.current = root.own;
+        if i != root.own {
+            root.open(i);
+        }
+    }
+}

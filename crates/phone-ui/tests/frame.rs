@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// The frame: the kit header the app draws (protocol 1.8): a root page with its action and ⋮, a sub-page, a form.
+// The frame (ui-shared/frame.slint): the kit header the app draws (protocol 1.8): a root page with its action, ⋮ and
+// the footer that opens Contacts and Messages, a form, the dialer's Call band.
 mod common;
 use phone_ui::Nav;
 use slint::ComponentHandle;
@@ -8,10 +9,11 @@ use slint::ComponentHandle;
 fn frame() {
     let s = common::app();
     let nav = s.ui.global::<Nav>();
-    nav.set_page(1);
-    nav.set_title("Contacts".into());
-    nav.set_dots(2);
-    nav.set_dot(1);
+    nav.set_page(4);
+    nav.set_title("Settings".into());
+    nav.set_footer(true);
+    nav.set_missed(2);
+    nav.set_unread(3);
     nav.set_has_action(true);
     nav.set_action_tool(3); // person_add
     nav.set_action_label("New".into());
@@ -28,7 +30,6 @@ fn frame() {
     // the dialer: Call in a band of its own under the keypad (D14: big actions stay in the content)
     nav.set_page(0);
     nav.set_title("Phone".into());
-    nav.set_dot(0);
     nav.set_options(slint::ModelRc::default());
     nav.set_action_tool(1);
     nav.set_action_label("Call".into());
