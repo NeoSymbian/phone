@@ -77,8 +77,6 @@ export global ContactsState {
     in property <int> card-speed;
     // what blocks it ("Calls and messages", "Calls", "Messages"; "" not blocked)
     in property <string> card-blocked;
-    // Email shows once there is an app for it
-    in property <bool> can-email;
 
     // the editor (view "edit"), filled when it opens and read back on Save
     in-out property <string> edit-first;
@@ -102,7 +100,7 @@ export global ContactsState {
     in property <[bool]> dialog-checked;
 
     // "open" + id (-1: my card), "hold" + id (a long press: selection mode), "mark" + id, "new", "call" + number,
-    // "message" + number, "email", "unblock", "label" + row (opens the sheet), "pick" + label index,
+    // "message" + number, "email", "photo" (the editor's slot), "unblock", "label" + row (opens the sheet), "pick" + label index,
     // "pick-cancel", "add-number", "remove-number" + row, "confirm", "cancel", "check" + index
     callback act(string, string);
 }

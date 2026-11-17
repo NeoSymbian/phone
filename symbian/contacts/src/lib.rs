@@ -178,7 +178,9 @@ fn run() -> Result<(), i32> {
                 Some(AppEvent::Open { page }) => {
                     let arg = ctx.app.arg().unwrap_or_default();
                     dprintln!("neocont: opened on page {}", page);
-                    if let Some(p) = Page::from_number(key::CONTACTS, page) {
+                    if let Some(p) = Page::from_number(key::CONTACTS, page)
+                        && !people::hold_open(&ctx, page, p, &arg)
+                    {
                         opened(&ctx, page, p, &arg);
                     }
                 }
@@ -221,7 +223,7 @@ fn run() -> Result<(), i32> {
 
 /// Phone or Messages opened Contacts on a page with a number: its card (or a new contact), a new contact; else the
 /// page.
-fn opened(ctx: &Ctx, n: u16, p: Page, arg: &str) {
+pub(crate) fn opened(ctx: &Ctx, n: u16, p: Page, arg: &str) {
     use phone_core::page::number::contacts;
     match n {
         contacts::CARD | contacts::NEW if !arg.is_empty() => {

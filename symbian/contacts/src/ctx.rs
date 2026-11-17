@@ -294,7 +294,6 @@ impl Ctx {
         };
         nav.set_call_bar(bar.as_str().into());
 
-        nav.set_title_font(phone_common::ui::title_font(&chrome.title).into());
         nav.set_sub(self.page().back().is_some());
         nav.set_form(chrome.style & tool::CANCEL != 0);
         nav.set_has_action(chrome.icon != tool::NONE && !empty);
@@ -330,7 +329,7 @@ impl Ctx {
             nav.set_actions(phone_common::ui::model(acts));
         }
         nav.set_search(chrome.search.is_some());
-        nav.set_search_hint(chrome.search.unwrap_or("Search").into());
+        nav.set_search_hint(people::search_hint(self).as_str().into());
         nav.set_selected(chrome.selected);
         nav.set_selecting(chrome.selecting);
         let sel_menu: Vec<&str> = chrome.selection_menu.clone();

@@ -2,20 +2,32 @@
 // Contacts (NEOPHONE v2 p2-contacts-*): the list with my card, favourites, per-script sections and the letter strip,
 // the header's search results, selection mode ("" and "mark"); the card ("card"); the editor ("edit"). The header and
 // footer are the frame's; the number-type sheet and the query are drawn over the whole app (app.slint).
-import { Theme, Glyph, Avatar, NeoList, ListRow, TextField, Alphabets } from "@neoui/kit.slint";
+import { Theme, Glyph, Avatar, NeoList, ListRow, Alphabets } from "@neoui/kit.slint";
 import { Nav } from "@phone-shared/nav.slint";
 import { ContactsState } from "state.slint";
 import {
     Band, BlockedBanner, CardPill, Favourites, GlyphButton, HitRow, IconButton, InfoRow, LetterStrip, MyCardRow,
-    PhotoSlot, RowAction, TypeChip
+    Field, PhotoSlot, RowAction, TypeChip
 } from "parts.slint";
 
 component Results inherits VerticalLayout {
-    Band {
+    if ContactsState.results.length > 0: Band {
         text: ContactsState.results.length == 1 ? "1 RESULT" : ContactsState.results.length + " RESULTS";
     }
+    if ContactsState.results.length == 0: Text {
+        height: 120 * Theme.dp;
+        text: "No contact matches “" + Nav.query + "”";
+        color: Theme.text-dim;
+        font-size: Theme.font-body;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    if ContactsState.results.length == 0: Rectangle {
+        vertical-stretch: 1;
+    }
 
-    NeoList {
+    if ContactsState.results.length > 0: NeoList {
         vertical-stretch: 1;
         VerticalLayout {
             alignment: start;
@@ -82,13 +94,27 @@ component Empty inherits VerticalLayout {
             }
         }
 
-        Text {
-            text: "or import vCards from the ⋮ menu";
-            font-family: "DejaVu Sans";
-            color: Theme.text-dim;
-            font-size: 14 * Theme.dp;
-            horizontal-alignment: center;
-            wrap: word-wrap;
+        // ⋮ as the header's glyph: NeoSans has no U+22EE
+        HorizontalLayout {
+            alignment: center;
+            spacing: 3 * Theme.dp;
+            Text {
+                text: "or import vCards from the";
+                color: Theme.text-dim;
+                font-size: 14 * Theme.dp;
+            }
+
+            Glyph {
+                source: @image-url("@neoui/icons/sys/more.svg");
+                size: 14 * Theme.dp;
+                colorize: Theme.text-dim;
+            }
+
+            Text {
+                text: "menu";
+                color: Theme.text-dim;
+                font-size: 14 * Theme.dp;
+            }
         }
     }
 }
@@ -130,9 +156,10 @@ component ListView inherits Rectangle {
 
                         for p[j] in s.people: ListRow {
                             title: p.name;
-                            title-font: "DejaVu Sans";
                             avatar: p.initials;
                             avatar-tint: p.tint;
+                            // the letter strip's 24 dp and its gap (the board's 44 dp at the right)
+                            trailing-room: ContactsState.index.length > 0 ? 28 * Theme.dp : 0;
                             divider: j < s.people.length - 1;
                             selecting: marking;
                             checked: marking && p.marked;
@@ -167,15 +194,15 @@ component CardView inherits NeoList {
         Rectangle {
             background: @linear-gradient(180deg, #0f1622 0%, #000000 100%);
             VerticalLayout {
+                // the board's gaps less what NeoSans' line height adds over the browser's
                 padding-top: 18 * Theme.dp;
-                padding-bottom: 13 * Theme.dp;
+                padding-bottom: 14 * Theme.dp;
                 padding-left: 14 * Theme.dp;
                 padding-right: 14 * Theme.dp;
-                spacing: 4 * Theme.dp;
+                spacing: 1 * Theme.dp;
                 HorizontalLayout {
                     alignment: center;
-                    // the board's 10 dp, and the line height Inter has over DejaVu Sans
-                    padding-bottom: 14 * Theme.dp;
+                    padding-bottom: 12 * Theme.dp;
                     Avatar {
                         initials: ContactsState.card-initials;
                         tint: ContactsState.card-tint;
@@ -185,7 +212,6 @@ component CardView inherits NeoList {
 
                 Text {
                     text: ContactsState.card-name;
-                    font-family: "DejaVu Sans";
                     color: Theme.text;
                     font-size: 24 * Theme.dp;
                     font-weight: 600;
@@ -195,7 +221,6 @@ component CardView inherits NeoList {
 
                 if ContactsState.card-company != "": Text {
                     text: ContactsState.card-company;
-                    font-family: "DejaVu Sans";
                     color: Theme.text-secondary;
                     font-size: 14.5 * Theme.dp;
                     horizontal-alignment: center;
@@ -280,7 +305,8 @@ component CardView inherits NeoList {
             value: ContactsState.card-email;
             size: Theme.font-body;
             divider: has-numbers;
-            if ContactsState.can-email: VerticalLayout {
+            // shortcut: no Email app yet, so its button only says so; open it once there is one
+            VerticalLayout {
                 alignment: center;
                 RowAction {
                     icon: @image-url("@phone-shared/icons/mail.svg");
@@ -314,18 +340,22 @@ component EditView inherits NeoList {
             spacing: 12 * Theme.dp;
             VerticalLayout {
                 alignment: center;
-                PhotoSlot { }
+                PhotoSlot {
+                    clicked => {
+                        ContactsState.act("photo", "");
+                    }
+                }
             }
 
             VerticalLayout {
                 alignment: center;
                 spacing: 8 * Theme.dp;
-                TextField {
+                Field {
                     placeholder: "First name";
                     text <=> ContactsState.edit-first;
                 }
 
-                TextField {
+                Field {
                     placeholder: "Last name";
                     text <=> ContactsState.edit-last;
                 }
@@ -335,7 +365,7 @@ component EditView inherits NeoList {
         HorizontalLayout {
             padding-left: 12 * Theme.dp;
             padding-right: 12 * Theme.dp;
-            TextField {
+            Field {
                 placeholder: "Company";
                 text <=> ContactsState.edit-company;
             }
@@ -358,7 +388,7 @@ component EditView inherits NeoList {
                     }
                 }
 
-                TextField {
+                Field {
                     placeholder: "Number";
                     keys: 4;
                     horizontal-stretch: 1;
@@ -394,12 +424,12 @@ component EditView inherits NeoList {
             padding-right: 12 * Theme.dp;
             padding-bottom: 16 * Theme.dp;
             spacing: 8 * Theme.dp;
-            TextField {
+            Field {
                 placeholder: "Email";
                 text <=> ContactsState.edit-email;
             }
 
-            TextField {
+            Field {
                 placeholder: "Note";
                 text <=> ContactsState.edit-note;
             }
@@ -410,6 +440,12 @@ component EditView inherits NeoList {
 export component ContactsPage inherits Rectangle {
     // names come in any keyboard language, and from vCards with accents: their glyphs must be baked in
     Alphabets { }
+    // the same letters in NeoSans (names) and DejaVu Sans (the kit's fields, typed text)
+    Text {
+        visible: false;
+        text: "•–·⋮ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿĄąĆćČčĘęĞğİıŁłŃńŇňŐőŒœŘřŚśŞşŠšŢţŰűŸŹźŻżŽž";
+    }
+
     Text {
         visible: false;
         font-family: "DejaVu Sans";

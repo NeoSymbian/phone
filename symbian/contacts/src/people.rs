@@ -16,6 +16,7 @@ use contacts_ui::{
     ContactsApp, ContactsState, KeyboardFocus, Nav,
 };
 use e32::dprintln;
+use e32::fs::{File, Fs, mode};
 use neoui_proto::settings::Value;
 use phone_common::store;
 use phone_common::ui::{Chrome, model, strings, tool};
@@ -40,6 +41,17 @@ enum Dialog {
     Delete,
     Block,
     DeleteMarked,
+    /// leave the editor (or a dialog) without saving: ✕, Back, or another app's OPEN
+    Discard,
+}
+
+/// Another app's OPEN, held while the Discard query asks (neoui ipc OPEN: the page number, the page, its argument)
+/// and the dialog it replaced (shown again on Cancel).
+struct Pending {
+    n: u16,
+    page: Page,
+    arg: String,
+    before: Dialog,
 }
 
 /// The heights (dp) the letter strip's room comes from: the header and the footer, and the strip's margins.
@@ -67,6 +79,9 @@ pub struct State {
     shown: Option<(u32, NameOrder, usize)>,
     /// the view the last show drew
     last_view: Option<ContactsView>,
+    /// the editor's fields as it opened (✕ asks first when they changed)
+    start: Contact,
+    pending: Option<Pending>,
 }
 
 impl Default for State {
@@ -84,6 +99,8 @@ impl Default for State {
             rev: 0,
             shown: None,
             last_view: None,
+            start: Contact::default(),
+            pending: None,
         }
     }
 }
@@ -229,7 +246,10 @@ fn act(ctx: &Ctx, action: &str, value: &str) {
             ctx.show();
         }
         "message" => ctx.message(value, false),
-        // "email": no Email app yet (its button is hidden)
+        // shortcut: no Email or Photos app yet (the owner's decision: the buttons show and say so); open them once
+        // there are
+        "email" => ctx.note("Needs an Email app"),
+        "photo" => ctx.note("Needs the Photos app"),
         _ => {}
     }
 }
@@ -279,14 +299,15 @@ fn edit(ctx: &Ctx, who: Who, number: &str) {
     st.set_edit_email(c.email.as_str().into());
     st.set_edit_note(c.note.as_str().into());
     st.set_edit_numbers(model(rows));
+    ctx.m.borrow_mut().people.start = form(ctx);
     ctx.go(Page::Contacts(ContactsView::Edit));
 }
 
-/// The editor's Save: check, store, show the card.
-fn save_edit(ctx: &Ctx) {
+/// The editor's fields as a contact (what Save stores).
+fn form(ctx: &Ctx) -> Contact {
     let ui = ctx.ui();
     let st = ui.global::<ContactsState>();
-    let mut c = Contact {
+    Contact {
         first: st.get_edit_first().into(),
         last: st.get_edit_last().into(),
         company: st.get_edit_company().into(),
@@ -301,7 +322,23 @@ fn save_edit(ctx: &Ctx) {
             })
             .collect(),
         ..Default::default()
-    };
+    }
+}
+
+/// The editor is open and its fields differ from what it opened with.
+fn dirty(ctx: &Ctx) -> bool {
+    view(ctx) == Some(ContactsView::Edit) && logic::edited(&ctx.m.borrow().people.start, &form(ctx))
+}
+
+/// Leave the editor without saving: back where it was opened from.
+fn leave_editor(ctx: &Ctx) {
+    let from = ctx.m.borrow().people.edit_from;
+    ctx.back_to(from);
+}
+
+/// The editor's Save: check, store, show the card.
+fn save_edit(ctx: &Ctx) {
+    let mut c = form(ctx);
     if !logic::worth_saving(&c) {
         ctx.note("Add a name or a number");
         return;
@@ -373,6 +410,15 @@ fn mark(ctx: &Ctx, id: u32) {
     }
 }
 
+/// What blocks any of `c`'s numbers (calls, messages), if anything does.
+fn blocked_any(ctx: &Ctx, c: &Contact) -> Option<(bool, bool)> {
+    c.numbers
+        .iter()
+        .filter_map(|(_, n)| ctx.blocked(n))
+        .reduce(|(a, b), (x, y)| (a || x, b || y))
+        .filter(|&(calls, messages)| calls || messages)
+}
+
 /// Unblock every number of the card's contact.
 fn unblock(ctx: &Ctx) {
     if let Some(c) = card(ctx) {
@@ -433,6 +479,14 @@ fn confirm(ctx: &Ctx) {
                 .collect();
             forget(ctx, gone);
         }
+        Dialog::Discard => {
+            ctx.m.borrow_mut().people.picking = None;
+            let pending = ctx.m.borrow_mut().people.pending.take();
+            match pending {
+                Some(p) => crate::opened(ctx, p.n, p.page, &p.arg),
+                None => leave_editor(ctx),
+            }
+        }
     }
 }
 
@@ -484,6 +538,22 @@ fn export(ctx: &Ctx, contacts: &[Contact]) {
             store::EXPORT_PATH
         )),
         Err(e) => ctx.note(&format!("Export failed ({e})")),
+    }
+}
+
+/// Send as vCard: the card as `C:\Data\<name>.vcf` (not over the full export), with a note saying where.
+fn send_vcard(ctx: &Ctx, c: &Contact) {
+    let name = c.title(ctx.m.borrow().order);
+    let path = format!("{}{}", store::EXPORT_DIR, logic::vcard_file(&name));
+    let text = vcard::export(core::slice::from_ref(c));
+    let r = (|| {
+        let fs = Fs::connect()?;
+        store::mkdirs(&fs, &[store::EXPORT_DIR])?;
+        File::replace(&fs, &path, mode::SHARE_EXCLUSIVE)?.write(text.as_bytes())
+    })();
+    match r {
+        Ok(()) => ctx.note(&format!("vCard saved to {path}")),
+        Err(e) => ctx.note(&format!("vCard not saved ({e})")),
     }
 }
 
@@ -659,11 +729,7 @@ fn show_card(ctx: &Ctx) {
             logic::speed_key(&m.prefs.speed, &c),
         )
     };
-    let blocked = c
-        .numbers
-        .first()
-        .and_then(|(_, n)| ctx.blocked(n))
-        .filter(|&(calls, messages)| calls || messages);
+    let blocked = blocked_any(ctx, &c);
     let title = c.title(order);
     let tint = if mine { 0x2f80ed } else { logic::tint(c.id) };
     let ui = ctx.ui();
@@ -725,6 +791,7 @@ fn show_dialog(ctx: &Ctx) {
             "Delete",
             &[],
         ),
+        Dialog::Discard => ("Discard changes?".into(), String::new(), "Discard", &[]),
         Dialog::Block => (
             format!("Block {name}?"),
             "Blocked calls are rejected as busy and never ring. You can still call them.".into(),
@@ -759,13 +826,31 @@ pub fn query(ctx: &Ctx) -> Option<neoapp::Query> {
             ))
         }
         Dialog::DeleteMarked => {
-            let n = ctx.m.borrow().people.marked.len();
-            Some(phone_common::ui::ask(
-                &format!("Delete {n} contacts?"),
-                "",
-                "Delete",
-            ))
+            let (marked, order) = {
+                let m = ctx.m.borrow();
+                (m.people.marked.clone(), m.order)
+            };
+            let one = match marked[..] {
+                [id] => ctx.m.borrow().book.get(id).cloned(),
+                _ => None,
+            };
+            Some(match one {
+                Some(c) => {
+                    let key = logic::speed_key(&ctx.m.borrow().prefs.speed, &c);
+                    phone_common::ui::ask(
+                        &format!("Delete {}?", c.title(order)),
+                        &logic::delete_detail(key),
+                        "Delete",
+                    )
+                }
+                None => phone_common::ui::ask(
+                    &format!("Delete {} contacts?", marked.len()),
+                    "",
+                    "Delete",
+                ),
+            })
         }
+        Dialog::Discard => Some(phone_common::ui::ask("Discard changes?", "", "Discard")),
         Dialog::None | Dialog::Block => None,
     }
 }
@@ -774,9 +859,18 @@ pub fn answer(ctx: &Ctx, yes: bool) {
     if yes {
         confirm(ctx);
     } else {
-        ctx.m.borrow_mut().people.dialog = Dialog::None;
+        cancel(ctx);
     }
     ctx.show();
+}
+
+/// A query's Cancel: a held OPEN is dropped and the dialog it replaced comes back.
+fn cancel(ctx: &Ctx) {
+    let mut m = ctx.m.borrow_mut();
+    m.people.dialog = match m.people.pending.take() {
+        Some(p) if p.before != Dialog::Discard => p.before,
+        _ => Dialog::None,
+    };
 }
 
 pub fn chrome(ctx: &Ctx) -> Chrome {
@@ -789,14 +883,14 @@ pub fn chrome(ctx: &Ctx) -> Chrome {
         // 🔍 first, as the board draws it (the kit's own search icon would come after the actions)
         ContactsView::List => Chrome {
             more: alloc::vec![(tool::PERSON_ADD, "New contact")],
-            ..Chrome::titled("Contacts").with(tool::SEARCH, 0, "Search")
+            ..Chrome::titled("Contacts").with(tool::SEARCH, 0, "Search contacts")
         },
+        // [✕ N selected · 🗑 · ⋮], shown at 0 too (p2-contacts-select)
         ContactsView::Mark => Chrome {
             selected: p.marked.len() as i32,
-            selection: alloc::vec![
-                (tool::DELETE, "Delete marked"),
-                (tool::SHARE, "Export marked"),
-            ],
+            selecting: true,
+            selection: alloc::vec![(tool::DELETE, "Delete marked")],
+            selection_menu: alloc::vec!["Select all", "Export"],
             ..Chrome::titled("Select contacts")
         },
         ContactsView::Card => {
@@ -804,7 +898,11 @@ pub fn chrome(ctx: &Ctx) -> Chrome {
             let mut more = Vec::new();
             if p.card != Who::Mine {
                 let star = c.is_some_and(|c| c.favourite);
-                more.push((if star { tool::STAR_FULL } else { tool::STAR }, "Favourite"));
+                more.push(if star {
+                    (tool::STAR_FULL, "Remove from favourites")
+                } else {
+                    (tool::STAR, "Add to favourites")
+                });
             }
             more.push((tool::EDIT, "Edit"));
             Chrome {
@@ -840,9 +938,9 @@ pub fn options(ctx: &Ctx) -> Vec<&'static str> {
                 return alloc::vec!["Delete", "Send as vCard"];
             }
             let mut v = alloc::vec!["Delete"];
-            if let Some((_, n)) = c.numbers.first() {
+            if !c.numbers.is_empty() {
                 v.push("Speed dial");
-                v.push(if ctx.blocked(n).is_some() {
+                v.push(if blocked_any(ctx, &c).is_some() {
                     "Unblock contact"
                 } else {
                     "Block contact"
@@ -858,7 +956,7 @@ pub fn options(ctx: &Ctx) -> Vec<&'static str> {
 pub fn option(ctx: &Ctx, item: &str) {
     match item {
         "New contact" => edit(ctx, Who::New, ""),
-        "Favourite" => {
+        "Add to favourites" | "Remove from favourites" => {
             let Who::Contact(id) = ctx.m.borrow().people.card else {
                 return;
             };
@@ -876,7 +974,16 @@ pub fn option(ctx: &Ctx, item: &str) {
             save(ctx);
             ctx.show();
         }
+        "Delete marked" if ctx.m.borrow().people.marked.is_empty() => ctx.note("Nothing selected"),
         "Delete marked" => ask(ctx, Dialog::DeleteMarked),
+        "Select all" => {
+            {
+                let mut m = ctx.m.borrow_mut();
+                m.people.marked = m.book.contacts.iter().map(|c| c.id).collect();
+            }
+            changed(ctx);
+            ctx.show();
+        }
         "Mark several" => {
             ctx.m.borrow_mut().people.marked.clear();
             changed(ctx);
@@ -897,7 +1004,7 @@ pub fn option(ctx: &Ctx, item: &str) {
         }
         // Phone's settings, at their Contacts section
         "Settings" => ctx.open(Page::Settings(SettingsView::Main), "contacts"),
-        "Export marked" => {
+        "Export" => {
             let marked: Vec<Contact> = {
                 let m = ctx.m.borrow();
                 let ids = &m.people.marked;
@@ -925,7 +1032,7 @@ pub fn option(ctx: &Ctx, item: &str) {
         }
         "Send as vCard" => {
             if let Some(c) = card(ctx) {
-                export(ctx, &[c]);
+                send_vcard(ctx, &c);
             }
         }
         "Set as my card" => {
@@ -966,18 +1073,19 @@ pub fn back(ctx: &Ctx) -> bool {
         (m.people.dialog, m.people.picking)
     };
     if dialog != Dialog::None || picking.is_some() {
-        let mut m = ctx.m.borrow_mut();
-        m.people.dialog = Dialog::None;
-        m.people.picking = None;
-        drop(m);
+        cancel(ctx);
+        ctx.m.borrow_mut().people.picking = None;
         ctx.show();
         return true;
     }
     match view(ctx) {
-        // Back is Cancel: nothing is saved
+        // Back is Cancel: nothing is saved (asked first when something changed)
         Some(ContactsView::Edit) => {
-            let from = ctx.m.borrow().people.edit_from;
-            ctx.back_to(from);
+            if dirty(ctx) {
+                ask(ctx, Dialog::Discard);
+            } else {
+                leave_editor(ctx);
+            }
             true
         }
         // opened from another app's page (Phone's call details): back there
@@ -1003,6 +1111,40 @@ pub fn back(ctx: &Ctx) -> bool {
 pub fn wants_back(ctx: &Ctx) -> bool {
     let m = ctx.m.borrow();
     m.people.dialog != Dialog::None || m.people.picking.is_some()
+}
+
+/// Another app's OPEN (page `n`, `page`, `arg`) while a dialog or unsaved edits are open: held, and the Discard
+/// query asks first; true when held.
+pub fn hold_open(ctx: &Ctx, n: u16, page: Page, arg: &str) -> bool {
+    let before = {
+        let m = ctx.m.borrow();
+        m.people.dialog
+    };
+    let busy = before != Dialog::None || ctx.m.borrow().people.picking.is_some() || dirty(ctx);
+    if !busy {
+        return false;
+    }
+    {
+        let mut m = ctx.m.borrow_mut();
+        m.people.pending = Some(Pending {
+            n,
+            page,
+            arg: arg.into(),
+            before,
+        });
+        m.people.dialog = Dialog::Discard;
+        m.people.picking = None;
+    }
+    ctx.show();
+    true
+}
+
+/// The header search's placeholder (p2-contacts-search).
+pub fn search_hint(ctx: &Ctx) -> String {
+    match ctx.m.borrow().book.contacts.len() {
+        1 => String::from("Search 1 contact"),
+        n => format!("Search {n} contacts"),
+    }
 }
 
 /// Send MODEMD the contacts' known-number hashes (for "block unknown numbers").

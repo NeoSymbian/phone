@@ -5,15 +5,17 @@
 #![allow(dead_code)]
 
 use contacts_ui::{ContactsApp, Theme};
-use slint::ComponentHandle;
 use slint::platform::software_renderer::{
     MinimalSoftwareWindow, PremultipliedRgbaColor, RepaintBufferType, TargetPixel,
 };
 use slint::platform::{Platform, WindowAdapter};
+use slint::platform::{PointerEventButton, WindowEvent};
+use slint::{ComponentHandle, LogicalPosition};
 use std::rc::Rc;
 
 pub const W: u32 = 1080;
 pub const H: u32 = 2037;
+pub const DP: f32 = 3.0;
 
 struct Host(Rc<MinimalSoftwareWindow>);
 
@@ -75,8 +77,58 @@ impl Shot {
         self.window.set_size(slint::PhysicalSize::new(W, h));
     }
 
+    /// A finger down at (x, y) dp, and up again when `release`.
+    pub fn press(&self, x: f32, y: f32, release: bool) {
+        let w = self.ui.window();
+        let position = LogicalPosition::new(x * DP, y * DP);
+        w.dispatch_event(WindowEvent::PointerPressed {
+            position,
+            button: PointerEventButton::Left,
+        });
+        if release {
+            w.dispatch_event(WindowEvent::PointerReleased {
+                position,
+                button: PointerEventButton::Left,
+            });
+        }
+    }
+
+    /// The finger up at (x, y) dp.
+    pub fn release(&self, x: f32, y: f32) {
+        self.ui
+            .window()
+            .dispatch_event(WindowEvent::PointerReleased {
+                position: LogicalPosition::new(x * DP, y * DP),
+                button: PointerEventButton::Left,
+            });
+    }
+
+    /// Let `ms` pass (Slint's timers: a long press).
+    pub fn wait(&self, ms: u64) {
+        NOW.set(NOW.get() + core::time::Duration::from_millis(ms));
+        slint::platform::update_timers_and_animations();
+    }
+
     /// Draw and save `snapshots/<name>.png`; returns the pixels for checks.
     pub fn shoot(&self, name: &str) -> Vec<u32> {
+        let px = self.pixels();
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../snapshots");
+        std::fs::create_dir_all(&root).unwrap();
+        let file = std::fs::File::create(root.join(format!("{name}.png"))).unwrap();
+        let mut enc = png::Encoder::new(std::io::BufWriter::new(file), W, self.h.get());
+        enc.set_color(png::ColorType::Rgb);
+        enc.set_depth(png::BitDepth::Eight);
+        let mut w = enc.write_header().unwrap();
+        let rgb: Vec<u8> = px
+            .iter()
+            .flat_map(|p| [(p >> 16) as u8, (p >> 8) as u8, *p as u8])
+            .collect();
+        w.write_image_data(&rgb).unwrap();
+        px
+    }
+
+    /// Draw (timers and animations first) and return the pixels, 0xRRGGBB by rows of [`W`].
+    pub fn pixels(&self) -> Vec<u32> {
         // change handlers run first (they may start an animation), then a second passes
         slint::platform::update_timers_and_animations();
         NOW.set(NOW.get() + core::time::Duration::from_secs(1));
@@ -87,18 +139,6 @@ impl Shot {
         self.window.draw_if_needed(|r| {
             r.render(&mut px, W as usize);
         });
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../snapshots");
-        std::fs::create_dir_all(&root).unwrap();
-        let file = std::fs::File::create(root.join(format!("{name}.png"))).unwrap();
-        let mut enc = png::Encoder::new(std::io::BufWriter::new(file), W, h);
-        enc.set_color(png::ColorType::Rgb);
-        enc.set_depth(png::BitDepth::Eight);
-        let mut w = enc.write_header().unwrap();
-        let rgb: Vec<u8> = px
-            .iter()
-            .flat_map(|p| [(p.0 >> 16) as u8, (p.0 >> 8) as u8, p.0 as u8])
-            .collect();
-        w.write_image_data(&rgb).unwrap();
         px.into_iter().map(|p| p.0).collect()
     }
 }

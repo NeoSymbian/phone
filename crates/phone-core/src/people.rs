@@ -89,15 +89,20 @@ fn low(c: char) -> char {
     c.to_lowercase().next().unwrap_or(c)
 }
 
-/// `text` cut around the first word that starts with `query` (case folded): (before, match, after).
-pub fn split_word<'a>(text: &'a str, query: &str) -> Option<(&'a str, &'a str, &'a str)> {
+/// `text` cut around the first place `query` matches (case folded): (before, match, after); `word_start`: only at the
+/// start of a word, else anywhere ([`Book::search`] matches inside words too).
+pub fn split_word<'a>(
+    text: &'a str,
+    query: &str,
+    word_start: bool,
+) -> Option<(&'a str, &'a str, &'a str)> {
     let q: Vec<char> = query.chars().map(low).collect();
     let cs: Vec<(usize, char)> = text.char_indices().collect();
     if q.is_empty() || q.len() > cs.len() {
         return None;
     }
     (0..=cs.len() - q.len())
-        .filter(|&i| i == 0 || cs[i - 1].1.is_whitespace())
+        .filter(|&i| !word_start || i == 0 || cs[i - 1].1.is_whitespace())
         .find(|&i| (0..q.len()).all(|k| low(cs[i + k].1) == q[k]))
         .map(|i| {
             let (a, b) = (cs[i].0, cs.get(i + q.len()).map_or(text.len(), |c| c.0));
@@ -122,10 +127,20 @@ pub fn hit(c: &Contact, query: &str, order: NameOrder) -> Hit {
     let words: Vec<&str> = query.split_whitespace().collect();
     let first_number =
         |(l, n): &(Label, String)| [format!("{} · ", l.text()), String::new(), n.clone()];
-    let name = words.iter().find_map(|w| split_word(&title, w));
+    let in_name = |start| words.iter().find_map(|w| split_word(&title, w, start));
+    let in_company = |start| words.iter().find_map(|w| split_word(&c.company, w, start));
+    // a word start in the name, then in the company; then inside a word, the company first (p2-contacts-search:
+    // "an" lights Vahan & Co, not Hakobyan)
+    let (name, company) = match in_name(true) {
+        Some(n) => (Some(n), None),
+        None => match in_company(true).or_else(|| in_company(false)) {
+            Some(p) => (None, Some(p)),
+            None => (in_name(false), None),
+        },
+    };
     let detail = if name.is_some() {
         None
-    } else if let Some(p) = words.iter().find_map(|w| split_word(&c.company, w)) {
+    } else if let Some(p) = company {
         Some([format!("Company: {}", p.0), p.1.into(), p.2.into()])
     } else {
         let d = number::digits(query);
@@ -192,6 +207,31 @@ pub fn worth_saving(c: &Contact) -> bool {
         && c.numbers.is_empty())
 }
 
+/// The editor's fields changed from what it opened with (spaces and empty number rows don't count): ✕ and Back ask
+/// "Discard changes?" first.
+pub fn edited(start: &Contact, now: &Contact) -> bool {
+    let (mut a, mut b) = (start.clone(), now.clone());
+    a.tidy();
+    b.tidy();
+    a != b
+}
+
+/// The file "Send as vCard" writes in `C:\Data\`: the name without what a file name can't hold, never the full
+/// export's `contacts.vcf`.
+pub fn vcard_file(name: &str) -> String {
+    let clean: String = name
+        .chars()
+        .filter(|c| !c.is_control())
+        .map(|c| if "\\/:*?\"<>|".contains(c) { '_' } else { c })
+        .collect();
+    let base = clean.trim().trim_end_matches('.');
+    match base {
+        "" => String::from("Contact.vcf"),
+        b if b.eq_ignore_ascii_case("contacts") => format!("{b} (1).vcf"),
+        b => format!("{b}.vcf"),
+    }
+}
+
 /// Add imported contacts, skipping ones the book has (same name and first number); (added, skipped).
 pub fn merge(book: &mut Book, found: Vec<Contact>) -> (usize, usize) {
     let (mut added, mut skipped) = (0, 0);
@@ -256,19 +296,23 @@ mod tests {
     #[test]
     fn hits() {
         assert_eq!(
-            split_word("Ani Petrosyan", "an"),
+            split_word("Ani Petrosyan", "an", true),
             Some(("", "An", "i Petrosyan"))
         );
         assert_eq!(
-            split_word("Ani Petrosyan", "PE"),
+            split_word("Ani Petrosyan", "PE", true),
             Some(("Ani ", "Pe", "trosyan"))
         );
-        assert_eq!(split_word("Vahan & Co", "an"), None);
+        assert_eq!(split_word("Vahan & Co", "an", true), None);
         assert_eq!(
-            split_word("Мария Ковалёва", "ков"),
+            split_word("Vahan & Co", "an", false),
+            Some(("Vah", "an", " & Co"))
+        );
+        assert_eq!(
+            split_word("Мария Ковалёва", "ков", true),
             Some(("Мария ", "Ков", "алёва"))
         );
-        assert_eq!(split_word("Ab", "abc"), None);
+        assert_eq!(split_word("Ab", "abc", false), None);
         let o = NameOrder::FirstLast;
         let ani = person("Ani", "Petrosyan", "", &["+37428123456"]);
         assert_eq!(
@@ -281,6 +325,14 @@ mod tests {
         let aram = person("Aram", "Hakobyan", "Anahit & Co", &["+37491000111"]);
         assert_eq!(hit(&aram, "an", o).detail, ["Company: ", "An", "ahit & Co"]);
         assert_eq!(hit(&aram, "an", o).name[0], "Aram Hakobyan");
+        // inside a word: the company before the name (the board's search)
+        let aram = person("Aram", "Hakobyan", "Vahan & Co", &["+37491000111"]);
+        assert_eq!(hit(&aram, "an", o).detail, ["Company: Vah", "an", " & Co"]);
+        assert_eq!(hit(&aram, "an", o).name, ["Aram Hakobyan", "", ""]);
+        assert_eq!(
+            hit(&aram, "kob", o).name,
+            ["Aram Ha", "kob", "yan"].map(String::from)
+        );
         assert_eq!(
             hit(&aram, "000", o).detail,
             ["Mobile · +37491", "000", "111"]
@@ -319,6 +371,22 @@ mod tests {
         }));
         assert!(worth_saving(&person(" ", "", "", &["+1 555"])));
         assert!(worth_saving(&person("Ani", "", "", &[])));
+        let ava = person("Ava", "Lindqvist", "", &["+1 555 0142"]);
+        let mut now = ava.clone();
+        now.first.push(' ');
+        now.numbers.push((Label::Mobile, String::new()));
+        assert!(
+            !edited(&ava, &now),
+            "a space and an empty row are no change"
+        );
+        now.numbers[0].0 = Label::Fax;
+        assert!(edited(&ava, &now));
+        assert!(edited(&ava, &person("Ava", "L", "", &["+1 555 0142"])));
+        assert_eq!(vcard_file("Ava Lindqvist"), "Ava Lindqvist.vcf");
+        assert_eq!(vcard_file("Անի Պետրոսյան"), "Անի Պետրոսյան.vcf");
+        assert_eq!(vcard_file("A/B: C?."), "A_B_ C_.vcf");
+        assert_eq!(vcard_file(" \t"), "Contact.vcf");
+        assert_eq!(vcard_file("Contacts"), "Contacts (1).vcf");
         let mut b = Book::default();
         b.add(person("Ani", "P", "", &["1"])).unwrap();
         let (a, s) = merge(

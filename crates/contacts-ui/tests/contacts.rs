@@ -7,11 +7,9 @@ use contacts_ui::{
     ContactEditNumber, ContactHit, ContactMark, ContactNumber, ContactRow, ContactSection,
     ContactsState, Icons, Nav,
 };
-use slint::platform::{PointerEventButton, WindowEvent};
-use slint::{Color, ComponentHandle, LogicalPosition, Model, ModelRc, SharedString, VecModel};
+use slint::platform::WindowEvent;
+use slint::{Color, ComponentHandle, Model, ModelRc, SharedString, VecModel};
 use std::rc::Rc;
-
-const DP: f32 = 3.0;
 
 fn model<T: Clone + 'static>(v: Vec<T>) -> ModelRc<T> {
     ModelRc::from(Rc::new(VecModel::from(v)))
@@ -120,43 +118,88 @@ fn sections(marked: &[&str]) -> (Vec<ContactSection>, Vec<f32>) {
     (s, tops)
 }
 
-/// The strip: every section's letter, a dash between scripts.
-fn index(tops: &[f32]) -> Vec<ContactMark> {
-    let mut v = Vec::new();
-    for (i, (l, _)) in BOOK.iter().enumerate() {
-        if *l == "Ա" || *l == "А" {
-            v.push(ContactMark {
-                text: "–".into(),
-                letters: strings(&[]),
-                tops: model(vec![]),
-                start: 0.0,
-                end: 0.0,
-            });
-        }
-        v.push(ContactMark {
-            text: (*l).into(),
-            letters: strings(&[l]),
-            tops: model(vec![tops[i]]),
-            start: if i == 0 { -1e9 } else { tops[i] },
-            end: tops.get(i + 1).copied().unwrap_or(1e9),
-        });
-    }
-    v
+#[derive(Clone, Copy, PartialEq)]
+enum Script {
+    Latin,
+    Armenian,
+    Cyrillic,
+    Other,
 }
 
-fn press(s: &common::Shot, x: f32, y: f32, release: bool) {
-    let w = s.ui.window();
-    let position = LogicalPosition::new(x * DP, y * DP);
-    w.dispatch_event(WindowEvent::PointerPressed {
-        position,
-        button: PointerEventButton::Left,
-    });
-    if release {
-        w.dispatch_event(WindowEvent::PointerReleased {
-            position,
-            button: PointerEventButton::Left,
-        });
+fn script(letter: &str) -> Script {
+    match letter.chars().next().unwrap_or('#') {
+        'A'..='Z' => Script::Latin,
+        'Ա'..='Ֆ' => Script::Armenian,
+        'А'..='Я' => Script::Cyrillic,
+        _ => Script::Other,
     }
+}
+
+/// The strip as the device builds it for an app `h` dp high: every section's letter and a dash between scripts, in
+/// the places phone_core::people::index_room gives the list (the app less the header and footer, less the strip's
+/// margins), a script that does not fit folding its middle into "•" (contacts::index::side_index).
+// shortcut: a copy of index_room and side_index (contacts-ui has no dev-dependency on contacts or phone-core); call
+// them once it does
+fn index(tops: &[f32], h: f32) -> Vec<ContactMark> {
+    let room = ((h - 48.0 - 48.0 - 24.0) / 15.0).max(3.0) as usize;
+    let mut runs: Vec<Vec<usize>> = Vec::new();
+    for (i, (l, _)) in BOOK.iter().enumerate() {
+        match runs.last_mut() {
+            Some(r) if script(BOOK[r[0]].0) == script(l) => r.push(i),
+            _ => runs.push(vec![i]),
+        }
+    }
+    let lettered = |r: &Vec<usize>| script(BOOK[r[0]].0) != Script::Other;
+    let room = room - (runs.iter().filter(|r| lettered(r)).count() - 1);
+    let mut budget: Vec<usize> = runs.iter().map(Vec::len).collect();
+    while budget.iter().sum::<usize>() > room {
+        let (i, _) = budget
+            .iter()
+            .enumerate()
+            .filter(|&(_, &b)| b > 1)
+            .rev()
+            .max_by_key(|&(_, &b)| b)
+            .unwrap();
+        budget[i] -= 1;
+    }
+    // (text, the sections it stands for)
+    let mut marks: Vec<(String, Vec<usize>)> = Vec::new();
+    for (k, (r, &b)) in runs.iter().zip(&budget).enumerate() {
+        if k > 0 && lettered(r) {
+            marks.push(("–".into(), vec![]));
+        }
+        let one = |i: usize| (BOOK[i].0.to_string(), vec![i]);
+        if b >= r.len() {
+            marks.extend(r.iter().map(|&i| one(i)));
+        } else {
+            let head = b / 2;
+            let tail = b - 1 - head;
+            marks.extend(r[..head].iter().map(|&i| one(i)));
+            marks.push(("•".into(), r[head..r.len() - tail].to_vec()));
+            marks.extend(r[r.len() - tail..].iter().map(|&i| one(i)));
+        }
+    }
+    let start = |m: &(String, Vec<usize>)| m.1.first().map(|&i| tops[i]);
+    marks
+        .iter()
+        .enumerate()
+        .map(|(n, m)| {
+            let (start, end) = match start(m) {
+                Some(s) => (
+                    if n == 0 { -1e9 } else { s },
+                    marks[n + 1..].iter().find_map(start).unwrap_or(1e9),
+                ),
+                None => (0.0, 0.0),
+            };
+            ContactMark {
+                text: m.0.as_str().into(),
+                letters: model(m.1.iter().map(|&i| BOOK[i].0.into()).collect()),
+                tops: model(m.1.iter().map(|&i| tops[i]).collect()),
+                start,
+                end,
+            }
+        })
+        .collect()
 }
 
 /// The header as symbian/contacts ctx.rs sets it from the view's Chrome.
@@ -181,7 +224,7 @@ fn list_header(s: &common::Shot) {
         s,
         "Contacts",
         false,
-        &[(14, "Search"), (3, "New contact")],
+        &[(14, "Search contacts"), (3, "New contact")],
         LIST_OPTIONS,
     );
     s.ui.global::<Nav>().set_footer(true);
@@ -194,6 +237,8 @@ fn editor(s: &common::Shot) {
     nav.set_title("Edit contact".into());
     nav.set_form(true);
     nav.set_has_action(true);
+    // the ✓ (Chrome's tool::CHECK)
+    nav.set_action_tool(5);
     nav.set_footer(false);
     c.set_edit_first("Ava".into());
     c.set_edit_last("Lindqvist".into());
@@ -232,7 +277,7 @@ fn contacts() {
     ]));
     let (secs, tops) = sections(&[]);
     c.set_sections(model(secs));
-    c.set_index(model(index(&tops)));
+    c.set_index(model(index(&tops, 679.0)));
     c.set_labels(strings(&[
         "Mobile",
         "Mobile (home)",
@@ -246,24 +291,20 @@ fn contacts() {
     assert!(px.iter().any(|&p| p != 0));
 
     // ⋮: the kit's menu under it
-    press(&s, 360.0 - 4.0 - 24.0, 24.0, true);
+    s.press(360.0 - 4.0 - 24.0, 24.0, true);
     s.shoot("p2-contacts-menu");
-    press(&s, 10.0, 600.0, true); // a tap outside closes it
+    s.press(10.0, 600.0, true); // a tap outside closes it
     s.shoot("p2-contacts-list");
 
     // a finger on Ա in the strip (item 20: 19 Latin letters, the dash): the list jumps there, the bubble shows it
-    press(
-        &s,
-        360.0 - 16.0 - 12.0,
-        48.0 + 12.0 + 20.0 * 15.0 + 7.0,
-        false,
-    );
+    s.press(360.0 - 16.0 - 12.0, 48.0 + 12.0 + 20.0 * 15.0 + 7.0, false);
     s.shoot("p2-contacts-index");
     s.ui.window().dispatch_event(WindowEvent::PointerExited);
 
     // the header's search
     nav.set_footer(false);
     nav.set_searching(true);
+    nav.set_search_hint("Search 42 contacts".into());
     nav.set_query("an".into());
     c.set_has_query(true);
     c.set_results(model(vec![
@@ -291,21 +332,28 @@ fn contacts() {
         },
     ]));
     s.shoot("p2-contacts-search");
+    // nothing matches
+    nav.set_query("xq".into());
+    c.set_results(model(vec![]));
+    s.shoot("p2-contacts-search-none");
     nav.set_searching(false);
     nav.set_query("".into());
     c.set_has_query(false);
 
-    // selection mode: three marked, the footer hidden
+    // selection mode: three marked, the footer hidden; [✕ 3 selected · 🗑 · ⋮]
     nav.set_view("mark".into());
     nav.set_footer(false);
+    nav.set_selecting(true);
     nav.set_selected(3);
     nav.set_selection_actions(model(vec![
         s.ui.global::<Icons>().invoke_act(6, "Delete marked".into()),
     ]));
+    nav.set_selection_menu(strings(&["Select all", "Export"]));
     let (marked, _) = sections(&["Ava Lindqvist", "Ben Okafor", "Felix Brandt"]);
     c.set_sections(model(marked));
     s.shoot("p2-contacts-select");
     nav.set_selected(0);
+    nav.set_selecting(false);
 
     // the card
     nav.set_view("card".into());
@@ -313,7 +361,7 @@ fn contacts() {
         &s,
         "Ava Lindqvist",
         true,
-        &[(8, "Favourite"), (4, "Edit")],
+        &[(8, "Remove from favourites"), (4, "Edit")],
         &["Delete", "Speed dial", "Block contact", "Send as vCard"],
     );
     c.set_card_name("Ava Lindqvist".into());
@@ -333,7 +381,6 @@ fn contacts() {
     c.set_card_email("ava@example.org".into());
     c.set_card_note("Met at the Yerevan meetup".into());
     c.set_card_speed(2);
-    c.set_can_email(true);
     s.shoot("p2-contacts-card");
 
     // Delete: on the device the shell's QUERY asks; the app's query draws the same box here
@@ -351,11 +398,9 @@ fn contacts() {
         &s,
         "Անի Պետրոսյան",
         true,
-        &[(7, "Favourite"), (4, "Edit")],
+        &[(7, "Add to favourites"), (4, "Edit")],
         &["Delete", "Speed dial", "Unblock contact", "Send as vCard"],
     );
-    // an Armenian name's title takes DejaVu Sans (phone_common::ui::title_font)
-    s.ui.global::<Nav>().set_title_font("DejaVu Sans".into());
     c.set_card_name("Անի Պետրոսյան".into());
     c.set_card_company("".into());
     c.set_card_initials("ԱՊ".into());
@@ -384,7 +429,6 @@ fn contacts() {
     c.set_dialog_open(false);
 
     // the editor and its number-type sheet
-    s.ui.global::<Nav>().set_title_font("".into());
     editor(&s);
     s.shoot("p2-contacts-editor");
     c.set_picking(1);
@@ -400,7 +444,7 @@ fn contacts() {
     c.set_index(model(vec![]));
     s.shoot("p2-contacts-empty");
 
-    // Buttons mode: the app is 639 dp high
+    // Buttons mode: the app is 639 dp high, the strip has 34 places
     s.resize(1917);
     c.set_total(42);
     c.set_favourites(model(vec![
@@ -411,7 +455,10 @@ fn contacts() {
     ]));
     let (secs, tops) = sections(&[]);
     c.set_sections(model(secs));
-    c.set_index(model(index(&tops)));
+    let strip = index(&tops, 639.0);
+    assert_eq!(strip.len(), 34);
+    assert!(strip.iter().any(|m| m.text == "•"));
+    c.set_index(model(strip));
     s.shoot("p2-contacts-list-buttons");
     editor(&s);
     s.shoot("p2-contacts-editor-buttons");
@@ -428,7 +475,7 @@ fn contacts() {
         },
     ]));
     // the second number: 12 + 96 + 8 (names) + 44 (company) + 34 (band) + 44 + 8 + 22 under the header
-    press(&s, 200.0, 48.0 + 268.0, true);
+    s.press(200.0, 48.0 + 268.0, true);
     for ch in "5550199".chars() {
         let text = SharedString::from(ch.encode_utf8(&mut [0; 4]) as &str);
         s.ui.window()
