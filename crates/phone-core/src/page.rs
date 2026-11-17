@@ -52,8 +52,10 @@ pub enum Page {
     Messages(MessagesView),
 }
 
+/// Phone's views: Recents is the root; the dialer is the keypad sheet over it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PhoneView {
+    /// Recents with the keypad sheet open
     Dial,
     Recents,
     Detail,
@@ -145,8 +147,8 @@ impl Page {
             Page::Phone(v) => (
                 0,
                 match v {
-                    PhoneView::Dial => "",
-                    PhoneView::Recents => "recents",
+                    PhoneView::Recents => "",
+                    PhoneView::Dial => "dial",
                     PhoneView::Detail => "detail",
                     PhoneView::Speed => "speed",
                 },
@@ -186,15 +188,16 @@ impl Page {
     /// Where Back goes from here; `None` leaves the app (the UI server's Back: home).
     pub fn back(self) -> Option<Self> {
         match self {
-            Page::Phone(PhoneView::Dial) | Page::Contacts(ContactsView::List) | Page::Call => None,
-            Page::Phone(PhoneView::Detail) => Some(Page::Phone(PhoneView::Recents)),
-            Page::Phone(_) => Some(Page::Phone(PhoneView::Dial)),
+            Page::Phone(PhoneView::Recents) | Page::Contacts(ContactsView::List) | Page::Call => {
+                None
+            }
+            Page::Phone(_) => Some(Page::Phone(PhoneView::Recents)),
             Page::Contacts(ContactsView::Edit) => Some(Page::Contacts(ContactsView::Card)),
             Page::Contacts(_) => Some(Page::Contacts(ContactsView::List)),
             Page::Settings(SettingsView::Blocked | SettingsView::Replies) => {
                 Some(Page::Settings(SettingsView::Main))
             }
-            Page::Settings(SettingsView::Main) => None,
+            Page::Settings(SettingsView::Main) => Some(Page::Phone(PhoneView::Recents)),
             Page::Messages(MessagesView::List) => None,
             Page::Messages(MessagesView::Details) => Some(Page::Messages(MessagesView::Thread)),
             Page::Messages(_) => Some(Page::Messages(MessagesView::List)),
@@ -238,7 +241,16 @@ mod tests {
             Page::Phone(PhoneView::Detail).back(),
             Some(Page::Phone(PhoneView::Recents))
         );
-        assert_eq!(Page::Phone(PhoneView::Dial).back(), None);
+        assert_eq!(
+            Page::Phone(PhoneView::Dial).back(),
+            Some(Page::Phone(PhoneView::Recents))
+        );
+        assert_eq!(Page::Phone(PhoneView::Recents).back(), None);
+        assert_eq!(Page::from_number(app::PHONE, 0).unwrap().nav(), (0, ""));
+        assert_eq!(
+            Page::Settings(SettingsView::Main).back(),
+            Some(Page::Phone(PhoneView::Recents))
+        );
         assert_eq!(Page::from_number(app::MESSAGES, 0).unwrap().nav(), (6, ""));
         assert_eq!(
             Page::Messages(MessagesView::Thread).back(),

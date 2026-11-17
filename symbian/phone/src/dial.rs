@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! The Phone page (mockups 3-8, 27): the dialer (recent calls or smart matches above the keypad, long presses for
-//! `+`, voicemail and speed dial, the `* + p w` cycle), Recents (filter chips, day bands, folded repeats, Block /
-//! Delete on a held row), call details, speed dial (with a contact picker); and [`place_call`], which every area
-//! dials through.
+//! The Phone page (NEOPHONE v2 p2-phone-*): Recents, the root (filter chips, day sections, folded repeats, the
+//! header's search, selection mode with Block and Delete); the keypad sheet over it (smart-dial matches above it, long
+//! presses for `+`, voicemail and speed dial, the `* + p w` cycle); call details; speed dial (with a contact sheet);
+//! and [`place_call`], which every area dials through.
 
 use crate::ctx::{Ctx, Model};
 use crate::prefs;
@@ -10,12 +10,12 @@ use alloc::format;
 use alloc::rc::Rc;
 use alloc::string::String;
 use alloc::vec::Vec;
-use contacts::recents::{duration, when, when_long};
+use contacts::recents::{duration, when_long};
 use modem_ipc::{LogEntry, call, log};
 use neoui_proto::settings::keys;
-use phone_common::ui::{Chrome, model, strings, tool};
+use phone_common::ui::{Chrome, model, tool};
 use phone_core::dial::{Dialer, Long, Tones, matches};
-use phone_core::page::{Page, PhoneView, SettingsView};
+use phone_core::page::{Page, PhoneView};
 use phone_core::recents::{self, Filter};
 use phone_core::speed;
 use phone_rules::caller::{caller_line, presentation};
@@ -23,22 +23,13 @@ use phone_rules::dial::{Action, Flags, Kind, classify};
 use phone_ui::{DetailCall, DialState, LogRow, MatchRow, PhoneApp, PickRow, SpeedTile};
 use slint::{ComponentHandle, SharedString};
 
-/// The avatar palette's size (`Tints` in ui/phone/pages.slint).
-const TINTS: u32 = 8;
+/// The avatar palette's size (`Tints` in phone-ui's parts.slint, phone_core::calls::TINTS).
+const TINTS: u32 = phone_core::calls::TINTS.len() as u32;
 /// How long typed tones wait for their call to connect.
 const TONES_WAIT_MS: u64 = 60_000;
 /// How often the tones check whether their call connected.
 const TONES_POLL_MS: u64 = 250;
 const IMEI: &str = "*#06#";
-
-/// A popup list over a view, and what it acts on.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Sheet {
-    /// a held Recents row (log id)
-    Row(u32),
-    /// an assigned speed-dial key
-    Speed(usize),
-}
 
 #[derive(Default)]
 pub struct State {
@@ -48,8 +39,14 @@ pub struct State {
     filter: Filter,
     /// the call log entry the details show
     detail: u32,
-    sheet: Option<Sheet>,
-    /// the speed-dial key the picker assigns, and the numbers of its rows
+    /// selection mode on Recents: the rows picked (their newest entry's id)
+    selecting: bool,
+    selected: Vec<u32>,
+    /// the header's search on Recents
+    query: String,
+    /// an assigned speed-dial key's sheet (Change, Remove)
+    key: Option<usize>,
+    /// the speed-dial key the contact sheet assigns, and the numbers of its rows
     pick: Option<usize>,
     picked: Vec<String>,
     /// a number waiting for its speed-dial key (Contacts -> Speed dial)
@@ -91,6 +88,9 @@ fn act(ctx: &Ctx, action: &str, value: &str) {
         }
         "backspace" => ctx.m.borrow_mut().dial.dialer.backspace(),
         "clear" => ctx.m.borrow_mut().dial.dialer.clear(),
+        "call" => return call_typed(ctx),
+        "keypad" => return ctx.go(Page::Phone(PhoneView::Dial)),
+        "keypad-close" => return ctx.go(Page::Phone(PhoneView::Recents)),
         "match" => {
             let n = ctx.m.borrow().dial.matched.get(id as usize).cloned();
             if let Some(n) = n {
@@ -102,14 +102,30 @@ fn act(ctx: &Ctx, action: &str, value: &str) {
             ctx.new_contact(&n);
             return;
         }
-        "recent" | "row-call" => call_entry(ctx, id),
+        "row-call" => call_entry(ctx, id),
         "filter" => ctx.m.borrow_mut().dial.filter = Filter::from_index(n as i32),
+        "row" if ctx.m.borrow().dial.selecting => {
+            let mut m = ctx.m.borrow_mut();
+            let d = &mut m.dial;
+            match d.selected.iter().position(|x| *x == id) {
+                Some(i) => {
+                    d.selected.remove(i);
+                }
+                None => d.selected.push(id),
+            }
+            // the last one unticked: selection mode ends
+            d.selecting = !d.selected.is_empty();
+        }
         "row" => {
             ctx.m.borrow_mut().dial.detail = id;
             ctx.go(Page::Phone(PhoneView::Detail));
             return;
         }
-        "row-hold" => ctx.m.borrow_mut().dial.sheet = Some(Sheet::Row(id)),
+        "row-hold" => {
+            let mut m = ctx.m.borrow_mut();
+            m.dial.selecting = true;
+            m.dial.selected = alloc::vec![id];
+        }
         "detail-call" => {
             let id = ctx.m.borrow().dial.detail;
             call_entry(ctx, id);
@@ -142,8 +158,19 @@ fn act(ctx: &Ctx, action: &str, value: &str) {
             return;
         }
         "speed" => speed_key(ctx, n as usize),
-        "sheet" => sheet_item(ctx, value),
-        "sheet-dismiss" => ctx.m.borrow_mut().dial.sheet = None,
+        "key-change" => {
+            let k = ctx.m.borrow_mut().dial.key.take();
+            if let Some(k) = k {
+                open_picker(ctx, k);
+            }
+        }
+        "key-remove" => {
+            let k = ctx.m.borrow_mut().dial.key.take();
+            if let Some(k) = k {
+                assign(ctx, k, "");
+            }
+        }
+        "key-dismiss" => ctx.m.borrow_mut().dial.key = None,
         "pick" => {
             let (k, n) = {
                 let mut m = ctx.m.borrow_mut();
@@ -162,6 +189,21 @@ fn act(ctx: &Ctx, action: &str, value: &str) {
 
 fn number(ctx: &Ctx) -> String {
     ctx.m.borrow().dial.dialer.number.clone()
+}
+
+/// The keypad sheet's Call: one key 2..9 speed-dials (as on the N8), else the typed number is dialled.
+fn call_typed(ctx: &Ctx) {
+    let (n, key) = {
+        let m = ctx.m.borrow();
+        (m.dial.dialer.number.clone(), m.dial.dialer.single_key())
+    };
+    if n.is_empty() {
+        return;
+    }
+    match key {
+        Some(k) => speed_dial(ctx, k),
+        None => place_call(ctx, &n),
+    }
 }
 
 fn entry(ctx: &Ctx, id: u32) -> Option<LogEntry> {
@@ -185,8 +227,9 @@ fn imei(ctx: &Ctx) {
 fn call_voicemail(ctx: &Ctx) {
     let vm = ctx.m.borrow().prefs.voicemail.clone();
     if vm.is_empty() {
-        ctx.go(Page::Settings(SettingsView::Main));
-        ctx.note("No voicemail number");
+        // no number yet: its form, then Call voicemail again
+        prefs::open_at(ctx, "");
+        prefs::open_form(ctx, "voicemail");
     } else {
         ctx.m.borrow_mut().dial.dialer.clear();
         place_call(ctx, &vm);
@@ -225,7 +268,7 @@ fn speed_key(ctx: &Ctx, k: usize) {
         return assign(ctx, k, &n);
     }
     if speed::number(&ctx.m.borrow().prefs.speed, k).is_some() {
-        ctx.m.borrow_mut().dial.sheet = Some(Sheet::Speed(k));
+        ctx.m.borrow_mut().dial.key = Some(k);
     } else {
         open_picker(ctx, k);
     }
@@ -241,10 +284,19 @@ fn open_picker(ctx: &Ctx, k: usize) {
             .filter_map(|id| m.book.get(id))
             .flat_map(|c| {
                 let title = c.title(m.order);
+                let several = c.numbers.len() > 1;
                 c.numbers.iter().map(move |(l, n)| {
                     let row = PickRow {
                         title: title.as_str().into(),
-                        number: format!("{} · {}", l.text(), n).into(),
+                        // the label only tells a contact's numbers apart
+                        number: if several {
+                            format!("{n} · {}", l.text())
+                        } else {
+                            n.clone()
+                        }
+                        .into(),
+                        initials: recents::initials(&title).into(),
+                        tint: recents::tint(Some(c.id), n, TINTS),
                     };
                     (row, n.clone())
                 })
@@ -273,19 +325,29 @@ fn assign(ctx: &Ctx, k: usize, n: &str) {
     }
 }
 
-fn sheet_item(ctx: &Ctx, item: &str) {
-    let sheet = ctx.m.borrow_mut().dial.sheet.take();
-    match (sheet, item) {
-        (Some(Sheet::Row(id)), "Block" | "Unblock") => {
-            if let Some(e) = entry(ctx, id) {
-                toggle_block(ctx, e.number.as_str());
-            }
+/// Selection mode's Block: every picked row's number is blocked (calls and messages); Delete: their calls go.
+fn on_selected(ctx: &Ctx, block: bool) {
+    let ids = {
+        let mut m = ctx.m.borrow_mut();
+        m.dial.selecting = false;
+        core::mem::take(&mut m.dial.selected)
+    };
+    for id in ids {
+        if !block {
+            delete_calls(ctx, id);
+            continue;
         }
-        (Some(Sheet::Row(id)), "Delete") => delete_calls(ctx, id),
-        (Some(Sheet::Speed(k)), "Change") => open_picker(ctx, k),
-        (Some(Sheet::Speed(k)), "Remove") => assign(ctx, k, ""),
-        _ => {}
+        let n = entry(ctx, id).map(|e| String::from(e.number.as_str()));
+        if let Some(n) = n.filter(|n| !n.is_empty() && prefs::blocked(ctx, n).is_none()) {
+            prefs::block_number(ctx, &n, true, true);
+        }
     }
+}
+
+/// The header's search changed: Recents shows the rows it finds ("" all).
+pub fn searched(ctx: &Ctx, query: &str) {
+    ctx.m.borrow_mut().dial.query = query.into();
+    ctx.show();
 }
 
 fn toggle_block(ctx: &Ctx, n: &str) {
@@ -343,52 +405,30 @@ pub fn show(ctx: &Ctx) {
         Page::Phone(v) => v,
         _ => return,
     };
-    let (sheet, pick) = {
+    {
         let m = ctx.m.borrow();
-        (m.dial.sheet, m.dial.pick.is_some())
-    };
-    d.set_pick_open(pick);
-    show_sheet(ctx, sheet);
+        d.set_pick_open(m.dial.pick.is_some());
+        d.set_key_open(m.dial.key.is_some());
+        if let Some(k) = m.dial.pick.or(m.dial.key) {
+            d.set_pick_heading(format!("Key {k}").into());
+        }
+        d.set_selecting(m.dial.selecting);
+    }
     let (utc, offset) = e32::time::utc_now();
     let now = utc * 1000;
     match view {
-        PhoneView::Dial => show_dial(ctx, now, offset),
+        PhoneView::Dial => {
+            show_dial(ctx);
+            show_recents(ctx, now, offset);
+        }
         PhoneView::Recents => show_recents(ctx, now, offset),
         PhoneView::Detail => show_detail(ctx, now, offset),
         PhoneView::Speed => show_speed(ctx),
     }
 }
 
-fn show_sheet(ctx: &Ctx, sheet: Option<Sheet>) {
-    let ui = ctx.ui();
-    let d = ui.global::<DialState>();
-    d.set_sheet_open(sheet.is_some());
-    let (heading, items): (String, &[&str]) = match sheet {
-        None => return,
-        Some(Sheet::Speed(k)) => (format!("Key {k}"), &["Change", "Remove"]),
-        Some(Sheet::Row(id)) => match entry(ctx, id) {
-            Some(e) if !e.number.as_str().is_empty() => {
-                let n = e.number.as_str();
-                let blocked = prefs::blocked(ctx, n).is_some();
-                let title = ctx.name_of(n).unwrap_or_else(|| n.into());
-                (
-                    title,
-                    if blocked {
-                        &["Unblock", "Delete"]
-                    } else {
-                        &["Block", "Delete"]
-                    },
-                )
-            }
-            _ => (String::new(), &["Delete"]),
-        },
-    };
-    d.set_sheet_heading(heading.into());
-    d.set_sheet_items(strings(items));
-}
-
-/// The row of log entry `e` folding `count` calls: who, the direction, `line` under it and `when` beside it.
-fn log_row(m: &Model, e: &LogEntry, count: u32, section: &str, line: &str, when: &str) -> LogRow {
+/// The row of log entry `e` folding `count` calls: who, the direction and `line` under it.
+fn log_row(m: &Model, e: &LogEntry, count: u32, section: &str, line: &str) -> LogRow {
     let n = e.number.as_str();
     let contact = m.book.lookup(n);
     let name = contact.map(|c| c.title(m.order));
@@ -400,7 +440,6 @@ fn log_row(m: &Model, e: &LogEntry, count: u32, section: &str, line: &str, when:
         count: count as i32,
         kind: i32::from(e.kind),
         line: line.into(),
-        when: when.into(),
         initials: name
             .as_deref()
             .map(recents::initials)
@@ -408,25 +447,15 @@ fn log_row(m: &Model, e: &LogEntry, count: u32, section: &str, line: &str, when:
             .into(),
         tint: contact.map_or(-1, |c| recents::tint(Some(c.id), n, TINTS)),
         private: n.is_empty() || e.presentation == presentation::RESTRICTED,
+        checked: m.dial.selecting && m.dial.selected.contains(&e.id),
     }
 }
 
-fn show_dial(ctx: &Ctx, now: i64, offset: i32) {
-    let (number, recent, rows, numbers) = {
+/// The keypad sheet: the typed number and the contacts it matches (Settings ▸ Smart dial).
+fn show_dial(ctx: &Ctx) {
+    let (number, rows, numbers) = {
         let m = ctx.m.borrow();
         let number = m.dial.dialer.number.clone();
-        let recent: Vec<LogRow> = if number.is_empty() {
-            recents::recent(&m.log)
-                .into_iter()
-                .take(30)
-                .map(|(i, count)| {
-                    let e = &m.log[i];
-                    log_row(&m, e, count, "", "", &when(e.utc, now, offset))
-                })
-                .collect()
-        } else {
-            Vec::new()
-        };
         let found = if m.prefs.smart_dial {
             matches(&m.book, &number, m.order)
         } else {
@@ -440,27 +469,28 @@ fn show_dial(ctx: &Ctx, now: i64, offset: i32) {
             .iter()
             .map(|f| {
                 let title = format!("{}{}{}", f.name.pre, f.name.hit, f.name.post);
+                let [name_pre, name_hit, name_post] = f.name.spaced();
+                let [num_pre, num_hit, num_post] = f.number.spaced();
                 MatchRow {
                     id: f.id as i32,
-                    name_pre: f.name.pre.as_str().into(),
-                    name_hit: f.name.hit.as_str().into(),
-                    name_post: f.name.post.as_str().into(),
+                    name_pre: name_pre.into(),
+                    name_hit: name_hit.into(),
+                    name_post: name_post.into(),
                     label: f.label.text().into(),
-                    num_pre: f.number.pre.as_str().into(),
-                    num_hit: f.number.hit.as_str().into(),
-                    num_post: f.number.post.as_str().into(),
+                    num_pre: num_pre.into(),
+                    num_hit: num_hit.into(),
+                    num_post: num_post.into(),
                     initials: recents::initials(&title).into(),
                     tint: recents::tint(Some(f.id), "", TINTS),
                 }
             })
             .collect();
-        (number, recent, rows, numbers)
+        (number, rows, numbers)
     };
     ctx.m.borrow_mut().dial.matched = numbers;
     let ui = ctx.ui();
     let d = ui.global::<DialState>();
     d.set_number(number.into());
-    d.set_recent(model(recent));
     d.set_matches(model(rows));
 }
 
@@ -472,22 +502,19 @@ fn show_recents(ctx: &Ctx, now: i64, offset: i32) {
             m.dial.filter = Filter::All;
         }
     }
-    let (rows, filter, missed, blocked, newest) = {
+    let (rows, filter, missed, blocked, newest, searching) = {
         let m = ctx.m.borrow();
         let filter = m.dial.filter;
         let rows: Vec<LogRow> = recents::rows(&m.log, filter, now, offset)
             .into_iter()
             .map(|r| {
                 let e = &m.log[r.first];
-                let known = m.book.lookup(e.number.as_str()).is_some();
+                let contact = m.book.lookup(e.number.as_str());
                 let at = recents::row_when(e.utc, now, offset);
                 let word = if e.kind == log::BLOCKED {
-                    recents::why_text(e, &m.block, known)
+                    recents::why_text(e, &m.block, contact.is_some())
                 } else {
-                    let label = m
-                        .book
-                        .lookup(e.number.as_str())
-                        .and_then(|c| recents::label_of(c, e.number.as_str()));
+                    let label = contact.and_then(|c| recents::label_of(c, e.number.as_str()));
                     recents::second_line(e, label)
                 };
                 let line = if at.is_empty() {
@@ -495,7 +522,11 @@ fn show_recents(ctx: &Ctx, now: i64, offset: i32) {
                 } else {
                     format!("{word} · {at}")
                 };
-                log_row(&m, e, r.count, r.section.text(), &line, "")
+                log_row(&m, e, r.count, r.section.text(), &line)
+            })
+            .filter(|r| {
+                let n = entry_number(&m, r.id as u32);
+                recents::found(&r.title, n, &m.dial.query)
             })
             .collect();
         let blocked = m.log.iter().filter(|e| e.kind == log::BLOCKED).count();
@@ -504,7 +535,14 @@ fn show_recents(ctx: &Ctx, now: i64, offset: i32) {
         let seen = (m.visible && matches!(filter, Filter::All | Filter::Missed))
             .then_some(newest)
             .filter(|n| *n > m.prefs.missed_seen);
-        (rows, filter, missed, blocked, seen)
+        (
+            rows,
+            filter,
+            missed,
+            blocked,
+            seen,
+            !m.dial.query.trim().is_empty(),
+        )
     };
     // seeing the list marks its missed calls seen (the count shows this once)
     if let Some(id) = newest {
@@ -519,7 +557,15 @@ fn show_recents(ctx: &Ctx, now: i64, offset: i32) {
     d.set_missed_new(missed as i32);
     d.set_has_blocked(blocked > 0);
     d.set_blocked_count(blocked as i32);
+    d.set_searching(searching);
     d.set_rows(model(rows));
+}
+
+fn entry_number(m: &Model, id: u32) -> &str {
+    m.log
+        .iter()
+        .find(|e| e.id == id)
+        .map_or("", |e| e.number.as_str())
 }
 
 fn show_detail(ctx: &Ctx, now: i64, offset: i32) {
@@ -554,7 +600,6 @@ fn show_detail(ctx: &Ctx, now: i64, offset: i32) {
         .collect();
     let ui = ctx.ui();
     let d = ui.global::<DialState>();
-    d.set_detail_title(title.as_str().into());
     d.set_detail_number(number.into());
     d.set_detail_initials(
         name.as_deref()
@@ -598,72 +643,72 @@ fn show_speed(ctx: &Ctx) {
 
 pub fn chrome(ctx: &Ctx) -> Chrome {
     match ctx.page() {
-        Page::Phone(PhoneView::Recents) => {
-            Chrome::titled("Recent calls").with(tool::DELETE, 0, "Clear")
-        }
-        Page::Phone(PhoneView::Detail) => Chrome::titled("Call details"),
+        Page::Phone(PhoneView::Detail) => Chrome::titled(&detail_title(ctx)),
         Page::Phone(PhoneView::Speed) => Chrome::titled("Speed dial"),
-        _ => Chrome::titled("Phone").with(tool::CALL, tool::PILL, "Call"),
+        _ => {
+            let m = ctx.m.borrow();
+            let mut c = Chrome::titled("Phone");
+            if m.dial.selecting {
+                c.selected = m.dial.selected.len() as i32;
+                c.selection = alloc::vec![(tool::BLOCK, "Block"), (tool::DELETE, "Delete")];
+            } else {
+                c.search = Some("Search calls");
+            }
+            c
+        }
     }
+}
+
+/// The details' header: the caller's name, the number, or "Private number".
+fn detail_title(ctx: &Ctx) -> String {
+    let Some(e) = entry(ctx, ctx.m.borrow().dial.detail) else {
+        return "Call details".into();
+    };
+    let n = e.number.as_str();
+    let name = ctx.name_of(n);
+    caller_line(name.as_deref(), n, e.presentation, false).0
 }
 
 pub fn options(ctx: &Ctx) -> Vec<&'static str> {
     match ctx.page() {
-        Page::Phone(PhoneView::Recents) => alloc::vec!["Clear list", "Settings"],
         Page::Phone(PhoneView::Detail) => alloc::vec!["Delete from log"],
         Page::Phone(PhoneView::Speed) => alloc::vec!["Settings"],
-        _ => alloc::vec!["Recent calls", "Speed dial", "Call voicemail", "Settings"],
+        _ if ctx.m.borrow().dial.selecting => Vec::new(),
+        _ => alloc::vec!["Speed dial", "Call voicemail", "Clear list", "Settings"],
     }
 }
 
 pub fn option(ctx: &Ctx, item: &str) {
     match item {
-        "Recent calls" => ctx.go(Page::Phone(PhoneView::Recents)),
         "Speed dial" => ctx.go(Page::Phone(PhoneView::Speed)),
         "Call voicemail" => call_voicemail(ctx),
-        "Settings" => ctx.go(Page::Settings(SettingsView::Main)),
+        "Settings" => prefs::open_at(ctx, ""),
         "Clear list" => {
             clear_filter(ctx);
             ctx.show();
         }
         "Delete from log" => act(ctx, "detail-delete", ""),
-        _ => {}
-    }
-}
-
-/// The toolbar's middle button: Call in the dialer (an empty number opens Recents, as on the N8; one key 2..9
-/// speed-dials), Clear in Recents.
-pub fn action(ctx: &Ctx) {
-    match ctx.page() {
-        Page::Phone(PhoneView::Dial) => {
-            let (n, key) = {
-                let m = ctx.m.borrow();
-                (m.dial.dialer.number.clone(), m.dial.dialer.single_key())
-            };
-            if n.is_empty() {
-                ctx.go(Page::Phone(PhoneView::Recents));
-            } else if let Some(k) = key {
-                speed_dial(ctx, k);
-            } else {
-                place_call(ctx, &n);
-            }
-        }
-        Page::Phone(PhoneView::Recents) => {
-            clear_filter(ctx);
+        "Block" | "Delete" => {
+            on_selected(ctx, item == "Block");
             ctx.show();
         }
         _ => {}
     }
 }
 
-/// Back closes a sheet or the picker first; leaving Speed dial drops a number waiting for a key.
+/// No Phone view has a header action (Call is in the keypad sheet).
+pub fn action(_ctx: &Ctx) {}
+
+/// Back closes a sheet or selection mode first; leaving Speed dial drops a number waiting for a key.
 pub fn back(ctx: &Ctx) -> bool {
     let closed = {
         let mut m = ctx.m.borrow_mut();
         let d = &mut m.dial;
-        if d.sheet.is_some() || d.pick.is_some() {
-            d.sheet = None;
+        if d.key.is_some() || d.pick.is_some() || d.selecting {
+            d.key = None;
             d.pick = None;
+            d.selecting = false;
+            d.selected.clear();
             true
         } else {
             d.pending = None;
@@ -677,8 +722,8 @@ pub fn back(ctx: &Ctx) -> bool {
 }
 
 pub fn wants_back(ctx: &Ctx) -> bool {
-    let m = ctx.m.borrow();
-    m.dial.sheet.is_some() || m.dial.pick.is_some()
+    let d = &ctx.m.borrow().dial;
+    d.key.is_some() || d.pick.is_some() || d.selecting
 }
 
 /// The tones after a dialled number: start them when the call connects, send each when due, drop them when the call

@@ -227,9 +227,13 @@ pub fn initials(name: &str) -> String {
         .collect()
 }
 
-/// An avatar's colour (0xRRGGBB) that stays with the contact (the mockups' five).
+/// The avatar palette of the v2 boards (phone-ui `Tints` has the same eight, in this order).
+pub const TINTS: [u32; 8] = [
+    0x15803d, 0xbe185d, 0xc2410c, 0x6d28d9, 0x0e7490, 0x2f80ed, 0x8b5cf6, 0x14a3a3,
+];
+
+/// An avatar's colour (0xRRGGBB) that stays with the contact.
 pub fn tint(contact_id: u32) -> u32 {
-    const TINTS: [u32; 5] = [0x22b46a, 0xd6409f, 0xe8833a, 0x8b5cf6, 0x14a3a3];
     TINTS[contact_id as usize % TINTS.len()]
 }
 
@@ -386,7 +390,7 @@ mod tests {
         assert_eq!(initials("Անի Պետրոսյան"), "ԱՊ");
         assert_eq!(initials("ivan"), "I");
         assert_eq!(initials("+1 555 0142"), "");
-        assert_eq!(tint(0), 0x22b46a);
-        assert_eq!(tint(6), 0xd6409f);
+        assert_eq!(tint(0), 0x15803d);
+        assert_eq!(tint(9), 0xbe185d);
     }
 }

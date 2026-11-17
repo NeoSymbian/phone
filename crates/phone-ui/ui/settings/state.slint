@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Phone & Contacts settings, Blocked numbers: what the app shows and what the screens ask for (`act`).
+// Settings (Phone, Contacts and Messages), Blocked numbers, Quick replies and their forms: what the app shows and what
+// the screens ask for (`act`).
 
-// One row of Blocked numbers. `kind`: 0 a contact's number (avatar), 1 a number (#), 2 a prefix (block glyph).
+// One row of Blocked numbers. `kind`: 0 a contact's number (avatar, `tint` the palette index), 1 a number (#), 2 a
+// prefix (block glyph).
 export struct BlockRow {
     title: string,
     subtitle: string,
     initials: string,
-    tint: color,
+    tint: int,
     kind: int,
 }
 
@@ -33,23 +35,21 @@ export global SettingsState {
     in property <int> sms-alert;
     in property <[string]> replies;
 
+    // the section the page opens at (AppEvent::Open's arg): "" the top, "messages", "contacts"
+    in property <string> section;
     // the open picker: "" none, "clir", "log", "order", "label", "alert"
     in-out property <string> picker;
-    // the voicemail number (or, with `editing-smsc`, the message centre) being edited (Save/Cancel in the toolbar)
-    in-out property <bool> editing;
-    in-out property <bool> editing-smsc;
+    // the open form, under the header's [✕ title ✓]: "" none, "voicemail", "smsc" (the message centre), "block"
+    // (Block a number, with `add-prefix`), "reply" (a new quick reply); what is typed in it
+    in-out property <string> form;
     in-out property <string> draft;
+    in-out property <bool> add-prefix;
 
     // Blocked numbers
     in property <bool> block-private;
     in property <bool> block-unknown;
     in property <[BlockRow]> rules;
-    // the add row (Add/Cancel in the toolbar) of Blocked numbers and of Quick replies: the typed number or reply,
-    // "Whole prefix"
-    in-out property <bool> adding;
-    in-out property <string> add-text;
-    in-out property <bool> add-prefix;
-    // Options ▸ Remove all: the confirmation
+    // ⋮ ▸ Remove all: the confirmation (the shell's dialog)
     in-out property <bool> query;
 
     // "opened" (the main view appeared: close what was left open, ask the network about call waiting),

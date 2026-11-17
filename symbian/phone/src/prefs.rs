@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! Settings: Phone & Contacts (caller ID, call waiting and the message settings go to MODEMD, the rest are
-//! `phone.*`/`contacts.*` settings), Quick replies (a file of ours, crate::store), Blocked numbers (MODEMD's blocklist, edited through [`phone_core::blocking`]), and the blocking calls
-//! the other areas make.
+//! Settings (NEOPHONE v2 p2-phone-settings, p2-msg-settings): Calls, Log, Contacts and Messages on one page (caller
+//! ID, call waiting and the message settings go to MODEMD, the rest are `phone.*`/`contacts.*` settings), opened at a
+//! section by Messages and Contacts; Quick replies (a file of ours, crate::store); Blocked numbers (MODEMD's
+//! blocklist, edited through [`phone_core::blocking`]); the forms under [✕ title ✓]; and the blocking calls the
+//! other areas make.
 //!
-//! The screens keep their own open/closed state in `SettingsState` (the picker, the voicemail editor, the add row,
-//! the Remove all query); this module reads it for the toolbar and Back.
+//! The screens keep their own open/closed state in `SettingsState` (the picker, the form, the Remove all query); this
+//! module reads it for the header and Back.
 
 use crate::ctx::Ctx;
 use alloc::format;
@@ -16,9 +18,10 @@ use neoui_proto::settings::{Key, Setting, keys};
 use phone_common::ui::{Chrome, model, strings, tool};
 use phone_core::blocking::{self, Refusal};
 use phone_core::page::{Page, SettingsView};
+use phone_core::{calls, recents};
 use phone_rules::block::List;
 use phone_ui::{BlockRow, KeyboardFocus, PhoneApp, SettingsState};
-use slint::{Color, ComponentHandle, SharedString};
+use slint::{ComponentHandle, SharedString};
 
 /// The `phone.*` and `contacts.*` settings (read by all three apps: phone_common::prefs).
 pub use phone_common::prefs::State;
@@ -45,7 +48,6 @@ fn act(ctx: &Ctx, action: &str, value: &str) {
             let s = ui.global::<SettingsState>();
             s.set_picker(SharedString::new());
             s.set_query(false);
-            close(ctx);
             let _ = ctx.m.borrow_mut().modem.waiting(None);
             // the message centre may have come from the SIM since
             crate::ctx::load_sms(ctx);
@@ -65,8 +67,12 @@ fn act(ctx: &Ctx, action: &str, value: &str) {
             keys::CONTACTS_DEFAULT_LABEL,
             i.min(Label::ALL.len() - 1) as i32,
         ),
-        "summary" => save(ctx, keys::PHONE_SUMMARY, on),
-        "duration" => save(ctx, keys::PHONE_SHOW_DURATION, on),
+        // one switch on the v2 page: the summary shows the call's duration
+        "summary" => {
+            save(ctx, keys::PHONE_SUMMARY, on);
+            save(ctx, keys::PHONE_SHOW_DURATION, on);
+        }
+        "form" => return open_form(ctx, value),
         "smart-dial" => save(ctx, keys::PHONE_SMART_DIAL, on),
         "waiting" => {
             let r = ctx.m.borrow_mut().modem.waiting(Some(on));
@@ -197,19 +203,6 @@ fn note_result(ctx: &Ctx, r: Result<String, String>) -> bool {
     }
 }
 
-/// "Ani Petrosyan" -> "AP".
-fn initials(name: &str) -> String {
-    name.split_whitespace()
-        .take(2)
-        .filter_map(|w| w.chars().next())
-        .flat_map(char::to_uppercase)
-        .collect()
-}
-
-// shortcut: a fixed palette by contact id (the mockups' colours); use the Contacts area's avatar colours once it has
-// them.
-const TINTS: [u32; 5] = [0x22b46a, 0xd6409f, 0xe8833a, 0x8b5cf6, 0x14a3a3];
-
 fn rows(ctx: &Ctx) -> Vec<BlockRow> {
     let m = ctx.m.borrow();
     m.block
@@ -225,12 +218,11 @@ fn rows(ctx: &Ctx) -> Vec<BlockRow> {
             match owner {
                 Some(c) => {
                     let name = c.title(m.order);
-                    let t = TINTS[c.id as usize % TINTS.len()];
                     BlockRow {
-                        initials: initials(&name).into(),
+                        initials: recents::initials(&name).into(),
                         title: name.into(),
                         subtitle: format!("{} · {what}", r.number).into(),
-                        tint: Color::from_rgb_u8((t >> 16) as u8, (t >> 8) as u8, t as u8),
+                        tint: recents::tint(Some(c.id), &r.number, calls::TINTS.len() as u32),
                         kind: 0,
                     }
                 }
@@ -238,7 +230,7 @@ fn rows(ctx: &Ctx) -> Vec<BlockRow> {
                     title: blocking::title(r).into(),
                     subtitle: what.into(),
                     initials: SharedString::new(),
-                    tint: Color::default(),
+                    tint: -1,
                     kind: if r.prefix { 2 } else { 1 },
                 },
             }
@@ -278,38 +270,38 @@ pub fn show(ctx: &Ctx) {
 pub fn chrome(ctx: &Ctx) -> Chrome {
     let ui = ctx.ui();
     let s = ui.global::<SettingsState>();
-    let page = ctx.page();
-    if matches!(
-        page,
-        Page::Settings(SettingsView::Blocked | SettingsView::Replies)
-    ) {
-        let c = Chrome::titled(if page == Page::Settings(SettingsView::Replies) {
-            "Quick replies"
-        } else {
-            "Blocked numbers"
-        });
-        let full = page == Page::Settings(SettingsView::Replies)
-            && ctx.m.borrow().msgs.replies.len() >= crate::store::MAX_REPLIES;
-        if s.get_adding() {
-            c.with(tool::CHECK, tool::CANCEL, "Add")
-        } else if full {
-            c
-        } else {
-            c.with(tool::ADD, 0, "Add")
+    let form = s.get_form();
+    if !form.is_empty() {
+        let title = match form.as_str() {
+            "voicemail" => "Voicemail number",
+            "smsc" => "Message centre",
+            "block" => "Block a number",
+            _ => "New quick reply",
+        };
+        return Chrome::titled(title).with(tool::CHECK, tool::CANCEL, "Save");
+    }
+    match ctx.page() {
+        Page::Settings(SettingsView::Replies) => {
+            let c = Chrome::titled("Quick replies");
+            if ctx.m.borrow().msgs.replies.len() >= crate::store::MAX_REPLIES {
+                c
+            } else {
+                c.with(tool::ADD, 0, "Add")
+            }
         }
-    } else {
-        let c = Chrome::titled("Phone & Contacts");
-        if s.get_editing() || s.get_editing_smsc() {
-            c.with(tool::CHECK, tool::CANCEL, "Save")
-        } else {
-            c
+        Page::Settings(SettingsView::Blocked) => {
+            Chrome::titled("Blocked numbers").with(tool::ADD, 0, "Add")
         }
+        // the shared page, as Messages names it
+        _ if s.get_section() == "messages" => Chrome::titled("Settings"),
+        _ => Chrome::titled("Phone & Contacts"),
     }
 }
 
 pub fn options(ctx: &Ctx) -> Vec<&'static str> {
     let blocked = ctx.page() == Page::Settings(SettingsView::Blocked);
-    if blocked && !ctx.m.borrow().block.rules.is_empty() {
+    let form = !ctx.ui().global::<SettingsState>().get_form().is_empty();
+    if blocked && !form && !ctx.m.borrow().block.rules.is_empty() {
         alloc::vec!["Remove all"]
     } else {
         Vec::new()
@@ -322,77 +314,99 @@ pub fn option(ctx: &Ctx, item: &str) {
     }
 }
 
-/// The toolbar's middle button: Save (the voicemail number), Add (open the add row), Add (the typed number).
+/// Settings at `section` ("messages", "contacts"; "" the top).
+pub fn open_at(ctx: &Ctx, section: &str) {
+    let ui = ctx.ui();
+    let s = ui.global::<SettingsState>();
+    s.set_section(section.into());
+    s.set_form(SharedString::new());
+    ctx.go(Page::Settings(SettingsView::Main));
+}
+
+/// Open a form: "voicemail" and "smsc" start from the number set, "block" and "reply" empty.
+pub fn open_form(ctx: &Ctx, form: &str) {
+    let draft = {
+        let m = ctx.m.borrow();
+        match form {
+            "voicemail" => m.prefs.voicemail.clone(),
+            "smsc" => String::from(m.msgs.settings.smsc.as_str()),
+            _ => String::new(),
+        }
+    };
+    let ui = ctx.ui();
+    let s = ui.global::<SettingsState>();
+    s.set_draft(draft.into());
+    s.set_add_prefix(false);
+    s.set_form(form.into());
+}
+
+/// The form's ✓, or the header's + (Blocked numbers, Quick replies: their form).
 pub fn action(ctx: &Ctx) {
     let ui = ctx.ui();
     let s = ui.global::<SettingsState>();
-    if ctx.page() == Page::Settings(SettingsView::Replies) {
-        if !s.get_adding() {
-            s.set_add_text(SharedString::new());
-            s.set_adding(true);
-            return;
-        }
-        let text = String::from(s.get_add_text().trim());
-        if !text.is_empty() {
-            let mut replies = ctx.m.borrow().msgs.replies.clone();
-            replies.truncate(crate::store::MAX_REPLIES - 1);
-            replies.push(text.replace('\n', " "));
-            save_replies(ctx, replies);
-        }
-        close(ctx);
-    } else if s.get_editing_smsc() {
-        let v = String::from(s.get_draft().trim());
-        if v.is_empty() || !v.chars().all(|c| c.is_ascii_digit() || " +-".contains(c)) {
-            ctx.note("Use digits and +");
-            return;
-        }
-        let mut sms = ctx.m.borrow().msgs.settings;
-        sms.smsc = modem_ipc::Text::new(&v);
-        send_sms_settings(ctx, sms);
-        close(ctx);
-        ctx.note("Saved");
-    } else if ctx.page() == Page::Settings(SettingsView::Blocked) {
-        if !s.get_adding() {
-            s.set_add_text(SharedString::new());
-            s.set_add_prefix(false);
-            s.set_adding(true);
-            return;
-        }
-        let text = s.get_add_text();
-        let prefix = s.get_add_prefix();
-        let done = format!("Blocked {}", text.trim());
-        if edit_block(ctx, |l| blocking::add(l, &text, prefix, true, true), &done) {
+    let draft = String::from(s.get_draft().trim());
+    match s.get_form().as_str() {
+        "" => match ctx.page() {
+            Page::Settings(SettingsView::Replies) => open_form(ctx, "reply"),
+            Page::Settings(SettingsView::Blocked) => open_form(ctx, "block"),
+            _ => {}
+        },
+        "reply" => {
+            if !draft.is_empty() {
+                let mut replies = ctx.m.borrow().msgs.replies.clone();
+                replies.truncate(crate::store::MAX_REPLIES - 1);
+                replies.push(draft.replace('\n', " "));
+                save_replies(ctx, replies);
+            }
             close(ctx);
         }
-    } else if s.get_editing() {
-        let v = s.get_draft();
-        let v = v.trim();
-        if !v
-            .chars()
-            .all(|c| c.is_ascii_digit() || " +*#pw-".contains(c))
-        {
-            ctx.note("Use digits and + * #");
-            return;
-        }
-        match ctx.app.set_setting(keys::PHONE_VOICEMAIL, String::from(v)) {
-            Ok(()) => {
-                close(ctx);
-                ctx.note("Saved");
+        "smsc" => {
+            if draft.is_empty()
+                || !draft
+                    .chars()
+                    .all(|c| c.is_ascii_digit() || " +-".contains(c))
+            {
+                ctx.note("Use digits and +");
+                return;
             }
-            Err(e) => ctx.note(&format!("Not saved ({e})")),
+            let mut sms = ctx.m.borrow().msgs.settings;
+            sms.smsc = modem_ipc::Text::new(&draft);
+            send_sms_settings(ctx, sms);
+            close(ctx);
+            ctx.note("Saved");
         }
-        reload(ctx);
+        "block" => {
+            let prefix = s.get_add_prefix();
+            let done = format!("Blocked {draft}");
+            if edit_block(ctx, |l| blocking::add(l, &draft, prefix, true, true), &done) {
+                close(ctx);
+            }
+        }
+        _ => {
+            if !draft
+                .chars()
+                .all(|c| c.is_ascii_digit() || " +*#pw-".contains(c))
+            {
+                ctx.note("Use digits and + * #");
+                return;
+            }
+            match ctx.app.set_setting(keys::PHONE_VOICEMAIL, draft) {
+                Ok(()) => {
+                    close(ctx);
+                    ctx.note("Saved");
+                }
+                Err(e) => ctx.note(&format!("Not saved ({e})")),
+            }
+            reload(ctx);
+        }
     }
     ctx.show();
 }
 
-/// Close the voicemail editor and the add row (and the keyboard they opened).
+/// Close the form (and the keyboard it opened).
 fn close(ctx: &Ctx) {
     let ui = ctx.ui();
-    let s = ui.global::<SettingsState>();
-    s.set_editing(false);
-    s.set_editing_smsc(false);
-    s.set_adding(false);
+    ui.global::<SettingsState>().set_form(SharedString::new());
     ui.global::<KeyboardFocus>().set_open(false);
 }
 
@@ -416,7 +430,7 @@ pub fn answer(ctx: &Ctx, yes: bool) {
     }
 }
 
-/// Back closes a picker, the query, the editor or the add row first.
+/// Back closes a picker, the query or the form first.
 pub fn back(ctx: &Ctx) -> bool {
     let ui = ctx.ui();
     let s = ui.global::<SettingsState>();
@@ -424,7 +438,7 @@ pub fn back(ctx: &Ctx) -> bool {
         s.set_picker(SharedString::new());
     } else if s.get_query() {
         s.set_query(false);
-    } else if s.get_editing() || s.get_editing_smsc() || s.get_adding() {
+    } else if !s.get_form().is_empty() {
         close(ctx);
     } else {
         return false;
@@ -436,11 +450,7 @@ pub fn back(ctx: &Ctx) -> bool {
 pub fn wants_back(ctx: &Ctx) -> bool {
     let ui = ctx.ui();
     let s = ui.global::<SettingsState>();
-    !s.get_picker().is_empty()
-        || s.get_query()
-        || s.get_editing()
-        || s.get_editing_smsc()
-        || s.get_adding()
+    !s.get_picker().is_empty() || s.get_query() || !s.get_form().is_empty()
 }
 
 /// Read the settings (`phone.*`, `contacts.*`) into the model.

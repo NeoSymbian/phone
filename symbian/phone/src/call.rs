@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! The call screens (mockups 9-15): incoming, calling, active, call waiting, two calls, the keypad, the summary.
+//! The call screens (NEOPHONE v2 p2-call-*, full screen): incoming, calling, active, call waiting, two calls, the
+//! keypad, the summary.
 //! [`phone_core::calls`] picks the screen from MODEMD's call list; this module fills `CallState`, sends the buttons to
 //! MODEMD, opens the screens for a new call and closes them (after the summary) when the last call ends.
 
@@ -271,10 +272,10 @@ pub fn show(ctx: &Ctx) {
             ("two", clock(&active), o, String::new())
         }
         Screen::Ended(e) => {
-            let d = if show_duration {
-                calls::length(e.seconds.unwrap_or(0))
-            } else {
-                String::new()
+            // a call that never connected has no length to show (p2-call-summary-missed)
+            let d = match e.seconds {
+                Some(t) if show_duration => calls::length(t),
+                _ => String::new(),
             };
             ("ended", String::new(), String::new(), d)
         }
@@ -295,7 +296,11 @@ pub fn show(ctx: &Ctx) {
     g.set_keypad(keypad);
     g.set_tones(tones.into());
     g.set_duration(duration.into());
-    g.set_can_message(true);
+    // a number to text back: not a private caller's
+    g.set_can_message(main.is_some_and(|c| {
+        !c.number.as_str().is_empty()
+            && c.presentation != phone_rules::caller::presentation::RESTRICTED
+    }));
     let mut replies: Vec<SharedString> = ctx
         .m
         .borrow()
