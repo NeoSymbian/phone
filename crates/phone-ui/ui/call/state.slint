@@ -11,10 +11,12 @@ export struct Party {
     // "" = no contact: a grey avatar with a # icon
     initials: string,
     tint: color,
+    // a conference (several callers): the group glyph instead of initials or #
+    group: bool,
 }
 
 export global CallState {
-    // "incoming" (9), "calling" (10), "active" (11), "waiting" (12), "two" (13), "ended" (15), "" none
+    // "incoming" (9), "calling" (10), "active" (11), "waiting" (12), "two" (13), "conference", "ended" (15), "" none
     in-out property <string> screen;
     // the call the screen is about: the caller, our call, the active call, the summary's
     in-out property <Party> main;

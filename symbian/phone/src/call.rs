@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! The call screens (NEOPHONE v2 p2-call-*, full screen): incoming, calling, active, call waiting, two calls, the
-//! keypad, the summary.
+//! The call screens (NEOPHONE v2 p2-call-*, full screen): incoming, calling, active, call waiting, two calls, a
+//! conference, the keypad, the summary.
 //! [`phone_core::calls`] picks the screen from MODEMD's call list; this module fills `CallState`, sends the buttons to
 //! MODEMD, opens the screens for a new call and closes them (after the summary) when the last call ends.
 
@@ -10,7 +10,7 @@ use alloc::rc::Rc;
 use alloc::string::String;
 use alloc::vec::Vec;
 use e32::time::millis;
-use modem_ipc::{Call, Ring, call as st};
+use modem_ipc::{Call, call as st};
 use phone_common::ui::{Chrome, tool};
 use phone_core::calls::{self, Screen, Tracker};
 use phone_core::page::{ContactsView, Page, PhoneView};
@@ -29,8 +29,8 @@ pub struct State {
     pub calls: Tracker,
     keypad: bool,
     tones: String,
-    /// the ring settings Silence replaced, restored once nothing rings
-    silenced: Option<Ring>,
+    /// the call Silence quietened (MODEMD op SILENCE; the ring settings stay), until nothing rings
+    silenced: Option<u8>,
     /// the parties shown, by call id, number and presentation: one contact lookup per call
     who: Vec<(u8, String, u8, Party)>,
 }
@@ -55,6 +55,7 @@ fn calls_of(screen: Screen) -> (Option<Call>, Option<Call>) {
         Screen::Incoming(c) | Screen::Calling(c) | Screen::Active(c) => (Some(c), None),
         Screen::Waiting { active, waiting } => (Some(active), Some(waiting)),
         Screen::Two { active, held } => (Some(active), Some(held)),
+        Screen::Conference { first, .. } => (Some(first), None),
         Screen::Ended(e) => (Some(e.call), None),
     }
 }
@@ -117,12 +118,27 @@ fn act(ctx: &Ctx, action: &str, value: &str) {
         let audio = m.status.map(|s| s.audio).unwrap_or_default();
         match action {
             "answer" => m.modem.answer(id(main)),
+            // a conference ends with all its calls
+            "end" if main.is_some_and(|c| c.multiparty) => {
+                let ids: Vec<u8> = m.status.map_or_else(Vec::new, |s| {
+                    s.calls
+                        .as_slice()
+                        .iter()
+                        .filter(|c| c.multiparty && calls::connected(c))
+                        .map(|c| c.id)
+                        .collect()
+                });
+                ids.iter()
+                    .map(|i| m.modem.hangup(*i))
+                    .find(|r| *r < 0)
+                    .unwrap_or(0)
+            }
             // MODEMD rejects a ringing call as busy
             "reject" | "end" => m.modem.hangup(id(main)),
-            "silence" => match (m.call.silenced, m.status) {
-                (None, Some(s)) => {
-                    m.call.silenced = Some(s.ring);
-                    m.modem.ring(s.ring.volume, true, false)
+            "silence" => match (m.call.silenced, main) {
+                (None, Some(c)) => {
+                    m.call.silenced = Some(c.id);
+                    m.modem.silence(c.id)
                 }
                 _ => 0,
             },
@@ -159,8 +175,33 @@ fn act(ctx: &Ctx, action: &str, value: &str) {
     show(ctx);
 }
 
-/// The caller line and avatar for `c` (looked up once per call).
+/// The caller line and avatar for `c` (looked up once per call); a conference's call: "Conference" over its
+/// participants' names (no initials: the screen shows the group glyph).
 fn party(ctx: &Ctx, c: &Call) -> Party {
+    if c.multiparty {
+        let calls: Vec<Call> = ctx.m.borrow().status.map_or_else(Vec::new, |s| {
+            s.calls
+                .as_slice()
+                .iter()
+                .filter(|x| x.multiparty && calls::connected(x))
+                .copied()
+                .collect()
+        });
+        let names: Vec<String> = calls
+            .iter()
+            .map(|x| String::from(party_of(ctx, x).name.as_str()))
+            .collect();
+        return Party {
+            name: "Conference".into(),
+            line: names.join(", ").into(),
+            group: true,
+            ..Party::default()
+        };
+    }
+    party_of(ctx, c)
+}
+
+fn party_of(ctx: &Ctx, c: &Call) -> Party {
     let number = c.number.as_str();
     let cached = ctx
         .m
@@ -204,6 +245,7 @@ fn party(ctx: &Ctx, c: &Call) -> Party {
         label: if known { label.unwrap_or("") } else { "" }.into(),
         name: main.into(),
         line: line.into(),
+        group: false,
     };
     ctx.m
         .borrow_mut()
@@ -262,6 +304,14 @@ pub fn show(ctx: &Ctx) {
                 "waiting"
             };
             (name, t, String::new(), String::new())
+        }
+        Screen::Conference { first, .. } => {
+            let t = if first.state == st::HOLD {
+                "On hold".into()
+            } else {
+                clock(&first)
+            };
+            ("conference", t, String::new(), String::new())
         }
         Screen::Two { active, held } => {
             let o = if held.state == st::HOLD {
@@ -353,15 +403,13 @@ fn close(ctx: &Ctx) {
 /// MODEMD's status changed: open the call screens for a new call, close them when the last call ends.
 pub fn on_status(ctx: &Ctx) {
     let now = millis();
-    let (u, restore, summary) = {
+    let (u, summary) = {
         let mut m = ctx.m.borrow_mut();
         let Some(s) = m.status else { return };
         let u = m.call.calls.update(&s, now);
-        let restore = if s.calls.as_slice().iter().any(calls::ringing) {
-            None
-        } else {
-            m.call.silenced.take()
-        };
+        if !s.calls.as_slice().iter().any(calls::ringing) {
+            m.call.silenced = None;
+        }
         if u.all_ended {
             m.call.keypad = false;
             m.call.tones.clear();
@@ -371,11 +419,8 @@ pub fn on_status(ctx: &Ctx) {
             Some(*id) == ended || s.calls.as_slice().iter().any(|c| c.id == *id)
         });
         let summary = m.prefs.summary && m.call.calls.ended.is_some_and(|e| e.summary());
-        (u, restore, summary)
+        (u, summary)
     };
-    if let Some(r) = restore {
-        let _ = ctx.m.borrow_mut().modem.ring(r.volume, r.silent, r.vibrate);
-    }
     if u.appeared && ctx.page() != Page::Call {
         ctx.go(Page::Call);
     }

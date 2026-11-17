@@ -235,12 +235,17 @@ fn contacts_rev(app: &App) -> Option<i32> {
 }
 
 /// Phone or Contacts opened Messages on a page with a number: the conversation (Reply: the composer takes the focus);
-/// else the page.
+/// on New message with a text: that text in the composer; else the page.
 fn opened(ctx: &Ctx, n: u16, p: Page, arg: &str) {
     use phone_core::page::number::messages;
     match n {
         messages::THREAD | messages::WRITE if !arg.is_empty() => {
             msgs::open_thread(ctx, arg, n == messages::WRITE);
+            ctx.m.borrow_mut().opened = true;
+        }
+        // a text to send (Contacts' Send as vCard ▸ Message): a new message with it in the composer
+        messages::NEW if !arg.is_empty() => {
+            msgs::new_message(ctx, arg);
             ctx.m.borrow_mut().opened = true;
         }
         _ => {

@@ -39,7 +39,7 @@ component CallAvatar inherits Rectangle {
             font-weight: 600;
         }
         if party.initials == "": Glyph {
-            source: @image-url("@phone-shared/icons/hash.svg");
+            source: party.group ? @image-url("@phone-shared/icons/group.svg") : @image-url("@phone-shared/icons/hash.svg");
             size: root.size * 0.4;
             colorize: Theme.text-secondary;
         }
@@ -865,10 +865,11 @@ export component CallPage inherits Rectangle {
     // phone's soft-float CPU)
     background: @linear-gradient(180deg, #13213a 0%, #1b2b45 18%, #0b1220 55%, #05070b 100%);
     property <string> s: CallState.screen;
-    property <bool> pad: CallState.keypad && (s == "calling" || s == "active" || s == "two");
+    property <bool> pad: CallState.keypad && (s == "calling" || s == "active" || s == "two" || s == "conference");
     if s == "incoming": Incoming { }
     if s == "calling" && !pad: Calling { }
-    if s == "active" && !pad: Active { }
+    // a conference (p2-call-conference): the active call's screen over "Conference" and its callers' names
+    if (s == "active" || s == "conference") && !pad: Active { }
     if s == "waiting": Waiting { }
     if s == "two" && !pad: Two { }
     if pad: Keypad { }

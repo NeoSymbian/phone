@@ -171,6 +171,23 @@ fn boards() {
     nav.set_selected(0);
     m.set_selecting(false);
 
+    // the archived conversations (⋮ ▸ Archived): [← Archived], no footer; a swipe left offers Unarchive
+    nav.set_view("archived".into());
+    nav.set_sub(true);
+    nav.set_title("Archived".into());
+    nav.set_actions(acts(&[]));
+    nav.set_options(strings(&[]));
+    let rows = threads();
+    m.set_threads(model(vec![rows[3].clone(), rows[5].clone()]));
+    s.drag(300.0 * DP, 140.0 * DP, (4.0 + 36.0 + 48.0) * DP);
+    s.shoot("p2-msg-archived");
+    nav.set_view("".into());
+    nav.set_sub(false);
+    nav.set_title("Messages".into());
+    nav.set_actions(acts(&[(14, "Search"), (4, "New")]));
+    nav.set_options(options.clone());
+    m.set_threads(model(threads()));
+
     // a thread: [← Ava Lindqvist · 📞 ⋮], the composer focused with Cyrillic text and its counter
     nav.set_view("thread".into());
     nav.set_title("Ava Lindqvist".into());

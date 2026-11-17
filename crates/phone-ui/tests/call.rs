@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // The call screens (NEOPHONE v2 p2-call-*), full screen with the boards' callers: incoming (a contact, an unknown
 // number silenced, a private number) and its Reply with message sheet, calling, ringing, active, held and muted,
-// call waiting, two calls, the keypad, the summary (with and without a duration); what their buttons send.
+// call waiting, two calls, a conference, the keypad, the summary (with and without a duration); what their buttons send.
 mod common;
 use common::{FULL, strings};
 use phone_ui::{CallState, Nav, Party};
@@ -14,6 +14,7 @@ fn party(name: &str, line: &str, label: &str, initials: &str, tint: u32) -> Part
         label: label.into(),
         initials: initials.into(),
         tint: Color::from_argb_encoded(0xff00_0000 | tint),
+        group: false,
     }
 }
 
@@ -111,6 +112,18 @@ fn call() {
     c.set_other(ava.clone());
     c.set_other_time("On hold · 04:40".into());
     shot("p2-call-two");
+
+    // after Conference (Merge): the active call's screen, "Conference" over the callers, the group glyph
+    c.set_screen("conference".into());
+    c.set_main(Party {
+        name: "Conference".into(),
+        line: "Ani Petrosyan, Ava Lindqvist".into(),
+        group: true,
+        ..Party::default()
+    });
+    c.set_main_time("04:40".into());
+    c.set_other(Party::default());
+    shot("p2-call-conference");
 
     c.set_screen("active".into());
     c.set_main(ava.clone());

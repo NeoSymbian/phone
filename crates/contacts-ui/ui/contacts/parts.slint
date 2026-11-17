@@ -621,10 +621,14 @@ export component GlyphButton inherits Rectangle {
 }
 
 // The number-type sheet: a title, the number it is for, the types with a radio at the left.
+// A choice of rows under a heading: the number's type (radios, `current` ticked), or a card's choices (Send as vCard,
+// which number goes on a speed-dial key; `radios` off).
 export component TypeSheet inherits Sheet {
+    in property <string> heading: "Number type";
     in property <string> number;
     in property <[string]> choices;
     in property <int> current;
+    in property <bool> radios: true;
     callback chosen(int);
     VerticalLayout {
         padding-left: 20 * Theme.dp;
@@ -633,7 +637,7 @@ export component TypeSheet inherits Sheet {
         padding-bottom: 4 * Theme.dp;
         spacing: 4 * Theme.dp;
         Text {
-            text: "Number type";
+            text: root.heading;
             color: Theme.text;
             font-size: Theme.font-body;
             font-weight: 600;
@@ -653,7 +657,7 @@ export component TypeSheet inherits Sheet {
             padding-left: 20 * Theme.dp;
             padding-right: 20 * Theme.dp;
             spacing: 16 * Theme.dp;
-            VerticalLayout {
+            if root.radios: VerticalLayout {
                 alignment: center;
                 Rectangle {
                     width: 22 * Theme.dp;

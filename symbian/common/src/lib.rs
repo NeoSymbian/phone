@@ -18,7 +18,8 @@ use contacts::{Book, NameOrder};
 use phone_core::page::Page;
 
 /// The green bar under the header while a call goes on and its screen isn't showing ("Ava Lindqvist · 04:12 · Return
-/// to call", the prototype's hidden call): MODEMD's status has no start time, so it notes when each call connected.
+/// to call", the prototype's hidden call). Its timer counts from MODEMD's connect time (modem-ipc 2.6 `Call::since`), so
+/// it shows the call screen's time in every app; a MODEMD without it: from when this app first saw the call connected.
 #[derive(Default)]
 pub struct CallBar {
     since: Option<(u8, u64)>,
@@ -46,21 +47,25 @@ impl CallBar {
             return String::new();
         };
         let number = c.number.as_str();
-        let who = if number.is_empty() {
-            String::from("Private number")
+        let who = if c.multiparty {
+            String::from("Conference")
         } else {
-            name_of(book, order, number).unwrap_or_else(|| String::from(number))
+            let name = name_of(book, order, number);
+            phone_rules::caller::caller_line(name.as_deref(), number, c.presentation, false).0
         };
         if !matches!(c.state, st::CONVERSATION | st::HOLD) {
             return alloc::format!("{who} · Calling…");
         }
-        if self.since.is_none_or(|(id, _)| id != c.id) {
+        if c.since != 0 {
+            self.since = Some((c.id, c.since));
+        } else if self.since.is_none_or(|(id, _)| id != c.id) {
             self.since = Some((c.id, now_ms));
         }
         let secs = self
             .since
             .map_or(0, |(_, at)| now_ms.saturating_sub(at) / 1000);
-        alloc::format!("{who} · {:02}:{:02}", secs / 60, secs % 60)
+        let clock = phone_core::calls::clock(secs as u32);
+        alloc::format!("{who} · {clock}")
     }
 
     /// A call goes on: the bar ticks every second.

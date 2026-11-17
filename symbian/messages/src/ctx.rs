@@ -51,6 +51,8 @@ pub struct Ctx {
     asked: RefCell<Option<neoapp::Query>>,
     /// the keyboard last asked of the UI server: (open, KeyboardFocus.seq, mode)
     keyboard: Cell<(bool, i32, i32)>,
+    /// the launcher badge last sent (BADGE; u32::MAX: none yet)
+    badge: Cell<u32>,
 }
 
 impl Ctx {
@@ -62,6 +64,7 @@ impl Ctx {
             shown: RefCell::new(None),
             asked: RefCell::new(None),
             keyboard: Cell::new((false, 0, 0)),
+            badge: Cell::new(u32::MAX),
         }
     }
 
@@ -222,7 +225,22 @@ impl Ctx {
     }
 
     /// Model → UI.
+    /// The launcher icon's badge: the unread messages (sent when it changes; a resident app keeps it current while hidden).
+    pub fn sync_badge(&self) {
+        let n = {
+            let m = self.m.borrow();
+            u32::from(m.status.map_or(0, |s| s.sms_unread))
+        };
+        if self.badge.get() != n {
+            match self.app.badge(0, n) {
+                Ok(()) => self.badge.set(n),
+                Err(e) => dprintln!("neomsg: badge not set ({})", e),
+            }
+        }
+    }
+
     pub fn show(&self) {
+        self.sync_badge();
         msgs::show(self);
     }
 

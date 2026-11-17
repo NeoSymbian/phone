@@ -46,6 +46,8 @@ pub struct State {
     shown: Vec<u32>,
     /// the open query
     ask: Option<Ask>,
+    /// a dialog that only informs (one OK button): `*#06#`'s IMEI
+    info: Option<String>,
     /// the header's search on Recents
     query: String,
     /// an assigned speed-dial key's sheet (Change, Remove)
@@ -233,9 +235,19 @@ fn call_entry(ctx: &Ctx, id: u32) {
     }
 }
 
+/// `*#06#`: the IMEI MODEMD read from the modem (modem-ipc 2.6), in a dialog as on any phone.
 fn imei(ctx: &Ctx) {
-    // shortcut: MODEMD's status carries no IMEI yet (modem-ipc 2.2); show it here once it does.
-    ctx.note("IMEI not available");
+    let imei = ctx
+        .m
+        .borrow()
+        .status
+        .map(|s| String::from(s.imei.as_str()))
+        .unwrap_or_default();
+    if imei.is_empty() {
+        return ctx.note("IMEI not available");
+    }
+    ctx.m.borrow_mut().dial.info = Some(format!("IMEI\n{imei}"));
+    ctx.show();
 }
 
 fn call_voicemail(ctx: &Ctx) {
@@ -341,12 +353,20 @@ fn assign(ctx: &Ctx, k: usize, n: &str) {
 
 /// The open query (the shell draws it).
 pub fn query(ctx: &Ctx) -> Option<neoapp::Query> {
+    if let Some(text) = ctx.m.borrow().dial.info.clone() {
+        return Some(neoapp::Query {
+            text,
+            buttons: alloc::vec!["OK".into()],
+            destructive: false,
+        });
+    }
     let (text, detail, button) = ctx.m.borrow().dial.ask?.text();
     Some(ask(&text, detail, button))
 }
 
 /// The query was answered: `yes` does what it asked.
 pub fn answer(ctx: &Ctx, yes: bool) {
+    ctx.m.borrow_mut().dial.info = None;
     let asked = ctx.m.borrow_mut().dial.ask.take();
     match asked {
         Some(Ask::Clear(_)) if yes => clear_filter(ctx),

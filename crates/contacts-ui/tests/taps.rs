@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Contacts' taps reach the app: ⋮'s items, a long press, the selection header's ⋮ ▸ Select all, the editor's ✓ and ✕,
-// and the Block query's red button only with a box ticked. What the app does with them (the Discard query when the
+// the Block query's red button only with a box ticked, and the card's choice sheet. What the app does with them (the Discard query when the
 // editor changed: phone_core::people::edited) is tested where it lives.
 mod common;
 use contacts_ui::{ContactRow, ContactSection, ContactsState, Icons, Nav};
@@ -167,4 +167,16 @@ fn taps() {
     s.pixels();
     s.press(x, y, true);
     assert_eq!(took(&log), sent("confirm", ""));
+    c.set_dialog_open(false);
+
+    // the card's choice sheet (Send as vCard): its last row, Save as vCard file, is choice 1
+    c.set_choice_title("Send as vCard".into());
+    c.set_choice_detail("Ava Lindqvist".into());
+    c.set_choices(strings(&["Message", "Save as vCard file"]));
+    s.pixels();
+    s.pixels();
+    let h = common::H as f32 / common::DP;
+    s.press(180.0, h - 44.0, true);
+    assert_eq!(took(&log), sent("choice", "1"));
+    c.set_choice_title("".into());
 }

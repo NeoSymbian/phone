@@ -232,6 +232,27 @@ pub fn vcard_file(name: &str) -> String {
     }
 }
 
+/// "Send as vCard" ▸ Message: the card as text any phone reads (a raw vCard over SMS shows as code): the name, then
+/// "label number" per number; at most `max` bytes (whole lines; the argument another app is opened with).
+pub fn share_text(c: &Contact, order: NameOrder, max: usize) -> String {
+    let mut text = c.title(order);
+    for (label, n) in &c.numbers {
+        let line = format!("\n{} {}", label.text(), n);
+        if text.len() + line.len() > max {
+            break;
+        }
+        text.push_str(&line);
+    }
+    if text.len() > max {
+        let mut n = max;
+        while !text.is_char_boundary(n) {
+            n -= 1;
+        }
+        text.truncate(n);
+    }
+    text
+}
+
 /// Add imported contacts, skipping ones the book has (same name and first number); (added, skipped).
 pub fn merge(book: &mut Book, found: Vec<Contact>) -> (usize, usize) {
     let (mut added, mut skipped) = (0, 0);
@@ -278,6 +299,23 @@ mod tests {
                 .collect(),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn share_text_lines() {
+        let mut c = person("Ava", "Lindqvist", "", &["+15550142", "+15550143"]);
+        c.numbers[1].0 = Label::MobileWork;
+        let t = share_text(&c, NameOrder::FirstLast, 256);
+        assert_eq!(
+            t,
+            "Ava Lindqvist\nMobile +15550142\nMobile (work) +15550143"
+        );
+        // whole lines only
+        assert_eq!(
+            share_text(&c, NameOrder::FirstLast, 35),
+            "Ava Lindqvist\nMobile +15550142"
+        );
+        assert_eq!(share_text(&c, NameOrder::FirstLast, 3), "Ava");
     }
 
     #[test]

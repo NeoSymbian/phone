@@ -12,9 +12,9 @@ e32 = { git = "https://github.com/NeoSymbian/e32-rs", rev = "e97e2ebcb242f5365d1
 neoui-proto = { git = "https://github.com/NeoSymbian/neoui", rev = "27a90f776d32e70cd8ecc231a499da348c4eb2e8" }
 neoapp = { git = "https://github.com/NeoSymbian/neoui", rev = "27a90f776d32e70cd8ecc231a499da348c4eb2e8" }
 slint = { version = "=1.18.1", default-features = false, features = ["compat-1-2", "unsafe-single-threaded", "libm", "renderer-software"] }
-modem-ipc = { git = "https://github.com/NeoSymbian/telephony", rev = "452a22ac5442d1976f589c14472ea87c4c6041b5" }
-phone-rules = { git = "https://github.com/NeoSymbian/telephony", rev = "452a22ac5442d1976f589c14472ea87c4c6041b5" }
-sms = { git = "https://github.com/NeoSymbian/telephony", rev = "452a22ac5442d1976f589c14472ea87c4c6041b5" }
+modem-ipc = { git = "https://github.com/NeoSymbian/telephony", rev = "4095a4b7f34359fe8df25cd0e18e81c15be719c9" }
+phone-rules = { git = "https://github.com/NeoSymbian/telephony", rev = "4095a4b7f34359fe8df25cd0e18e81c15be719c9" }
+sms = { git = "https://github.com/NeoSymbian/telephony", rev = "4095a4b7f34359fe8df25cd0e18e81c15be719c9" }
 contacts = { path = "../crates/contacts" }
 phone-core = { path = "../crates/phone-core" }
 phone-ui = { path = "../crates/phone-ui" }

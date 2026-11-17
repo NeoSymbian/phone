@@ -88,6 +88,11 @@ export global ContactsState {
     // the number-type sheet: the row it is open for (-1: closed); the label texts in contacts::Label order (the
     // app fills them; the chips show the short ones)
     in property <int> picking: -1;
+    // the card's choice sheet (Send as vCard: Message / Save as vCard file; Speed dial: which number): open while
+    // `choice-title` isn't empty; a row sends act("choice", i), closing it act("choice-cancel")
+    in property <string> choice-title;
+    in property <string> choice-detail;
+    in property <[string]> choices;
     in property <[string]> labels;
     in property <[string]> short-labels: ["Mobile", "Home", "Work", "Phone", "Home tel.", "Work tel.", "Fax"];
 

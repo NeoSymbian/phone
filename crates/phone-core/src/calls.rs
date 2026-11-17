@@ -69,6 +69,11 @@ pub enum Screen {
         active: Call,
         held: Call,
     },
+    /// p2-call-conference: every connected call is part of one conference (after Merge); `first` connected first
+    Conference {
+        first: Call,
+        count: u8,
+    },
     /// screen 15: the summary after the last call
     Ended(Ended),
 }
@@ -103,8 +108,14 @@ impl Tracker {
         for c in &calls {
             let before = self.last.iter().find(|l| l.id == c.id);
             appeared |= before.is_none();
-            if connected(c) && !self.since.iter().any(|(id, _)| *id == c.id) {
-                self.since.push((c.id, now));
+            // MODEMD's connect time (2.6) when it has one, else when we first saw it connected
+            match self.since.iter_mut().find(|(id, _)| *id == c.id) {
+                Some(t) if c.since != 0 => t.1 = c.since,
+                Some(_) => {}
+                None if connected(c) => self
+                    .since
+                    .push((c.id, if c.since != 0 { c.since } else { now })),
+                None => {}
             }
         }
         for l in &self.last {
@@ -183,6 +194,15 @@ fn pick(calls: &[Call]) -> Option<Screen> {
         return Some(Screen::Calling(*o));
     }
     let up: Vec<&Call> = calls.iter().filter(|c| connected(c)).collect();
+    if up.len() > 1 && up.iter().all(|c| c.multiparty) {
+        let first = up
+            .iter()
+            .min_by_key(|c| if c.since == 0 { u64::MAX } else { c.since })?;
+        return Some(Screen::Conference {
+            first: **first,
+            count: up.len() as u8,
+        });
+    }
     match up.as_slice() {
         [] => None,
         [one] => Some(Screen::Active(**one)),
@@ -249,6 +269,7 @@ mod tests {
             incoming,
             number: Text::new("+15550142"),
             presentation: 0,
+            ..Call::default()
         }
     }
 
@@ -325,6 +346,40 @@ mod tests {
         // Add call: the first is held while ours rings out
         let out = call(2, st::ALERTING, false);
         assert_eq!(screen(&[held, out]), Screen::Calling(out));
+    }
+
+    #[test]
+    fn conference() {
+        let a = Call {
+            multiparty: true,
+            since: 9_000,
+            ..call(1, st::CONVERSATION, false)
+        };
+        let b = Call {
+            multiparty: true,
+            since: 20_000,
+            ..call(2, st::CONVERSATION, true)
+        };
+        assert_eq!(screen(&[b, a]), Screen::Conference { first: a, count: 2 });
+        // a conference on hold with a new call talking: two calls, as before
+        let held = Call {
+            state: st::HOLD,
+            ..a
+        };
+        let c = call(3, st::CONVERSATION, false);
+        assert_eq!(screen(&[held, c]), Screen::Two { active: c, held });
+    }
+
+    #[test]
+    fn modemd_connect_time() {
+        // MODEMD's connect time wins over when this app first saw the call (opened mid-call)
+        let mut t = Tracker::default();
+        let talk = Call {
+            since: 2_000,
+            ..call(1, st::CONVERSATION, false)
+        };
+        t.update(&status(&[talk]), 250_000);
+        assert_eq!(t.seconds(1, 250_000), Some(248));
     }
 
     #[test]

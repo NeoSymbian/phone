@@ -42,6 +42,24 @@ export component ContactsApp inherits Window {
         }
     }
 
+    property <bool> choosing: ContactsState.choice-title != "";
+    changed choosing => {
+        choice.open = self.choosing;
+    }
+    choice := TypeSheet {
+        heading: ContactsState.choice-title;
+        number: ContactsState.choice-detail;
+        choices: ContactsState.choices;
+        current: -1;
+        radios: false;
+        dismissed => {
+            ContactsState.act("choice-cancel", "");
+        }
+        chosen(i) => {
+            ContactsState.act("choice", i);
+        }
+    }
+
     Dialog {
         open: ContactsState.dialog-open;
         question: ContactsState.dialog-question;

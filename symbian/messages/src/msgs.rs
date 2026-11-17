@@ -257,7 +257,7 @@ fn act(ctx: &Ctx, action: &str, value: &str) {
             swiped(ctx, Swiped::Deleted { number, id: last });
             note_undo(ctx, "Conversation deleted");
         }
-        ("new", _) => return new_message(ctx),
+        ("new", _) => return new_message(ctx, ""),
         ("send", _) => return send(ctx),
         ("retry", _) => retry(ctx, id),
         ("hold", _) => ctx.m.borrow_mut().msgs.held = Some(id),
@@ -348,7 +348,7 @@ fn bubble(ctx: &Ctx, id: u32, item: &str) {
             "Not copied"
         }),
         "Forward" => {
-            new_message(ctx);
+            new_message(ctx, "");
             ctx.ui()
                 .global::<MessagesState>()
                 .set_draft(text.as_str().into());
@@ -428,8 +428,8 @@ fn newest_of(ctx: &Ctx, number: &str) -> Option<u32> {
         .map(|&i| m.msgs.mirror.msgs[i].entry.id)
 }
 
-/// A new message, empty.
-fn new_message(ctx: &Ctx) {
+/// A new message, empty or with `draft` in the composer (Contacts' Send as vCard ▸ Message).
+pub fn new_message(ctx: &Ctx, draft: &str) {
     {
         let mut m = ctx.m.borrow_mut();
         m.msgs.recipients.clear();
@@ -439,7 +439,7 @@ fn new_message(ctx: &Ctx) {
     let ui = ctx.ui();
     let g = ui.global::<MessagesState>();
     g.set_to_text(SharedString::new());
-    g.set_draft(SharedString::new());
+    g.set_draft(draft.into());
     ctx.go(Page::Messages(MessagesView::New));
 }
 
@@ -975,7 +975,7 @@ pub fn option(ctx: &Ctx, item: &str) {
     settle(ctx);
     let open = ctx.m.borrow().msgs.open.clone();
     match item {
-        "New" => return new_message(ctx),
+        "New" => return new_message(ctx, ""),
         "Mark all as read" => edit(ctx, st::EDIT_ALL_READ, 0),
         "Select" => ctx.m.borrow_mut().msgs.selected = Some(Vec::new()),
         "Delete conversations" => ctx.m.borrow_mut().msgs.query = Query::DeleteAll,

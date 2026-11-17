@@ -166,6 +166,10 @@ impl Modem {
     pub fn merge(&mut self) -> i32 {
         self.ints(op::MANAGE, manage::MERGE, 0)
     }
+    /// Stop call `id` ringing and vibrating (0 = the selected call); the ring settings stay (modem-ipc 2.6).
+    pub fn silence(&mut self, id: u8) -> i32 {
+        self.ints(op::SILENCE, i32::from(id), 0)
+    }
     /// End the active call(s) and answer the waiting one.
     pub fn end_and_answer(&mut self) -> i32 {
         self.ints(op::MANAGE, manage::END_ANSWER, 0)

@@ -20,7 +20,7 @@ use e32::fs::{File, Fs, mode};
 use neoui_proto::settings::Value;
 use phone_common::store;
 use phone_common::ui::{Chrome, model, strings, tool};
-use phone_core::page::{ContactsView, Page, PhoneView, SettingsView};
+use phone_core::page::{ContactsView, MessagesView, Page, PhoneView, SettingsView};
 use phone_core::people as logic;
 use slint::{Color, ComponentHandle, Model as _, SharedString};
 
@@ -58,6 +58,15 @@ struct Pending {
 const BARS_H: f32 = 48.0 + 48.0;
 const STRIP_MARGINS: f32 = 12.0 + 12.0;
 
+/// The card's choice sheet: Send as vCard (Message / Save as vCard file), or which number goes on a speed-dial key.
+#[derive(Clone, Default, PartialEq)]
+enum Choice {
+    #[default]
+    None,
+    Share,
+    Speed(Vec<String>),
+}
+
 pub struct State {
     card: Who,
     editing: Who,
@@ -70,6 +79,8 @@ pub struct State {
     checks: [bool; 2],
     /// the number-type picker's row
     picking: Option<usize>,
+    /// the card's choice sheet
+    choice: Choice,
     marked: Vec<u32>,
     /// the header's search text
     query: String,
@@ -94,6 +105,7 @@ impl Default for State {
             dialog: Dialog::None,
             checks: [true, true],
             picking: None,
+            choice: Choice::None,
             marked: Vec::new(),
             query: String::new(),
             rev: 0,
@@ -208,6 +220,29 @@ fn act(ctx: &Ctx, action: &str, value: &str) {
                 e.kind = n.max(0);
                 rows.set_row_data(r, e);
             }
+            ctx.show();
+        }
+        "choice" => {
+            let choice = core::mem::take(&mut ctx.m.borrow_mut().people.choice);
+            let c = card(ctx);
+            match (choice, c) {
+                (Choice::Share, Some(c)) if n == 0 => {
+                    let text =
+                        logic::share_text(&c, ctx.m.borrow().order, neoui_proto::ipc::ARG_MAX);
+                    ctx.open(Page::Messages(MessagesView::New), &text);
+                }
+                (Choice::Share, Some(c)) if n == 1 => save_vcard(ctx, &c),
+                (Choice::Speed(numbers), _) => {
+                    if let Some(number) = usize::try_from(n).ok().and_then(|i| numbers.get(i)) {
+                        ctx.open(Page::Phone(PhoneView::Speed), number);
+                    }
+                }
+                _ => {}
+            }
+            ctx.show();
+        }
+        "choice-cancel" => {
+            ctx.m.borrow_mut().people.choice = Choice::None;
             ctx.show();
         }
         "pick-cancel" => {
@@ -541,8 +576,9 @@ fn export(ctx: &Ctx, contacts: &[Contact]) {
     }
 }
 
-/// Send as vCard: the card as `C:\Data\<name>.vcf` (not over the full export), with a note saying where.
-fn send_vcard(ctx: &Ctx, c: &Contact) {
+/// Send as vCard ▸ Save as vCard file: the card as `C:\Data\<name>.vcf` (not over the full export), with a note saying
+/// where.
+fn save_vcard(ctx: &Ctx, c: &Contact) {
     let name = c.title(ctx.m.borrow().order);
     let path = format!("{}{}", store::EXPORT_DIR, logic::vcard_file(&name));
     let text = vcard::export(core::slice::from_ref(c));
@@ -775,6 +811,33 @@ fn show_dialog(ctx: &Ctx) {
     let ui = ctx.ui();
     let st = ui.global::<ContactsState>();
     st.set_picking(picking.map_or(-1, |p| p as i32));
+    let choice = ctx.m.borrow().people.choice.clone();
+    let (title, rows): (&str, Vec<String>) = match (&choice, &c) {
+        (Choice::Share, Some(_)) => (
+            "Send as vCard",
+            alloc::vec!["Message".into(), "Save as vCard file".into()],
+        ),
+        (Choice::Speed(numbers), Some(c)) => (
+            "Speed dial",
+            numbers
+                .iter()
+                .map(|n| {
+                    let label = c
+                        .numbers
+                        .iter()
+                        .find(|(_, x)| x == n)
+                        .map_or("", |(l, _)| l.text());
+                    format!("{label} · {n}")
+                })
+                .collect(),
+        ),
+        _ => ("", Vec::new()),
+    };
+    st.set_choice_title(title.into());
+    st.set_choice_detail(name.as_str().into());
+    st.set_choices(strings(
+        &rows.iter().map(String::as_str).collect::<Vec<_>>(),
+    ));
     // Block has check boxes: the app draws it; the deletes are the UI server's dialog ([`query`])
     st.set_dialog_open(d == Dialog::Block);
     let (question, detail, button, boxes): (String, String, &str, &[&str]) = match d {
@@ -1025,14 +1088,23 @@ pub fn option(ctx: &Ctx, item: &str) {
         "Block contact" => ask(ctx, Dialog::Block),
         "Unblock contact" => unblock(ctx),
         "Speed dial" => {
-            if let Some((_, n)) = card(ctx).and_then(|c| c.numbers.into_iter().next()) {
+            let numbers: Vec<String> = card(ctx)
+                .map(|c| c.numbers.into_iter().map(|(_, n)| n).collect())
+                .unwrap_or_default();
+            match numbers.as_slice() {
+                [] => {}
                 // Phone's speed dial, with this number to put on a key
-                ctx.open(Page::Phone(PhoneView::Speed), &n);
+                [n] => ctx.open(Page::Phone(PhoneView::Speed), n),
+                _ => {
+                    ctx.m.borrow_mut().people.choice = Choice::Speed(numbers);
+                    ctx.show();
+                }
             }
         }
         "Send as vCard" => {
-            if let Some(c) = card(ctx) {
-                send_vcard(ctx, &c);
+            if card(ctx).is_some() {
+                ctx.m.borrow_mut().people.choice = Choice::Share;
+                ctx.show();
             }
         }
         "Set as my card" => {
