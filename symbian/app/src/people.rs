@@ -4,7 +4,7 @@
 //! Delete and Block queries. The model is the host-tested `contacts` crate and `phone_core::people`; every change is
 //! saved at once ([`store::save`]) and MODEMD gets the new known-number hashes ([`send_known`]).
 
-use crate::ctx::{Chrome, Ctx, model, strings};
+use crate::ctx::{Chrome, Ctx, model, strings, tool};
 use crate::{dial, prefs, store};
 use alloc::format;
 use alloc::rc::Rc;
@@ -13,7 +13,6 @@ use alloc::vec::Vec;
 use contacts::index::{self, Script};
 use contacts::{Contact, Label, NUMBERS_MAX, NameOrder, Refused, vcard};
 use e32::dprintln;
-use neoui_proto::ipc as proto;
 use phone_core::page::{ContactsView, Page, SettingsView};
 use phone_core::people as logic;
 use phone_ui::{
@@ -807,15 +806,15 @@ pub fn chrome(ctx: &Ctx) -> Chrome {
         return chrome;
     }
     if p.picking.is_some() {
-        return chrome.with(proto::TOOL_NONE, proto::TOOLBAR_CANCEL, "");
+        return chrome.with(tool::NONE, tool::CANCEL, "");
     }
     match v {
-        ContactsView::List => chrome.with(proto::TOOL_PERSON_ADD, 0, "New"),
-        ContactsView::Mark => chrome.with(proto::TOOL_DELETE, proto::TOOLBAR_CANCEL, "Delete"),
+        ContactsView::List => chrome.with(tool::PERSON_ADD, 0, "New"),
+        ContactsView::Mark => chrome.with(tool::DELETE, tool::CANCEL, "Delete"),
         // a card's main action is a call; Edit is in Options then
-        ContactsView::Card if has_number => chrome.with(proto::TOOL_CALL, 0, "Call"),
-        ContactsView::Card => chrome.with(proto::TOOL_EDIT, 0, "Edit"),
-        ContactsView::Edit => chrome.with(proto::TOOL_CHECK, proto::TOOLBAR_CANCEL, "Save"),
+        ContactsView::Card if has_number => chrome.with(tool::CALL, 0, "Call"),
+        ContactsView::Card => chrome.with(tool::EDIT, 0, "Edit"),
+        ContactsView::Edit => chrome.with(tool::CHECK, tool::CANCEL, "Save"),
     }
 }
 

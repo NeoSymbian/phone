@@ -106,9 +106,10 @@ fn index() -> Vec<ContactMark> {
     v
 }
 
+/// A tap at (x, y) in the page's coordinates: the page sits under the app's 48 dp kit header (3 px per dp).
 fn tap(s: &common::Shot, x: f32, y: f32, release: bool) {
     let w = s.ui.window();
-    let position = LogicalPosition::new(x, y);
+    let position = LogicalPosition::new(x, y + 48.0 * 3.0);
     w.dispatch_event(WindowEvent::PointerPressed {
         position,
         button: PointerEventButton::Left,

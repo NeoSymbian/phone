@@ -6,13 +6,12 @@
 //! The screens keep their own open/closed state in `SettingsState` (the picker, the voicemail editor, the add row,
 //! the Remove all query); this module reads it for the toolbar and Back.
 
-use crate::ctx::{Chrome, Ctx, model, strings};
+use crate::ctx::{Chrome, Ctx, model, strings, tool};
 use alloc::format;
 use alloc::rc::Rc;
 use alloc::string::String;
 use alloc::vec::Vec;
 use contacts::{Label, NameOrder};
-use neoui_proto::ipc as proto;
 use neoui_proto::settings::{Bytes, Key, Setting, keys};
 use phone_core::blocking::{self, Refusal};
 use phone_core::page::{Page, SettingsView};
@@ -319,16 +318,16 @@ pub fn chrome(ctx: &Ctx) -> Chrome {
         let full = page == Page::Settings(SettingsView::Replies)
             && ctx.m.borrow().msgs.replies.len() >= crate::store::MAX_REPLIES;
         if s.get_adding() {
-            c.with(proto::TOOL_CHECK, proto::TOOLBAR_CANCEL, "Add")
+            c.with(tool::CHECK, tool::CANCEL, "Add")
         } else if full {
             c
         } else {
-            c.with(proto::TOOL_ADD, 0, "Add")
+            c.with(tool::ADD, 0, "Add")
         }
     } else {
         let c = Chrome::titled("Phone & Contacts");
         if s.get_editing() || s.get_editing_smsc() {
-            c.with(proto::TOOL_CHECK, proto::TOOLBAR_CANCEL, "Save")
+            c.with(tool::CHECK, tool::CANCEL, "Save")
         } else {
             c
         }

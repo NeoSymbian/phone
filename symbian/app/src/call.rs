@@ -3,14 +3,13 @@
 //! [`phone_core::calls`] picks the screen from MODEMD's call list; this module fills `CallState`, sends the buttons to
 //! MODEMD, opens the screens for a new call and closes them (after the summary) when the last call ends.
 
-use crate::ctx::{Chrome, Ctx};
+use crate::ctx::{Chrome, Ctx, tool};
 use alloc::format;
 use alloc::rc::Rc;
 use alloc::string::String;
 use alloc::vec::Vec;
 use e32::time::millis;
 use modem_ipc::{Call, Ring, call as st};
-use neoui_proto::ipc as proto;
 use phone_core::calls::{self, Screen, Tracker};
 use phone_core::page::{ContactsView, Page, PhoneView};
 use phone_ui::{CallState, Party, PhoneApp};
@@ -314,12 +313,8 @@ pub fn show(ctx: &Ctx) {
 pub fn chrome(ctx: &Ctx) -> Chrome {
     match screen(ctx) {
         // full screen: the toolbar is an empty black strip
-        Screen::Incoming(_) => {
-            Chrome::titled("Incoming call").with(proto::TOOL_NONE, proto::TOOLBAR_EMPTY, "")
-        }
-        Screen::Waiting { .. } => {
-            Chrome::titled("Call waiting").with(proto::TOOL_NONE, proto::TOOLBAR_EMPTY, "")
-        }
+        Screen::Incoming(_) => Chrome::titled("Incoming call").with(tool::NONE, tool::EMPTY, ""),
+        Screen::Waiting { .. } => Chrome::titled("Call waiting").with(tool::NONE, tool::EMPTY, ""),
         Screen::Ended(_) => Chrome::titled("Call ended"),
         _ => Chrome::titled("Call"),
     }

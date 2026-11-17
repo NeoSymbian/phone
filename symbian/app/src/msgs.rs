@@ -6,7 +6,7 @@
 //! The screens keep the search text, the composer and the To field in `MessagesState`; the open thread, the chosen
 //! recipients, the held bubble and the queries live here.
 
-use crate::ctx::{Chrome, Ctx, model, strings};
+use crate::ctx::{Chrome, Ctx, model, strings, tool};
 use crate::{people, prefs, store};
 use alloc::format;
 use alloc::rc::Rc;
@@ -14,7 +14,6 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use e32::dprintln;
 use modem_ipc::{SmsSettings, sms as st};
-use neoui_proto::ipc as proto;
 use phone_core::messages::{self as messages, Mirror, Thread};
 use phone_core::page::{MessagesView, Page, SettingsView};
 use phone_core::people::{initials, tint};
@@ -579,20 +578,20 @@ pub fn chrome(ctx: &Ctx) -> Chrome {
     match m.page {
         Page::Messages(MessagesView::Thread) => {
             let (name, _) = messages::who(&m.book, m.order, &m.msgs.open);
-            Chrome::titled(&name).with(proto::TOOL_CALL, proto::TOOLBAR_PILL, "Call")
+            Chrome::titled(&name).with(tool::CALL, tool::PILL, "Call")
         }
         Page::Messages(MessagesView::New) => {
-            Chrome::titled("New message").with(proto::TOOL_NONE, proto::TOOLBAR_CANCEL, "")
+            Chrome::titled("New message").with(tool::NONE, tool::CANCEL, "")
         }
         Page::Messages(MessagesView::Blocked) => {
             let c = Chrome::titled("Blocked messages");
             if messages::blocked(&m.msgs.mirror).is_empty() {
                 c
             } else {
-                c.with(proto::TOOL_DELETE, 0, "Clear")
+                c.with(tool::DELETE, 0, "Clear")
             }
         }
-        _ => Chrome::titled("Messages").with(proto::TOOL_EDIT, 0, "New"),
+        _ => Chrome::titled("Messages").with(tool::EDIT, 0, "New"),
     }
 }
 

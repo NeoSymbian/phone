@@ -4,7 +4,7 @@
 //! Delete on a held row), call details, speed dial (with a contact picker); and [`place_call`], which every area
 //! dials through.
 
-use crate::ctx::{Chrome, Ctx, Model, model, strings};
+use crate::ctx::{Chrome, Ctx, Model, model, strings, tool};
 use crate::{people, prefs};
 use alloc::format;
 use alloc::rc::Rc;
@@ -12,7 +12,6 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use contacts::recents::{duration, when, when_long};
 use modem_ipc::{LogEntry, call, log};
-use neoui_proto::ipc as proto;
 use neoui_proto::settings::keys;
 use phone_core::dial::{Dialer, Long, Tones, matches};
 use phone_core::page::{Page, PhoneView, SettingsView};
@@ -604,11 +603,11 @@ fn show_speed(ctx: &Ctx) {
 pub fn chrome(ctx: &Ctx) -> Chrome {
     match ctx.page() {
         Page::Phone(PhoneView::Recents) => {
-            Chrome::titled("Recent calls").with(proto::TOOL_DELETE, 0, "Clear")
+            Chrome::titled("Recent calls").with(tool::DELETE, 0, "Clear")
         }
         Page::Phone(PhoneView::Detail) => Chrome::titled("Call details"),
         Page::Phone(PhoneView::Speed) => Chrome::titled("Speed dial"),
-        _ => Chrome::titled("Phone").with(proto::TOOL_CALL, proto::TOOLBAR_PILL, "Call"),
+        _ => Chrome::titled("Phone").with(tool::CALL, tool::PILL, "Call"),
     }
 }
 

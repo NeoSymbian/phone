@@ -2591,7 +2591,7 @@ dependencies = [
 [[package]]
 name = "neoapp"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/neoui?rev=5533c72b6310f204976fc5896aa95c036a31be34#5533c72b6310f204976fc5896aa95c036a31be34"
+source = "git+https://github.com/NeoSymbian/neoui?rev=51cf64d841e152cf7c2b39b3432b804522bbe2f4#51cf64d841e152cf7c2b39b3432b804522bbe2f4"
 dependencies = [
  "e32",
  "neoui-proto",
@@ -2615,9 +2615,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "neoui-kit"
+version = "0.1.0"
+source = "git+https://github.com/NeoSymbian/neoui?rev=51cf64d841e152cf7c2b39b3432b804522bbe2f4#51cf64d841e152cf7c2b39b3432b804522bbe2f4"
+dependencies = [
+ "slint-build",
+]
+
+[[package]]
 name = "neoui-proto"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/neoui?rev=5533c72b6310f204976fc5896aa95c036a31be34#5533c72b6310f204976fc5896aa95c036a31be34"
+source = "git+https://github.com/NeoSymbian/neoui?rev=51cf64d841e152cf7c2b39b3432b804522bbe2f4#51cf64d841e152cf7c2b39b3432b804522bbe2f4"
 
 [[package]]
 name = "nix"
@@ -3167,9 +3175,8 @@ source = "git+https://github.com/NeoSymbian/telephony?rev=b50763850b47373083e7ce
 name = "phone-ui"
 version = "0.1.0"
 dependencies = [
- "neoui-proto",
+ "neoui-kit",
  "slint",
- "slint-build",
 ]
 
 [[package]]

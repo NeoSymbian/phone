@@ -1,15 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // NeoPhone (NEOPHONE.EXE): Phone, Contacts and Messages as one app behind three home icons, plus the call screens and their
-// settings. Drawn by its own process into the surface the UI server shows between its status bar and strip; the app
-// describes each page (neoui protocol 1.7: title, primary action, Options, page dots) and the UI server draws them, so
-// no page has a header of its own.
+// settings. Drawn by its own process into the surface the UI server shows between its status bar and the key row or
+// gesture band. The app draws its header with the neoui kit (protocol 1.8): Header, SubHeader or FormHeader as the view
+// describes itself (Nav), ⋮ as the kit's menu, the big actions (Call) in the content; toasts are the shell's (NOTE).
 import "@neoui/fonts/Inter-VariableFont.ttf";
 import "@neoui/fonts/DejaVuSans.ttf";
-import { Theme } from "@neoui/theme.slint";
-import { Scroll } from "@neoui/components/scroll.slint";
-import { KeyboardFocus } from "@neoui/components/keyboard/focus.slint";
+import { Theme, Scroll, KeyboardFocus, Kit, Header, FormHeader, Act } from "@neoui/kit.slint";
 import { Nav } from "nav.slint";
-import { Note } from "common.slint";
+import { PillButton } from "common.slint";
 import { DialState } from "phone/state.slint";
 import { PhonePage } from "phone/pages.slint";
 import { ContactsState } from "contacts/state.slint";
@@ -21,7 +19,7 @@ import { SettingsPage } from "settings/pages.slint";
 import { MessagesState } from "messages/state.slint";
 import { MessagesPage } from "messages/pages.slint";
 
-export { Theme, Scroll, KeyboardFocus, Nav, DialState, ContactsState, CallState, SettingsState, MessagesState }
+export { Theme, Scroll, KeyboardFocus, Kit, Nav, DialState, ContactsState, CallState, SettingsState, MessagesState }
 
 export component PhoneApp inherits Window {
     default-font-family: "Inter";
@@ -46,27 +44,81 @@ export component PhoneApp inherits Window {
         KeyboardFocus.open = false;
     }
 
-    // Phone | Contacts: a sideways swipe on the dialer or the contact list (the UI server shows the dots beside the
-    // title); taps and the lists' own scrolling still reach the page
+    // Phone | Contacts: a sideways swipe on the dialer or the contact list (the dots sit beside the header's title);
+    // taps and the lists' own scrolling still reach the page
     property <bool> paged: (Nav.page == 0 || Nav.page == 1) && Nav.view == "";
-    SwipeGestureHandler {
-        handle-swipe-left: root.paged && Nav.page == 0;
-        handle-swipe-right: root.paged && Nav.page == 1;
-        swiped => {
-            if (abs(self.current-position.x - self.pressed-position.x) > 60 * Theme.dp) {
-                Nav.act("switch", Nav.page == 0 ? "1" : "0");
+    property <bool> has-header: !Nav.full;
+    property <image> action-icon: Nav.action-tool == 1 ? @image-url("@neoui/icons/sys/call.svg")
+        : Nav.action-tool == 2 ? @image-url("@neoui/icons/sys/add.svg")
+        : Nav.action-tool == 3 ? @image-url("@neoui/icons/sys/person_add.svg")
+        : Nav.action-tool == 4 ? @image-url("@neoui/icons/sys/edit.svg")
+        : Nav.action-tool == 5 ? @image-url("@neoui/icons/sys/check.svg")
+        : @image-url("@neoui/icons/sys/delete.svg");
+    if root.has-header && Nav.form: FormHeader {
+        y: 0;
+        title: Nav.title;
+        can-save: Nav.has-action;
+        cancel => {
+            Nav.header("back", 0);
+        }
+        save => {
+            Nav.header("action", 0);
+        }
+    }
+    if root.has-header && !Nav.form: Header {
+        y: 0;
+        title: Nav.title;
+        has-back: Nav.sub;
+        search: false;
+        tap-to-top: false;
+        dots: Nav.dots;
+        dot: Nav.dot;
+        actions: Nav.has-action && !Nav.pill ? [{ icon: root.action-icon, label: Nav.action-label }] : [];
+        menu: Nav.options;
+        back => {
+            Nav.header("back", 0);
+        }
+        action(i) => {
+            Nav.header("action", 0);
+        }
+        menu-picked(i) => {
+            Nav.header("option", i);
+        }
+    }
+
+    // the view's big action (the dialer's Call) gets a band of its own under the content, where the thumb is (D14)
+    property <bool> has-pill: root.has-header && Nav.pill && Nav.has-action;
+    property <length> pill-band: 72 * Theme.dp;
+    Rectangle {
+        y: root.has-header ? Theme.header-h : 0;
+        height: root.height - self.y - (root.has-pill ? root.pill-band : 0);
+        SwipeGestureHandler {
+            handle-swipe-left: root.paged && Nav.page == 0;
+            handle-swipe-right: root.paged && Nav.page == 1;
+            swiped => {
+                if (abs(self.current-position.x - self.pressed-position.x) > 60 * Theme.dp) {
+                    Nav.act("switch", Nav.page == 0 ? "1" : "0");
+                }
             }
+
+            if Nav.page == 0: PhonePage { }
+            if Nav.page == 1: ContactsPage { }
+            if Nav.page == 3: CallPage { }
+            if Nav.page == 4: SettingsPage { }
+            if Nav.page == 6: MessagesPage { }
         }
 
-        if Nav.page == 0: PhonePage { }
-        if Nav.page == 1: ContactsPage { }
-        if Nav.page == 3: CallPage { }
-        if Nav.page == 4: SettingsPage { }
-        if Nav.page == 6: MessagesPage { }
     }
-    Note {
-        x: (parent.width - self.width) / 2;
-        y: parent.height - self.height - 16 * Theme.dp;
-        text: Nav.note;
+
+    if root.has-pill: PillButton {
+        x: (root.width - self.width) / 2;
+        y: root.height - (root.pill-band + self.height) / 2;
+        width: 160 * Theme.dp;
+        text: Nav.action-label;
+        icon: root.action-icon;
+        kind: "green";
+        clicked => {
+            Nav.header("action", 0);
+        }
     }
 }

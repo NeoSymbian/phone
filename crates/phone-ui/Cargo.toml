@@ -9,11 +9,10 @@ license = "GPL-3.0-only"
 
 [dependencies]
 slint = { workspace = true }
-# DEP_NEOUI_UI: neoui's theme, fonts and components (the @neoui library)
-neoui-proto = { workspace = true }
 
 [build-dependencies]
-slint-build = { workspace = true }
+# the neoui kit (@neoui/kit.slint): theme, fonts, glyphs and components
+neoui-kit = { workspace = true }
 
 [dev-dependencies]
 png = { workspace = true }

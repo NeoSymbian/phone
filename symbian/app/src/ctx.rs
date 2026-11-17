@@ -20,8 +20,8 @@ use neoapp::App;
 use neoui_proto::ipc as proto;
 use phone_core::page::{ContactsView, Page, PhoneView};
 use phone_rules::block;
-use phone_ui::{KeyboardFocus, Nav, PhoneApp};
-use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
+use phone_ui::{KeyboardFocus, Kit, Nav, PhoneApp};
+use slint::{ComponentHandle, Model as _, ModelRc, SharedString, VecModel};
 
 /// A dialog for the UI server: `text` (and `detail` on its own line, if it fits), a red `confirm` and Cancel.
 pub fn ask(text: &str, detail: &str, confirm: &str) -> neoapp::Query {
@@ -40,16 +40,32 @@ pub fn ask(text: &str, detail: &str, confirm: &str) -> neoapp::Query {
     }
 }
 
-/// How long a note stays.
-pub const NOTE_MS: u64 = 3000;
+/// A view's action glyph and style, for [`Chrome`] (neoui 1.8 dropped these from the protocol: the app draws its own
+/// header with the kit, from the same description).
+pub mod tool {
+    pub const NONE: i32 = 0;
+    pub const CALL: i32 = 1;
+    pub const ADD: i32 = 2;
+    pub const PERSON_ADD: i32 = 3;
+    pub const EDIT: i32 = 4;
+    pub const CHECK: i32 = 5;
+    pub const DELETE: i32 = 6;
+    /// the action is a big pill in the content (the dialer's Call, D14)
+    pub const PILL: i32 = 1;
+    /// a form: [✕ title ✓]
+    pub const CANCEL: i32 = 2;
+    /// no header at all (a call screen)
+    pub const EMPTY: i32 = 4;
+}
 
-/// A view's title and primary action, as each area describes it (made into the UI server's page by [`Ctx::sync`]).
+/// A view's title and action, as each area describes it (made into the kit header and the shell's page by
+/// [`Ctx::sync`]).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Chrome {
     pub title: String,
-    /// `proto::TOOL_*`
+    /// [`tool`]'s glyphs
     pub icon: i32,
-    /// `proto::TOOLBAR_*` bits: `TOOLBAR_CANCEL` a form (the strip's Cancel), `TOOLBAR_EMPTY` no action
+    /// [`tool`]'s style bits: `CANCEL` a form, `PILL` the action in the content, `EMPTY` no action
     pub style: i32,
     pub label: String,
 }
@@ -88,7 +104,6 @@ pub struct Model {
     pub call: call::State,
     pub prefs: prefs::State,
     pub msgs: msgs::State,
-    pub note_until: u64,
     pub visible: bool,
 }
 
@@ -185,15 +200,10 @@ impl Ctx {
         }
     }
 
-    /// Item `i` of the sheet the UI server showed.
-    pub fn option_at(&self, i: u16) {
-        let item = self
-            .shown
-            .borrow()
-            .as_ref()
-            .and_then(|p| p.options.get(usize::from(i)).cloned());
-        if let Some(item) = item {
-            self.option(&item);
+    /// Item `i` of the header's ⋮ menu.
+    pub fn option_at(&self, i: usize) {
+        if let Some(item) = self.options().get(i) {
+            self.option(item);
         }
     }
 
@@ -218,7 +228,7 @@ impl Ctx {
         }
     }
 
-    /// The strip's primary action.
+    /// The header's action, a form's ✓, or the big action in the content.
     pub fn action(&self) {
         match self.page() {
             Page::Phone(_) => dial::action(self),
@@ -240,21 +250,22 @@ impl Ctx {
         }
     }
 
-    /// A note over the page for [`NOTE_MS`].
+    /// A toast for 3 s (the shell's NOTE, above the key row or band).
     pub fn note(&self, text: &str) {
-        self.m.borrow_mut().note_until = e32::time::millis() + NOTE_MS;
-        self.ui().global::<Nav>().set_note(text.into());
+        let mut t = String::from(text);
+        while t.len() > neoui_proto::page::NOTE_TEXT_MAX {
+            t.pop();
+        }
+        if let Err(e) = self.app.note(&t, "") {
+            dprintln!("neophone: note not shown ({})", e);
+        }
     }
 
-    /// The UI server's page and the keyboard as the view needs them; then draw.
+    /// The header, the UI server's page and the keyboard as the view needs them; then draw.
     pub fn sync(&self) -> Result<(), i32> {
-        let now = e32::time::millis();
         let ui = self.ui();
-        let nav = ui.global::<Nav>();
-        if !nav.get_note().is_empty() && now >= self.m.borrow().note_until {
-            nav.set_note("".into());
-        }
-        let page = self.page_now();
+        self.header(&ui);
+        let page = self.page_now(&ui);
         if self.shown.borrow().as_ref() != Some(&page) {
             if let Err(e) = self.app.page(&page) {
                 dprintln!("neophone: page not set ({})", e);
@@ -296,33 +307,57 @@ impl Ctx {
         self.app.draw()
     }
 
-    /// What the UI server draws around the current view: its title; Back stays in the app while there is somewhere to
-    /// go back to (or something Back closes); the primary action; Cancel on a form; the Options items; the call
-    /// screens full screen; the Phone | Contacts dots.
-    fn page_now(&self) -> neoapp::Page {
-        let chrome = match self.page() {
+    /// The view's kit header (Nav), from its [`Chrome`]: the title; ← on a page with somewhere to go up to; a form's
+    /// [✕ title ✓]; the action as an icon, or as a pill in the content; ⋮; the Phone | Contacts dots.
+    fn header(&self, ui: &PhoneApp) {
+        let chrome = self.chrome();
+        let nav = ui.global::<Nav>();
+        let empty = chrome.style & tool::EMPTY != 0;
+        nav.set_title(chrome.title.as_str().into());
+        nav.set_sub(self.page().back().is_some());
+        nav.set_form(chrome.style & tool::CANCEL != 0);
+        nav.set_has_action(chrome.icon != tool::NONE && !empty);
+        nav.set_action_tool(chrome.icon);
+        nav.set_action_label(chrome.label.as_str().into());
+        nav.set_pill(chrome.style & tool::PILL != 0);
+        nav.set_full(self.page() == Page::Call);
+        let (n, at) = match self.page() {
+            Page::Phone(PhoneView::Dial) => (2, 0),
+            Page::Contacts(ContactsView::List) => (2, 1),
+            _ => (0, 0),
+        };
+        nav.set_dots(n);
+        nav.set_dot(at);
+        let options = self.options();
+        if nav
+            .get_options()
+            .iter()
+            .ne(options.iter().map(|o| SharedString::from(*o)))
+        {
+            nav.set_options(strings(&options));
+        }
+    }
+
+    fn chrome(&self) -> Chrome {
+        match self.page() {
             Page::Phone(_) => dial::chrome(self),
             Page::Contacts(_) => people::chrome(self),
             Page::Call => call::chrome(self),
             Page::Settings(_) => prefs::chrome(self),
             Page::Messages(_) => msgs::chrome(self),
-        };
-        let empty = chrome.style & proto::TOOLBAR_EMPTY != 0;
+        }
+    }
+
+    /// What the UI server needs of the current view (protocol 1.8): its name; Back stays in the app while there is
+    /// somewhere to go back to, something Back closes, or a kit layer (the ⋮ menu) open; the call screens full
+    /// screen.
+    fn page_now(&self, ui: &PhoneApp) -> neoapp::Page {
         neoapp::Page {
-            primary: (chrome.icon != proto::TOOL_NONE && !empty).then_some(neoapp::Action {
-                icon: chrome.icon,
-                label: chrome.label,
-            }),
-            title: chrome.title,
-            can_back: self.page().back().is_some() || self.wants_back(),
-            cancel: chrome.style & proto::TOOLBAR_CANCEL != 0,
-            options: self.options().into_iter().map(String::from).collect(),
+            title: self.chrome().title,
+            can_back: self.page().back().is_some()
+                || self.wants_back()
+                || ui.global::<Kit>().get_layers() > 0,
             full: self.page() == Page::Call,
-            dots: match self.page() {
-                Page::Phone(PhoneView::Dial) => Some((2, 0)),
-                Page::Contacts(ContactsView::List) => Some((2, 1)),
-                _ => None,
-            },
         }
     }
 
@@ -370,15 +405,11 @@ impl Ctx {
 
     pub fn next_wake_us(&self) -> i32 {
         let now = e32::time::millis();
-        let mut at = [call::next_wake(self), dial::next_wake(self)]
+        let at = [call::next_wake(self), dial::next_wake(self)]
             .into_iter()
             .flatten()
             .min()
             .unwrap_or(now + 60_000);
-        let note = self.m.borrow().note_until;
-        if note > now {
-            at = at.min(note);
-        }
         i32::try_from(at.saturating_sub(now).max(20) * 1000).unwrap_or(i32::MAX)
     }
 }

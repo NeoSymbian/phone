@@ -33,7 +33,7 @@ use neoui_proto::InputEvent;
 use neoui_proto::ipc::{self as proto, AppEvent};
 use neoui_proto::settings::keys;
 use phone_core::page::{Page, PhoneView};
-use phone_ui::{Nav, PhoneApp, Theme};
+use phone_ui::{Kit, Nav, PhoneApp, Theme};
 use slint::ComponentHandle;
 
 e32::main!(main);
@@ -84,7 +84,6 @@ fn run() -> Result<(), i32> {
         call: Default::default(),
         prefs: Default::default(),
         msgs: Default::default(),
-        note_until: 0,
         visible: false,
     };
     let ctx = Rc::new(Ctx::new(app, &ui, model));
@@ -94,7 +93,8 @@ fn run() -> Result<(), i32> {
     people::send_known(&ctx);
     let nav = ui.global::<Nav>();
     {
-        let ctx = Rc::downgrade(&ctx);
+        let weak = Rc::downgrade(&ctx);
+        let ctx = weak.clone();
         nav.on_act(move |action, value| {
             let Some(ctx) = ctx.upgrade() else { return };
             // the only act: "switch" (the Phone | Contacts swipe)
@@ -104,6 +104,18 @@ fn run() -> Result<(), i32> {
                 } else {
                     Page::Phone(PhoneView::Dial)
                 });
+            }
+        });
+        // the kit header's taps: ← or a form's ✕ (Back), the action (an icon, ✓ or the content's pill), ⋮'s items
+        let ctx = weak;
+        nav.on_header(move |kind, i| {
+            let Some(ctx) = ctx.upgrade() else { return };
+            match kind.as_str() {
+                "back" => {
+                    ctx.back();
+                }
+                "action" => ctx.action(),
+                _ => ctx.option_at(usize::try_from(i).unwrap_or(usize::MAX)),
             }
         });
     }
@@ -166,6 +178,8 @@ fn run() -> Result<(), i32> {
                     prefs::reload(&ctx);
                     ctx.show();
                 }
+                // the kit's layers first (the header's ⋮ menu)
+                Some(AppEvent::Back) if neoapp::kit_back!(ctx.ui()) => {}
                 Some(AppEvent::Back) => {
                     ctx.back();
                 }
@@ -177,12 +191,9 @@ fn run() -> Result<(), i32> {
                     kf.set_dismissed(h == 0 && kf.get_open());
                     kf.set_text_h(h as f32);
                 }
-                Some(AppEvent::Primary) => ctx.action(),
-                Some(AppEvent::Cancel) => {
-                    ctx.back();
-                }
-                Some(AppEvent::Option { i }) => ctx.option_at(i),
                 Some(AppEvent::Answer { i }) => ctx.answer(i == 0),
+                // the navigation mode changed the app's height (Buttons 639 dp, Gestures 679 dp)
+                Some(e @ AppEvent::Area { .. }) => ctx.app.handle(&e),
                 Some(AppEvent::Input(input)) => match input {
                     InputEvent::Key { code, down: true } => ctx.app.dispatch_key(code),
                     InputEvent::Key { .. } => {}
