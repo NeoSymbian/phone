@@ -3,8 +3,8 @@
 //! OPEN), the note, the header and footer the app draws and the page the UI server knows (protocol 1.9: name, Back,
 //! full screen, dialogs), the system keyboard, drawing.
 //!
-//! Areas (one module each, same shape): [`crate::dial`] (dialer, Recents, details, speed dial), [`crate::call`] (the
-//! call screens), [`crate::prefs`] (Settings, Blocked numbers). Each has `State`, `bind` (its global's `act`), `show`
+//! Areas (one module each, same shape): [`crate::dial`] (Recents, the keypad sheet, details, speed dial),
+//! [`crate::call`] (the call screens), [`crate::prefs`] (Settings, Blocked numbers, Quick replies). Each has `State`, `bind` (its global's `act`), `show`
 //! (model → UI), `chrome`, `options`/`option`, `action`, `back`. Contacts and Messages are apps of their own (NEOCONT,
 //! NEOMSG): [`Ctx::contact`], [`Ctx::message`] open them.
 
@@ -19,7 +19,7 @@ use neoapp::App;
 use neoui_proto::ipc as proto;
 use phone_common::modem::Modem;
 use phone_common::ui::{Chrome, strings, tool};
-use phone_core::page::{Page, PhoneView, app, number};
+use phone_core::page::{Page, PhoneView, SettingsView, app, number};
 use phone_rules::block;
 use phone_ui::{Icons, KeyboardFocus, Kit, Nav, PhoneApp};
 use slint::{ComponentHandle, Model as _, SharedString};
@@ -53,6 +53,8 @@ pub struct Model {
     pub visible: bool,
     /// another app opened the call screens (OPEN): when the call ends, the user goes back there (DONE)
     pub call_opened: bool,
+    /// another app opened Settings (OPEN): Back from its top goes back there (DONE)
+    pub settings_opened: bool,
 }
 
 pub struct Ctx {
@@ -165,6 +167,15 @@ impl Ctx {
         if handled {
             return true;
         }
+        // Settings opened from Messages or Contacts: Back returns there, and Phone is at its root next time
+        if self.page() == Page::Settings(SettingsView::Main) && self.m.borrow().settings_opened {
+            self.m.borrow_mut().settings_opened = false;
+            self.go(Page::Phone(PhoneView::Recents));
+            if let Err(e) = self.app.done() {
+                dprintln!("neophone: done not sent ({})", e);
+            }
+            return true;
+        }
         match self.page().back() {
             Some(p) => {
                 self.go(p);
@@ -221,7 +232,9 @@ impl Ctx {
 
     /// The header's search field changed (each keystroke; "" when it closed).
     pub fn searched(&self, query: &str) {
-        let _ = query; // no Phone view searches yet
+        if let Page::Phone(_) = self.page() {
+            dial::searched(self, query);
+        }
     }
 
     /// The UI server's dialog was answered: `yes` is its first (confirming) button.
@@ -312,7 +325,8 @@ impl Ctx {
         let nav = ui.global::<Nav>();
         let empty = chrome.style & tool::EMPTY != 0;
         nav.set_title(chrome.title.as_str().into());
-        nav.set_sub(self.page().back().is_some());
+        // the keypad sheet is a layer over Recents, not a page: no ←
+        nav.set_sub(self.page().back().is_some() && self.page() != Page::Phone(PhoneView::Dial));
         nav.set_form(chrome.style & tool::CANCEL != 0);
         nav.set_has_action(chrome.icon != tool::NONE && !empty);
         nav.set_action_tool(chrome.icon);
@@ -321,7 +335,7 @@ impl Ctx {
         nav.set_full(self.page() == Page::Call);
         // the footer (Phone · Contacts · Messages) on the root view
         nav.set_footer(
-            self.page() == Page::Phone(PhoneView::Dial)
+            self.page() == Page::Phone(PhoneView::Recents)
                 && chrome.selected == 0
                 && !nav.get_searching(),
         );

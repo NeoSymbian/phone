@@ -1,19 +1,24 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! The snapshot harness: one software-rendered `PhoneApp` per test binary (Slint's platform is per process), drawn
-//! at the Pixel's app area (1080 x 2037: 2160 minus the UI server's status bar and the Gestures band, dp = 3) into
-//! `snapshots/<name>.png` at the repo root, for side-by-side review with the approved mockups.
+//! at the Pixel's dp = 3 into `snapshots/<name>.png` at the repo root, for side-by-side review with the v2 boards
+//! (360 dp wide): the app area in Gestures mode (679 dp), in Buttons mode (639 dp), or full screen (720 dp, a call).
 #![allow(dead_code)]
 
-use phone_ui::{PhoneApp, Theme};
-use slint::ComponentHandle;
+use phone_ui::{Icons, Nav, PhoneApp, Theme};
 use slint::platform::software_renderer::{
     MinimalSoftwareWindow, PremultipliedRgbaColor, RepaintBufferType, TargetPixel,
 };
-use slint::platform::{Platform, WindowAdapter};
+use slint::platform::{Platform, PointerEventButton, WindowAdapter, WindowEvent};
+use slint::{ComponentHandle, LogicalPosition, ModelRc, SharedString, VecModel};
+use std::cell::RefCell;
 use std::rc::Rc;
 
 pub const W: u32 = 1080;
-pub const H: u32 = 2037;
+pub const DP: f32 = 3.0;
+/// The app's height in dp: Gestures, Buttons, full screen.
+pub const GESTURES: u32 = 679;
+pub const BUTTONS: u32 = 639;
+pub const FULL: u32 = 720;
 
 struct Host(Rc<MinimalSoftwareWindow>);
 
@@ -48,34 +53,127 @@ impl TargetPixel for Px {
 pub struct Shot {
     window: Rc<MinimalSoftwareWindow>,
     pub ui: PhoneApp,
+    /// every `act(action, value)` the screens sent, oldest first
+    pub acts: Rc<RefCell<Vec<(String, String)>>>,
 }
 
-/// The app at the Pixel's size; call once per test binary.
+pub fn model<T: Clone + 'static>(v: Vec<T>) -> ModelRc<T> {
+    ModelRc::from(Rc::new(VecModel::from(v)))
+}
+
+pub fn strings(v: &[&str]) -> ModelRc<SharedString> {
+    model(v.iter().map(|s| SharedString::from(*s)).collect())
+}
+
+/// The app at the Pixel's width; call once per test binary.
 pub fn app() -> Shot {
     let window = MinimalSoftwareWindow::new(RepaintBufferType::NewBuffer);
     slint::platform::set_platform(Box::new(Host(window.clone())))
         .expect("one platform per process");
     let ui = PhoneApp::new().expect("PhoneApp");
-    ui.global::<Theme>().set_dp(3.0);
-    window.set_size(slint::PhysicalSize::new(W, H));
+    ui.global::<Theme>().set_dp(DP);
+    window.set_size(slint::PhysicalSize::new(W, GESTURES * 3));
     ui.show().expect("show");
-    Shot { window, ui }
+    let acts = Rc::new(RefCell::new(Vec::new()));
+    let log = |acts: &Rc<RefCell<Vec<(String, String)>>>| {
+        let acts = acts.clone();
+        move |a: SharedString, v: SharedString| acts.borrow_mut().push((a.into(), v.into()))
+    };
+    ui.global::<phone_ui::DialState>().on_act(log(&acts));
+    ui.global::<phone_ui::CallState>().on_act(log(&acts));
+    ui.global::<phone_ui::SettingsState>().on_act(log(&acts));
+    let a = acts.clone();
+    ui.global::<Nav>()
+        .on_header(move |k, i| a.borrow_mut().push((format!("header-{k}"), i.to_string())));
+    Shot { window, ui, acts }
+}
+
+/// The header the app's Rust sets for a view (symbian/common ui.rs `Chrome` through ctx.rs `header`).
+#[derive(Default)]
+pub struct Header<'a> {
+    pub title: &'a str,
+    pub sub: bool,
+    pub form: bool,
+    /// header icons: (ui-shared/icons.slint id, label)
+    pub actions: &'a [(i32, &'a str)],
+    pub search: bool,
+    pub options: &'a [&'a str],
+    pub footer: bool,
+    pub selected: i32,
+    pub selection: &'a [(i32, &'a str)],
 }
 
 impl Shot {
-    /// Draw and save `snapshots/<name>.png`; returns the pixels for checks.
-    pub fn shoot(&self, name: &str) -> Vec<u32> {
+    pub fn header(&self, h: Header) {
+        let nav = self.ui.global::<Nav>();
+        let icons = self.ui.global::<Icons>();
+        nav.set_title(h.title.into());
+        nav.set_sub(h.sub);
+        nav.set_form(h.form);
+        nav.set_has_action(h.form);
+        nav.set_pill(false);
+        nav.set_full(false);
+        let acts = |v: &[(i32, &str)]| {
+            model(
+                v.iter()
+                    .map(|(t, l)| icons.invoke_act(*t, (*l).into()))
+                    .collect(),
+            )
+        };
+        nav.set_actions(acts(h.actions));
+        nav.set_search(h.search);
+        nav.set_options(strings(h.options));
+        nav.set_footer(h.footer);
+        nav.set_missed(2);
+        nav.set_unread(3);
+        nav.set_selected(h.selected);
+        nav.set_selection_actions(acts(h.selection));
+    }
+
+    /// The acts sent since the last call.
+    pub fn take_acts(&self) -> Vec<(String, String)> {
+        std::mem::take(&mut *self.acts.borrow_mut())
+    }
+
+    /// A tap at (x, y) dp of the app's surface.
+    pub fn tap(&self, x: f32, y: f32) {
+        let position = LogicalPosition::new(x * DP, y * DP);
+        let w = self.window.window();
+        w.dispatch_event(WindowEvent::PointerMoved { position });
+        w.dispatch_event(WindowEvent::PointerPressed {
+            position,
+            button: PointerEventButton::Left,
+        });
+        w.dispatch_event(WindowEvent::PointerReleased {
+            position,
+            button: PointerEventButton::Left,
+        });
+        w.dispatch_event(WindowEvent::PointerExited);
+        self.settle();
+    }
+
+    /// Let timers and animations run a second on.
+    pub fn settle(&self) {
         NOW.set(NOW.get() + core::time::Duration::from_secs(1));
         slint::platform::update_timers_and_animations();
+    }
+
+    /// Draw the app `h_dp` high and save `snapshots/<name>.png`; returns the pixels for checks.
+    pub fn shoot_at(&self, name: &str, h_dp: u32) -> Vec<u32> {
+        let h = h_dp * 3;
+        if self.window.size().height != h {
+            self.window.set_size(slint::PhysicalSize::new(W, h));
+        }
+        self.settle();
         self.window.request_redraw();
-        let mut px = vec![Px(0); (W * H) as usize];
+        let mut px = vec![Px(0); (W * h) as usize];
         self.window.draw_if_needed(|r| {
             r.render(&mut px, W as usize);
         });
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../snapshots");
         std::fs::create_dir_all(&root).unwrap();
         let file = std::fs::File::create(root.join(format!("{name}.png"))).unwrap();
-        let mut enc = png::Encoder::new(std::io::BufWriter::new(file), W, H);
+        let mut enc = png::Encoder::new(std::io::BufWriter::new(file), W, h);
         enc.set_color(png::ColorType::Rgb);
         enc.set_depth(png::BitDepth::Eight);
         let mut w = enc.write_header().unwrap();
@@ -85,5 +183,10 @@ impl Shot {
             .collect();
         w.write_image_data(&rgb).unwrap();
         px.into_iter().map(|p| p.0).collect()
+    }
+
+    /// The app area in Gestures mode.
+    pub fn shoot(&self, name: &str) -> Vec<u32> {
+        self.shoot_at(name, GESTURES)
     }
 }

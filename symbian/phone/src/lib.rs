@@ -5,7 +5,8 @@
 //! page with a number (`AppEvent::Open`: Call, a speed-dial key, Settings).
 //!
 //! - [`ctx`]: the state and the shared moves; `phone_common`: MODEMD's client, the contacts file, settings, blocking
-//! - areas: [`dial`] (dialer, Recents, speed dial), [`call`] (the call screens), [`prefs`] (Settings, blocking)
+//! - areas: [`dial`] (Recents, the keypad sheet, details, speed dial), [`call`] (the call screens), [`prefs`]
+//!   (Settings, blocking, quick replies)
 //! - this file: connecting, loading, and the event loop (input, pages, MODEMD's status, time)
 #![no_std]
 
@@ -61,8 +62,8 @@ fn run() -> Result<(), i32> {
     let mut modem = modem::Modem::default();
     let block = modem.block_list().unwrap_or_default();
     let model = Model {
-        page: Page::Phone(PhoneView::Dial),
-        before_call: Page::Phone(PhoneView::Dial),
+        page: Page::Phone(PhoneView::Recents),
+        before_call: Page::Phone(PhoneView::Recents),
         modem,
         status: None,
         book,
@@ -76,6 +77,7 @@ fn run() -> Result<(), i32> {
         msgs: Default::default(),
         visible: false,
         call_opened: false,
+        settings_opened: false,
     };
     let ctx = Rc::new(Ctx::new(app, &ui, model));
     prefs::reload(&ctx);
@@ -116,7 +118,7 @@ fn run() -> Result<(), i32> {
     dial::bind(&ctx, &ui);
     call::bind(&ctx, &ui);
     prefs::bind(&ctx, &ui);
-    ctx.go(Page::Phone(PhoneView::Dial));
+    ctx.go(Page::Phone(PhoneView::Recents));
     ctx.sync()?;
 
     rt::block_on(async {
@@ -164,8 +166,11 @@ fn run() -> Result<(), i32> {
                 Some(AppEvent::Page { page }) => {
                     dprintln!("neophone: page {}", page);
                     ctx.m.borrow_mut().call_opened = false;
-                    if let Some(p) = Page::from_number(key::PHONE, page) {
-                        ctx.go(p);
+                    ctx.m.borrow_mut().settings_opened = false;
+                    match Page::from_number(key::PHONE, page) {
+                        Some(Page::Settings(_)) => prefs::open_at(&ctx, ""),
+                        Some(p) => ctx.go(p),
+                        None => {}
                     }
                 }
                 // Contacts or Messages opened a page: Call a number, put one on a speed-dial key, Settings
@@ -173,6 +178,7 @@ fn run() -> Result<(), i32> {
                     let arg = ctx.app.arg().unwrap_or_default();
                     dprintln!("neophone: opened on page {}", page);
                     ctx.m.borrow_mut().call_opened = false;
+                    ctx.m.borrow_mut().settings_opened = false;
                     match Page::from_number(key::PHONE, page) {
                         Some(Page::Call) if !arg.is_empty() => {
                             ctx.m.borrow_mut().call_opened = true;
@@ -180,6 +186,15 @@ fn run() -> Result<(), i32> {
                         }
                         Some(Page::Phone(PhoneView::Speed)) if !arg.is_empty() => {
                             dial::start_assign(&ctx, &arg);
+                        }
+                        // Settings at a section ("messages", "contacts"); Back returns to the app that opened it
+                        Some(Page::Settings(_)) => {
+                            ctx.m.borrow_mut().settings_opened = true;
+                            prefs::open_at(&ctx, &arg);
+                        }
+                        // the footer's Phone tab in Contacts and Messages opens DIAL: Recents, the root
+                        Some(Page::Phone(PhoneView::Dial)) => {
+                            ctx.go(Page::Phone(PhoneView::Recents))
                         }
                         Some(p) => ctx.go(p),
                         None => {}
