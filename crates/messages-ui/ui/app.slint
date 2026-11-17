@@ -11,7 +11,7 @@ import { Nav } from "@phone-shared/nav.slint";
 import { AppFrame } from "@phone-shared/frame.slint";
 import { Icons } from "@phone-shared/icons.slint";
 import { MessagesState } from "messages/state.slint";
-import { MessagesPage } from "messages/pages.slint";
+import { MessagesPage, BlockDialog } from "messages/pages.slint";
 
 export { Theme, Scroll, KeyboardFocus, Kit, Nav, Icons, MessagesState, ShadeNote }
 
@@ -22,6 +22,8 @@ export component MessagesApp inherits Window {
         own: 2;
         MessagesPage { }
     }
+
+    BlockDialog { }
 }
 
 // The host snapshots only: the app with what the shell draws over it from the app's requests (NOTE's toast, the

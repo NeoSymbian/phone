@@ -91,7 +91,13 @@ fn bubble(id: i32, text: &str, mine: bool, meta: &str, band: &str) -> Bubble {
 }
 
 fn bubbles() -> Vec<Bubble> {
-    let mut failed = bubble(5, "No problem, take your time", true, "", "");
+    let mut failed = bubble(
+        5,
+        "No problem, take your time",
+        true,
+        "⚠ Not sent · tap to retry",
+        "",
+    );
     failed.failed = true;
     vec![
         bubble(
@@ -182,6 +188,13 @@ fn boards() {
     m.set_counter("Unicode · 57 left · 1 SMS".into());
     m.set_can_send(true);
     m.set_autofocus(true);
+    // the composer takes the focus once the view is up
+    s.tick();
+    s.tick();
+    assert!(
+        s.ui.global::<KeyboardFocus>().get_open(),
+        "Reply focuses the composer"
+    );
     s.shoot("p2-msg-thread");
     s.resize(1917);
     s.shoot("p2-msg-thread-buttons");
@@ -193,8 +206,10 @@ fn boards() {
     m.set_menu_x(282.0 * DP);
     m.set_menu_y((400.0 - 25.0) * DP);
     m.set_menu_open(true);
+    m.set_held(2);
     s.shoot("p2-msg-options");
     m.set_menu_open(false);
+    m.set_held(-1);
     s.shoot("tmp");
 
     // a message's details: [← Message details]
@@ -237,6 +252,7 @@ fn boards() {
             detail: "Mobile · +374 28 123456".into(),
             initials: "AP".into(),
             tint: tint(0xd6409f),
+            known: true,
         },
         Suggestion {
             pre: "Aram Hakobyan".into(),
@@ -245,6 +261,7 @@ fn boards() {
             detail: "Work · +374 10 555 010".into(),
             initials: "AH".into(),
             tint: tint(0x14a3a3),
+            known: true,
         },
     ]));
     // the view change closes the keyboard (the frame leaves the fields): open it after

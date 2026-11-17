@@ -74,7 +74,6 @@ fn run() -> Result<(), i32> {
     };
     let ctx = Rc::new(Ctx::new(app, &ui, model));
     ctx.reload_prefs();
-    msgs::load(&ctx);
     msgs::sync(&ctx);
     {
         // the frame's taps: ← or a form's ✕ (Back), the action (an icon or ✓), ⋮'s items, the footer's other apps

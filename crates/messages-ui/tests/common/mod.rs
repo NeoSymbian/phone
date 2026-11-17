@@ -96,6 +96,37 @@ impl Shot {
         });
     }
 
+    /// A finger down at (x, y) in px, held `ms`, then up: a tap, or (500 ms and more) a long-press.
+    pub fn press(&self, x: f32, y: f32, ms: u64) {
+        use slint::platform::{PointerEventButton, WindowEvent};
+        let w = self.window.window();
+        let at = slint::LogicalPosition::new(x, y);
+        w.dispatch_event(WindowEvent::PointerPressed {
+            position: at,
+            button: PointerEventButton::Left,
+        });
+        for _ in 0..ms / 50 {
+            NOW.set(NOW.get() + core::time::Duration::from_millis(50));
+            slint::platform::update_timers_and_animations();
+        }
+        w.dispatch_event(WindowEvent::PointerReleased {
+            position: at,
+            button: PointerEventButton::Left,
+        });
+        w.dispatch_event(WindowEvent::PointerExited);
+    }
+
+    /// A second on: timers fire, then a frame is drawn (and thrown away), so views that came up are built.
+    pub fn tick(&self) {
+        NOW.set(NOW.get() + core::time::Duration::from_secs(1));
+        slint::platform::update_timers_and_animations();
+        self.window.request_redraw();
+        let mut px = vec![Px(0); (W * self.h.get()) as usize];
+        self.window.draw_if_needed(|r| {
+            r.render(&mut px, W as usize);
+        });
+    }
+
     /// Draw and save `snapshots/<name>.png`; returns the pixels for checks.
     pub fn shoot(&self, name: &str) -> Vec<u32> {
         NOW.set(NOW.get() + core::time::Duration::from_secs(1));

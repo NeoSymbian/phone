@@ -193,13 +193,26 @@ pub fn listed(
         .collect()
 }
 
-/// What a swipe did, for the toast's Undo.
+/// What a swipe or the bubble menu's Delete did, for the toast's Undo.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Swiped {
     /// archived at once (Undo unarchives): a message id of the thread
     Archived(u32),
     /// held back (MODEMD can't undo a delete): sent when the toast is gone or on the next other action
     Deleted { number: String, id: u32 },
+    /// one message, held back the same way
+    Message(u32),
+}
+
+impl Swiped {
+    /// The MODEMD edit (SMS_EDIT action, message id) a held delete sends; an archive was sent already.
+    fn edit(&self) -> Option<(i32, u32)> {
+        match *self {
+            Swiped::Archived(_) => None,
+            Swiped::Deleted { id, .. } => Some((st::EDIT_DELETE_THREAD, id)),
+            Swiped::Message(id) => Some((st::EDIT_DELETE, id)),
+        }
+    }
 }
 
 /// The last swipe while its toast (3 s, neoui `NOTE_MS`) can still take it back.
@@ -212,7 +225,7 @@ impl Undo {
     pub const MS: i64 = 3000;
 
     /// A new swipe at `now_ms`; returns the delete held before it, to send now.
-    pub fn push(&mut self, s: Swiped, now_ms: i64) -> Option<u32> {
+    pub fn push(&mut self, s: Swiped, now_ms: i64) -> Option<(i32, u32)> {
         let held = self.flush();
         self.last = Some((s, now_ms + Self::MS));
         held
@@ -224,7 +237,7 @@ impl Undo {
     }
 
     /// The held delete once its toast is gone (an archive just stops being undoable).
-    pub fn due(&mut self, now_ms: i64) -> Option<u32> {
+    pub fn due(&mut self, now_ms: i64) -> Option<(i32, u32)> {
         match self.last {
             Some((_, at)) if now_ms >= at => self.flush(),
             _ => None,
@@ -232,17 +245,22 @@ impl Undo {
     }
 
     /// Another action: the held delete is sent now.
-    pub fn flush(&mut self) -> Option<u32> {
-        match self.last.take() {
-            Some((Swiped::Deleted { id, .. }, _)) => Some(id),
-            _ => None,
-        }
+    pub fn flush(&mut self) -> Option<(i32, u32)> {
+        self.last.take().and_then(|(s, _)| s.edit())
     }
 
     /// The number of the thread a held delete hides.
     pub fn hidden(&self) -> Option<&str> {
         match &self.last {
             Some((Swiped::Deleted { number, .. }, _)) => Some(number),
+            _ => None,
+        }
+    }
+
+    /// The message a held delete hides from its thread.
+    pub fn hidden_message(&self) -> Option<u32> {
+        match self.last {
+            Some((Swiped::Message(id), _)) => Some(id),
             _ => None,
         }
     }
@@ -260,10 +278,42 @@ pub struct Alert {
     pub number: String,
     /// the contact's name, else the number
     pub title: String,
-    /// the newest unread message, on one line
+    pub contact: Option<u32>,
+    /// the unread message before the newest ("" none) and the newest, each on one line
+    pub earlier: String,
     pub text: String,
-    /// that message's id: a newer one posts the entry again
+    /// the newest's id (a newer one posts the entry again) and time
     pub newest: u32,
+    pub utc: i64,
+}
+
+impl Alert {
+    /// The entry's text in at most `max` bytes: the earlier line, a newline, the newest (the shade draws the earlier
+    /// one dim). The newest is kept whole first; the earlier line goes when no room is left for it.
+    pub fn lines(&self, max: usize) -> String {
+        let newest = cut(&self.text, max);
+        let room = max.saturating_sub(newest.len() + 1);
+        if self.earlier.is_empty() || room < 8 {
+            return String::from(newest);
+        }
+        format!("{}\n{newest}", cut(&self.earlier, room))
+    }
+}
+
+/// `s` cut to at most `max` bytes, on a character boundary.
+pub fn cut(s: &str, max: usize) -> &str {
+    let mut end = s.len().min(max);
+    while !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
+
+/// A message's text on one line.
+fn one_line(text: &str) -> String {
+    text.chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect()
 }
 
 /// A conversation's shade entry id: a hash (FNV-1a) of the number's last digits, so every way of writing the number
@@ -288,21 +338,22 @@ pub fn alerts(m: &Mirror, threads: &[Thread], open: Option<&str>) -> Vec<Alert> 
         .iter()
         .filter(|t| t.unread > 0 && !open.is_some_and(|o| same(o, &t.number)))
         .filter_map(|t| {
-            let i = thread(m, &t.number)
+            let mut unread = thread(m, &t.number)
                 .into_iter()
                 .rev()
-                .find(|&i| m.msgs[i].entry.state == st::UNREAD)?;
-            let msg = &m.msgs[i];
+                .filter(|&i| m.msgs[i].entry.state == st::UNREAD);
+            let msg = &m.msgs[unread.next()?];
             Some(Alert {
                 id: alert_id(&t.number),
                 number: t.number.clone(),
                 title: t.name.clone(),
-                text: msg
-                    .text
-                    .chars()
-                    .map(|c| if c.is_control() { ' ' } else { c })
-                    .collect(),
+                contact: t.contact,
+                earlier: unread
+                    .next()
+                    .map_or_else(String::new, |i| one_line(&m.msgs[i].text)),
+                text: one_line(&msg.text),
                 newest: msg.entry.id,
+                utc: msg.entry.utc,
             })
         })
         .collect()
@@ -405,6 +456,28 @@ pub fn counter(text: &str) -> String {
 /// Text that can be sent: not empty, not only spaces, at most 10 parts.
 pub fn sendable(text: &str) -> bool {
     !text.trim().is_empty() && !sms::count(text).too_long()
+}
+
+/// A failed bubble's meta (p2-msg-thread): why it failed (`SmsEntry::why`, `sms::FAIL_*`; 0 unknown), then the tap.
+pub fn failed_meta(why: u8) -> String {
+    let cause = match why {
+        st::FAIL_NO_ANSWER => " · no answer from the network",
+        st::FAIL_REFUSED => " · refused by the network",
+        st::FAIL_RESTART => " · the phone restarted",
+        st::FAIL_UNDELIVERED => " · not delivered",
+        _ => "",
+    };
+    format!("⚠ Not sent{cause} · tap to retry")
+}
+
+/// The note for SMS_SEND's error `r`.
+pub fn send_error(r: i32) -> &'static str {
+    match r {
+        -6 => "Can't send to this number",
+        -40 => "The message is too long",
+        -18 => "The modem isn't ready",
+        _ => "The message wasn't sent",
+    }
 }
 
 /// Why a message was blocked (mockup 35): "Blocked contact", "Number", "Prefix".
@@ -643,19 +716,43 @@ mod tests {
         assert_eq!(u.hidden(), Some("+37491234567"));
         assert_eq!(u.wait_ms(2500), Some(1500));
         assert_eq!(u.due(3999), None);
-        assert_eq!(u.due(4000), Some(5));
+        assert_eq!(u.due(4000), Some((st::EDIT_DELETE_THREAD, 5)));
         assert_eq!(u.hidden(), None);
         assert_eq!(u.due(9000), None);
-        // Undo: nothing is sent
+        // Undo: nothing is sent, and the conversation is listed again
+        let m = mirror();
+        let t = threads(&m, &book(), NameOrder::FirstLast);
         u.push(del(5), 0);
+        assert_eq!(listed(&m, &t, "", false, u.hidden()), [1]);
         assert_eq!(u.undo(), Some(del(5)));
+        assert_eq!(listed(&m, &t, "", false, u.hidden()), [0, 1]);
         assert_eq!(u.due(5000), None);
         // the next swipe sends the held delete first
         u.push(del(5), 0);
-        assert_eq!(u.push(Swiped::Archived(3), 100), Some(5));
+        assert_eq!(
+            u.push(Swiped::Archived(3), 100),
+            Some((st::EDIT_DELETE_THREAD, 5))
+        );
         assert_eq!(u.hidden(), None);
         assert_eq!(u.flush(), None);
         assert_eq!(u.undo(), None);
+    }
+
+    #[test]
+    fn a_bubble_delete_waits_for_its_undo() {
+        let mut u = Undo::default();
+        assert_eq!(u.push(Swiped::Message(4), 0), None);
+        assert_eq!((u.hidden_message(), u.hidden()), (Some(4), None));
+        // Undo: the bubble comes back, nothing is sent
+        assert_eq!(u.undo(), Some(Swiped::Message(4)));
+        assert_eq!(u.hidden_message(), None);
+        assert_eq!(u.due(9000), None);
+        // no Undo: deleted when the toast is gone, or at once by the next action
+        u.push(Swiped::Message(4), 0);
+        assert_eq!(u.due(3000), Some((st::EDIT_DELETE, 4)));
+        u.push(Swiped::Message(6), 0);
+        assert_eq!(u.flush(), Some((st::EDIT_DELETE, 6)));
+        assert_eq!(u.hidden_message(), None);
     }
 
     #[test]
@@ -668,6 +765,9 @@ mod tests {
             (a[0].title.as_str(), a[0].text.as_str(), a[0].newest),
             ("Ava Lindqvist", "Running late", 5)
         );
+        assert_eq!((a[0].contact.is_some(), a[0].utc), (true, T0 + 5 * 60_000));
+        // one unread: one line
+        assert_eq!(a[0].lines(160), "Running late");
         // every way of writing the number is one entry; a sender name its own
         assert_eq!(a[0].id, alert_id("091 234567"));
         assert_ne!(a[0].id, alert_id("+37491234568"));
@@ -679,6 +779,53 @@ mod tests {
         let (post, cancel) = alert_changes(&posted, &a);
         assert_eq!(post, [&a[0]]);
         assert_eq!(cancel, [7]);
+    }
+
+    #[test]
+    fn two_unread_give_two_lines() {
+        let mut m = mirror();
+        let mut b = Vec::new();
+        rec(6, 6, "Ucom", st::UNREAD, true, "New\ncode 77", &mut b);
+        m.apply(&b);
+        let t = threads(&m, &book(), NameOrder::FirstLast);
+        let a = alerts(&m, &t, None);
+        let ucom = a.iter().find(|a| a.title == "Ucom").unwrap();
+        assert_eq!(
+            (ucom.earlier.as_str(), ucom.text.as_str()),
+            ("Your code is 4821", "New code 77")
+        );
+        assert_eq!(ucom.contact, None);
+        assert_eq!(ucom.lines(160), "Your code is 4821\nNew code 77");
+        // the newest stays whole; the earlier line is cut to what is left, or dropped
+        assert_eq!(ucom.lines(23), "Your code i\nNew code 77");
+        assert_eq!(ucom.lines(14), "New code 77");
+        assert_eq!(ucom.lines(5), "New c");
+        assert_eq!(cut("Ծով", 3), "Ծ");
+    }
+
+    #[test]
+    fn failures_and_send_errors_read_plainly() {
+        assert_eq!(failed_meta(0), "⚠ Not sent · tap to retry");
+        assert_eq!(
+            failed_meta(st::FAIL_NO_ANSWER),
+            "⚠ Not sent · no answer from the network · tap to retry"
+        );
+        assert_eq!(
+            failed_meta(st::FAIL_REFUSED),
+            "⚠ Not sent · refused by the network · tap to retry"
+        );
+        assert_eq!(
+            failed_meta(st::FAIL_RESTART),
+            "⚠ Not sent · the phone restarted · tap to retry"
+        );
+        assert_eq!(
+            failed_meta(st::FAIL_UNDELIVERED),
+            "⚠ Not sent · not delivered · tap to retry"
+        );
+        assert_eq!(send_error(-6), "Can't send to this number");
+        assert_eq!(send_error(-40), "The message is too long");
+        assert_eq!(send_error(-18), "The modem isn't ready");
+        assert_eq!(send_error(-1), "The message wasn't sent");
     }
 
     #[test]

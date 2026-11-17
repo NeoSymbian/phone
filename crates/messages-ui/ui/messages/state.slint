@@ -26,7 +26,8 @@ export struct Bubble {
     band: string,
 }
 
-// A contact's number matching what is typed in To (p2-msg-new): the name split around the match, which shows blue.
+// A contact's number matching what is typed in To (p2-msg-new): the name split around the match, which shows blue; or
+// (`known` false) "Send to" a typed number no contact has.
 export struct Suggestion {
     pre: string,
     hit: string,
@@ -34,6 +35,7 @@ export struct Suggestion {
     detail: string,
     initials: string,
     tint: color,
+    known: bool,
 }
 
 // A blocked message (p2-msg-blocked).
@@ -52,31 +54,35 @@ export struct BlockedMessage {
 export global MessagesState {
     // the list (conversations, or the archived ones): its rows, filtered by the header's search
     in property <[ThreadRow]> threads;
-    // the empty state's title when there are no rows ("" = rows)
+    // the empty state's title when there are no rows ("" = rows); while searching, how many match ("3 conversations")
     in property <string> empty;
+    in property <string> result;
     in property <bool> selecting;
-    // the thread: its bubbles, oldest first
+    // the thread: its bubbles, oldest first; the one whose menu is open (its id, -1 none) has a ring
     in property <[Bubble]> bubbles;
+    in property <int> held: -1;
     // the composer's text (written by the field), its counter ("Unicode · 57 left · 1 SMS"), whether Send works
     in-out property <string> draft;
     in property <string> counter;
     in property <bool> can-send;
-    // the composer takes the focus when the view opens (Reply)
+    // the composer takes the focus when the view opens, or at once when the thread is open (Reply)
     in-out property <bool> autofocus;
     // the new message: the chosen recipients' names, what is typed in To, the contacts matching it
     in property <[string]> recipients;
     in-out property <string> to-text;
     in property <[Suggestion]> suggestions;
     // the menu at the finger (a held bubble, a held blocked message): where (window coordinates), its items, the red
-    // one, and the text Copy text copies
+    // one
     in-out property <bool> menu-open;
     in-out property <length> menu-x;
     in-out property <length> menu-y;
     in property <[string]> menu-items;
     in property <int> menu-destructive: -1;
-    in property <string> menu-text;
-    // bumped by Paste: the system clipboard's text goes into the composer
-    in-out property <int> paste;
+    // Block number's query (the app draws it for its check boxes): the question and the Calls and Messages boxes
+    in property <bool> block-open;
+    in property <string> block-question;
+    in property <bool> block-calls;
+    in property <bool> block-messages;
     // the details page: the message and its lines
     in property <Bubble> details;
     in property <[string]> details-keys;
@@ -86,6 +92,7 @@ export global MessagesState {
 
     // "open" i, "toggle" i (selection), "select" i (long-press), "archive" i, "unarchive" i, "delete" i (swipe),
     // "new"; "draft" text, "send", "hold" bubble id, "retry" bubble id, "menu" item, "dismiss";
-    // "to" text, "pick" suggestion, "unpick" recipient; "blocked" message id
+    // "to" text, "pick" suggestion, "unpick" recipient; "blocked" message id (a tap: its text), "blocked-hold" id;
+    // "block-check" box (0 Calls, 1 Messages), "block-confirm", "block-cancel"
     callback act(string, string);
 }

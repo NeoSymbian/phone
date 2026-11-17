@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! Messages (NEOPHONE v2 p2-msg-*): the conversations and the archived ones, a thread, a message's details, a new
 //! message, the blocked messages; Reply with message from the call screens. MODEMD keeps the messages (modem-ipc
-//! 2.4): this module mirrors them ([`phone_core::messages::Mirror`], re-read when `Status::sms_revision` moves),
+//! 2.5): this module mirrors them ([`phone_core::messages::Mirror`], re-read when `Status::sms_revision` moves),
 //! sends, marks read, archives, deletes, and posts one shade entry per conversation with unread messages.
 //!
 //! The screens keep the composer and the To field in `MessagesState`; the open thread, the search, the selection,
-//! the chosen recipients, the held bubble, a swipe's Undo and the queries live here.
+//! the chosen recipients, the held bubble, a delete's Undo and the queries live here.
 
 use crate::ctx::Ctx;
 use alloc::format;
@@ -16,9 +16,9 @@ use e32::dprintln;
 use messages_ui::{
     BlockedMessage, Bubble, KeyboardFocus, MessagesApp, MessagesState, Nav, Suggestion, ThreadRow,
 };
-use modem_ipc::{SmsSettings, sms as st};
+use modem_ipc::sms as st;
 use phone_common::ui::{Chrome, model, strings, tool};
-use phone_core::messages::{self as messages, Mirror, Swiped, Thread, Undo};
+use phone_core::messages::{self as messages, Mirror, Swiped, Thread, Undo, cut};
 use phone_core::page::{ContactsView, MessagesView, Page, SettingsView, number};
 use phone_core::people::{initials, tint};
 use slint::{Color, ComponentHandle, SharedString};
@@ -30,6 +30,7 @@ pub enum Query {
     None,
     DeleteSelected,
     DeleteThread,
+    DeleteAll,
     ClearBlocked,
     Discard,
 }
@@ -42,24 +43,27 @@ pub struct State {
     shown: Vec<usize>,
     /// the header's search text
     search: String,
-    /// selection mode: the checked conversations' numbers (None: off)
+    /// selection mode: the checked conversations' numbers (None: off; empty: ⋮ ▸ Select, nothing ticked yet)
     selected: Option<Vec<String>>,
     /// the open thread's number
     pub open: String,
     /// the new message's recipients: (name, number)
     recipients: Vec<(String, String)>,
+    /// To's rows: (name, label, number); "Send to" a typed number has no label
     suggestions: Vec<(String, &'static str, String)>,
     /// the bubble whose menu is open, the blocked message whose menu is open, the message the details show
     held: Option<u32>,
     held_blocked: Option<u32>,
     details: Option<u32>,
     query: Query,
-    /// the last swipe while its toast can take it back
+    /// Block number's query open: its Calls and Messages boxes
+    block_ask: Option<[bool; 2]>,
+    /// the last delete or archive while its toast can take it back
     undo: Undo,
+    /// the toast's button is Settings (a prefix still blocks an unblocked sender), not Undo
+    note_settings: bool,
     /// the shade's entries as posted: (id, newest message id)
     posted: Vec<(u32, u32)>,
-    /// MODEMD's message settings
-    pub settings: SmsSettings,
 }
 
 pub fn bind(ctx: &Rc<Ctx>, ui: &MessagesApp) {
@@ -103,14 +107,6 @@ pub fn on_status(ctx: &Ctx) {
     }
 }
 
-/// Load MODEMD's message settings (start, and Settings).
-pub fn load(ctx: &Ctx) {
-    let settings = ctx.m.borrow_mut().modem.sms_settings();
-    if let Ok(s) = settings {
-        ctx.m.borrow_mut().msgs.settings = s;
-    }
-}
-
 /// The user tapped our shade entry `id` (`action` 0), its Reply (1) or its Call (2).
 pub fn notified(ctx: &Ctx, id: u32, action: u16) {
     settle(ctx);
@@ -132,13 +128,22 @@ pub fn notified(ctx: &Ctx, id: u32, action: u16) {
     }
 }
 
-/// The toast's Undo: an archive is taken back, a held delete is never sent.
+/// The toast's button: Undo (an archive is taken back, a held delete is never sent), or Settings.
 pub fn undo(ctx: &Ctx) {
+    if core::mem::take(&mut ctx.m.borrow_mut().msgs.note_settings) {
+        return ctx.open(Page::Settings(SettingsView::Main), "messages");
+    }
     let last = ctx.m.borrow_mut().msgs.undo.undo();
     if let Some(Swiped::Archived(id)) = last {
         edit(ctx, st::EDIT_UNARCHIVE_THREAD, id);
     }
     ctx.show();
+}
+
+/// A toast with Undo.
+fn note_undo(ctx: &Ctx, text: &str) {
+    ctx.m.borrow_mut().msgs.note_settings = false;
+    ctx.note_undo(text);
 }
 
 /// The event loop's timer: how long until a held delete is due (60 s when none).
@@ -150,8 +155,8 @@ pub fn wait_us(ctx: &Ctx) -> i32 {
 /// The timer fired: send a delete whose toast is gone.
 pub fn tick(ctx: &Ctx) {
     let due = ctx.m.borrow_mut().msgs.undo.due(neoapp::wall_ms());
-    if let Some(id) = due {
-        edit(ctx, st::EDIT_DELETE_THREAD, id);
+    if let Some((action, id)) = due {
+        edit(ctx, action, id);
         ctx.show();
     }
 }
@@ -159,8 +164,8 @@ pub fn tick(ctx: &Ctx) {
 /// Another action: a held delete is sent now.
 fn settle(ctx: &Ctx) {
     let held = ctx.m.borrow_mut().msgs.undo.flush();
-    if let Some(id) = held {
-        edit(ctx, st::EDIT_DELETE_THREAD, id);
+    if let Some((action, id)) = held {
+        edit(ctx, action, id);
     }
 }
 
@@ -210,7 +215,10 @@ fn act(ctx: &Ctx, action: &str, value: &str) {
                 Some((t.number.clone(), e.id, e.state == st::FAILED))
             })
     };
-    if !matches!(action, "draft" | "to" | "archive" | "delete" | "dismiss") {
+    if !matches!(
+        action,
+        "draft" | "to" | "archive" | "delete" | "dismiss" | "block-check"
+    ) {
         settle(ctx);
     }
     match (action, row) {
@@ -224,6 +232,7 @@ fn act(ctx: &Ctx, action: &str, value: &str) {
         ("select", Some((number, ..))) => {
             ctx.m.borrow_mut().msgs.selected = Some(alloc::vec![number]);
         }
+        // selection mode stays on with nothing ticked (✕ ends it)
         ("toggle", Some((number, ..))) => {
             let mut m = ctx.m.borrow_mut();
             if let Some(sel) = m.msgs.selected.as_mut() {
@@ -233,15 +242,12 @@ fn act(ctx: &Ctx, action: &str, value: &str) {
                     }
                     None => sel.push(number),
                 }
-                if sel.is_empty() {
-                    m.msgs.selected = None;
-                }
             }
         }
         ("archive", Some((_, last, _))) => {
             swiped(ctx, Swiped::Archived(last));
             edit(ctx, st::EDIT_ARCHIVE_THREAD, last);
-            ctx.note_undo("Conversation archived");
+            note_undo(ctx, "Conversation archived");
         }
         ("unarchive", Some((_, last, _))) => {
             edit(ctx, st::EDIT_UNARCHIVE_THREAD, last);
@@ -249,13 +255,42 @@ fn act(ctx: &Ctx, action: &str, value: &str) {
         }
         ("delete", Some((number, last, _))) => {
             swiped(ctx, Swiped::Deleted { number, id: last });
-            ctx.note_undo("Conversation deleted");
+            note_undo(ctx, "Conversation deleted");
         }
         ("new", _) => return new_message(ctx),
         ("send", _) => return send(ctx),
         ("retry", _) => retry(ctx, id),
         ("hold", _) => ctx.m.borrow_mut().msgs.held = Some(id),
-        ("blocked", _) => ctx.m.borrow_mut().msgs.held_blocked = Some(id),
+        // a tap on a blocked message: the whole of it, in its details
+        ("blocked", _) => {
+            ctx.m.borrow_mut().msgs.details = Some(id);
+            return ctx.go(Page::Messages(MessagesView::Details));
+        }
+        ("blocked-hold", _) => ctx.m.borrow_mut().msgs.held_blocked = Some(id),
+        ("block-check", _) => {
+            if let Some(on) = ctx
+                .m
+                .borrow_mut()
+                .msgs
+                .block_ask
+                .as_mut()
+                .and_then(|b| b.get_mut(i))
+            {
+                *on = !*on;
+            }
+        }
+        ("block-cancel", _) => ctx.m.borrow_mut().msgs.block_ask = None,
+        ("block-confirm", _) => {
+            let (ask, open) = {
+                let mut m = ctx.m.borrow_mut();
+                (m.msgs.block_ask.take(), m.msgs.open.clone())
+            };
+            if let Some([calls, messages]) = ask
+                && (calls || messages)
+            {
+                ctx.block_number(&open, calls, messages);
+            }
+        }
         ("menu", _) => {
             let (held, blocked) = {
                 let mut m = ctx.m.borrow_mut();
@@ -294,27 +329,34 @@ fn act(ctx: &Ctx, action: &str, value: &str) {
     ctx.show();
 }
 
-/// A swipe: the delete held before it is sent now.
+/// A swipe or a bubble's Delete: the delete held before it is sent now.
 fn swiped(ctx: &Ctx, s: Swiped) {
     let held = ctx.m.borrow_mut().msgs.undo.push(s, neoapp::wall_ms());
-    if let Some(id) = held {
-        edit(ctx, st::EDIT_DELETE_THREAD, id);
+    if let Some((action, id)) = held {
+        edit(ctx, action, id);
     }
 }
 
-/// The held bubble's menu: Retry, Copy text (the screen copied it), Forward, Delete, Details.
+/// The held bubble's menu: Retry, Copy text, Forward, Delete (with Undo), Details.
 fn bubble(ctx: &Ctx, id: u32, item: &str) {
     let text = ctx.m.borrow().msgs.mirror.get(id).map(|m| m.text.clone());
     let Some(text) = text else { return };
     match item {
-        "Copy text" => ctx.note("Copied"),
+        "Copy text" => ctx.note(if ctx.app.set_clipboard(&text) {
+            "Copied"
+        } else {
+            "Not copied"
+        }),
         "Forward" => {
             new_message(ctx);
             ctx.ui()
                 .global::<MessagesState>()
                 .set_draft(text.as_str().into());
         }
-        "Delete" => edit(ctx, st::EDIT_DELETE, id),
+        "Delete" => {
+            swiped(ctx, Swiped::Message(id));
+            note_undo(ctx, "Message deleted");
+        }
         "Details" => {
             ctx.m.borrow_mut().msgs.details = Some(id);
             return ctx.go(Page::Messages(MessagesView::Details));
@@ -335,9 +377,34 @@ fn blocked_item(ctx: &Ctx, id: u32, item: &str) {
         .get(id)
         .map(|m| String::from(m.number()));
     match (item, number) {
-        ("Unblock sender", Some(n)) => ctx.unblock_number(&n),
+        ("Unblock sender", Some(n)) => unblock_sender(ctx, id, &n),
         ("Delete", _) => edit(ctx, st::EDIT_DELETE, id),
         _ => {}
+    }
+}
+
+/// Unblock sender: its number rules go, and its blocked messages come back to its conversation. A prefix rule that
+/// still blocks it is only said, with the way to Settings ▸ Blocked numbers.
+fn unblock_sender(ctx: &Ctx, id: u32, number: &str) {
+    let r = {
+        let mut m = ctx.m.borrow_mut();
+        let m = &mut *m;
+        phone_common::block::unblock_number(&mut m.modem, &mut m.block, number)
+    };
+    if let Err(e) = r {
+        return ctx.note(&e);
+    }
+    edit(ctx, st::EDIT_UNBLOCK_SENDER, id);
+    let still = ctx.m.borrow().block.check_message(number);
+    let text = match still {
+        None => return ctx.note("Unblocked"),
+        Some(phone_rules::block::why::PREFIX) => "A blocked prefix still blocks this number",
+        Some(_) => "Another rule still blocks this number",
+    };
+    ctx.m.borrow_mut().msgs.note_settings = true;
+    let text = phone_common::ui::note_text(text);
+    if let Err(e) = ctx.app.note(&text, "Settings") {
+        dprintln!("neomsg: note not shown ({})", e);
     }
 }
 
@@ -376,13 +443,18 @@ fn new_message(ctx: &Ctx) {
     ctx.go(Page::Messages(MessagesView::New));
 }
 
-/// The contacts matching what is typed in To.
+/// The contacts matching what is typed in To; a number none of them has: "Send to" it.
 fn suggest(ctx: &Ctx, typed: &str) {
     let mut m = ctx.m.borrow_mut();
-    let found = messages::suggestions(&m.book, m.order, typed, 6)
+    let mut found: Vec<_> = messages::suggestions(&m.book, m.order, typed, 6)
         .into_iter()
         .map(|(_, name, label, number)| (name, label, number))
         .collect();
+    if found.is_empty()
+        && let Some(n) = messages::as_number(typed)
+    {
+        found.push((n.clone(), "", n));
+    }
     m.msgs.suggestions = found;
 }
 
@@ -416,15 +488,17 @@ fn send(ctx: &Ctx) {
         return;
     }
     let mut failed = 0;
+    let mut error = 0;
     for n in &to {
         let r = ctx.m.borrow_mut().modem.sms_send(n, &text);
         if r < 0 {
             dprintln!("neomsg: message not queued ({})", r);
             failed += 1;
+            error = r;
         }
     }
     if failed == to.len() {
-        ctx.note("Can't send to this number");
+        ctx.note(messages::send_error(error));
         return;
     }
     g.set_draft(SharedString::new());
@@ -460,12 +534,18 @@ fn meta(e: &modem_ipc::SmsEntry, offset: i32) -> String {
 
 fn bubble_of(s: &State, i: usize, band: String, offset: i32) -> Bubble {
     let e = &s.mirror.msgs[i].entry;
+    let failed = !e.incoming && e.state == st::FAILED;
     Bubble {
         id: e.id as i32,
         text: s.mirror.msgs[i].text.as_str().into(),
-        meta: meta(e, offset).into(),
+        meta: if failed {
+            messages::failed_meta(e.why)
+        } else {
+            meta(e, offset)
+        }
+        .into(),
         mine: !e.incoming,
-        failed: !e.incoming && e.state == st::FAILED,
+        failed,
         band: band.into(),
     }
 }
@@ -506,17 +586,27 @@ pub fn show(ctx: &Ctx) {
         m.msgs.shown = shown;
         m.msgs.threads = threads;
     }
-    post_alerts(ctx);
+    post_alerts(ctx, offset);
     let m = ctx.m.borrow();
     let s = &m.msgs;
     match view {
         MessagesView::List | MessagesView::Archived => {
+            let searching = !s.search.trim().is_empty();
             g.set_empty(
-                match (s.shown.is_empty(), s.search.is_empty(), view) {
+                match (s.shown.is_empty(), searching, view) {
                     (false, ..) => "",
-                    (true, false, _) => "No matches",
-                    (true, true, MessagesView::Archived) => "No archived conversations",
+                    (true, true, _) => "No matches",
+                    (true, false, MessagesView::Archived) => "No archived conversations",
                     _ => "No messages yet",
+                }
+                .into(),
+            );
+            g.set_result(
+                match s.shown.len() {
+                    _ if !searching => String::new(),
+                    0 => String::new(),
+                    1 => String::from("1 conversation"),
+                    n => format!("{n} conversations"),
                 }
                 .into(),
             );
@@ -545,7 +635,12 @@ pub fn show(ctx: &Ctx) {
             g.set_threads(model(rows));
         }
         MessagesView::Thread => {
-            let idx = messages::thread(&s.mirror, &s.open);
+            // a deleted bubble is hidden while its toast can bring it back
+            let hidden = s.undo.hidden_message();
+            let idx: Vec<usize> = messages::thread(&s.mirror, &s.open)
+                .into_iter()
+                .filter(|&i| Some(s.mirror.msgs[i].entry.id) != hidden)
+                .collect();
             let bands = messages::bands(&s.mirror, &idx, now, offset);
             let bubbles: Vec<Bubble> = idx
                 .iter()
@@ -560,8 +655,12 @@ pub fn show(ctx: &Ctx) {
                 Some((at, &s.mirror.msgs[at]))
             });
             if let Some((at, msg)) = msg {
-                let (name, _) = messages::who(&m.book, m.order, msg.number());
-                let lines = messages::details(msg, &name, now, offset);
+                let (name, contact) = messages::who(&m.book, m.order, msg.number());
+                let mut lines = messages::details(msg, &name, now, offset);
+                if msg.entry.state == st::BLOCKED {
+                    let why = messages::why_text(msg.entry.why, contact.is_some());
+                    lines.push(("Blocked", String::from(why)));
+                }
                 let keys: Vec<&str> = lines.iter().map(|(k, _)| *k).collect();
                 let values: Vec<&str> = lines.iter().map(|(_, v)| v.as_str()).collect();
                 g.set_details(bubble_of(s, at, String::new(), offset));
@@ -577,6 +676,12 @@ pub fn show(ctx: &Ctx) {
                 .suggestions
                 .iter()
                 .map(|(name, label, number)| {
+                    if label.is_empty() {
+                        return Suggestion {
+                            pre: format!("Send to {number}").into(),
+                            ..Suggestion::default()
+                        };
+                    }
                     let (pre, hit, post) = messages::split_match(name, &typed);
                     let id = m.book.lookup(number).map_or(0, |c| c.id);
                     Suggestion {
@@ -586,6 +691,7 @@ pub fn show(ctx: &Ctx) {
                         detail: format!("{label} · {number}").into(),
                         initials: initials(name).into(),
                         tint: color(tint(id)),
+                        known: true,
                     }
                 })
                 .collect();
@@ -648,13 +754,23 @@ pub fn show(ctx: &Ctx) {
                 .position(|i| *i == "Delete")
                 .map_or(-1, |p| p as i32),
         );
-        g.set_menu_text(held.map_or_else(SharedString::new, |h| h.text.as_str().into()));
     }
     g.set_menu_open(!items.is_empty());
+    g.set_held(held.map_or(-1, |h| h.entry.id as i32));
+    // Block number's query
+    g.set_block_open(s.block_ask.is_some());
+    if let Some([calls, msgs]) = s.block_ask {
+        let (name, _) = messages::who(&m.book, m.order, &s.open);
+        g.set_block_question(format!("Block {name}?").into());
+        g.set_block_calls(calls);
+        g.set_block_messages(msgs);
+    }
 }
 
-/// The shade's entries: one per conversation with unread messages, except the thread on screen; read ones go.
-fn post_alerts(ctx: &Ctx) {
+/// The shade's entries: one per conversation with unread messages, except the thread on screen; read ones go. Each has
+/// the contact's avatar, the newest message's time, the unread message before it and the newest, Reply and (for a
+/// number) Call.
+fn post_alerts(ctx: &Ctx, offset: i32) {
     let (want, posted) = {
         let m = ctx.m.borrow();
         let on_screen = m.visible && m.page == Page::Messages(MessagesView::Thread);
@@ -669,13 +785,21 @@ fn post_alerts(ctx: &Ctx) {
         return;
     }
     for a in post {
+        let mut actions = alloc::vec![String::from("Reply")];
+        if messages::as_number(&a.number).is_some() {
+            actions.push("Call".into());
+        }
         let n = neoapp::Notification {
             id: a.id,
-            title: cut(&a.title, neoui_proto::ipc::TITLE_MAX),
-            text: cut(&a.text, neoui_proto::page::TEXT_MAX),
+            title: cut(&a.title, neoui_proto::ipc::TITLE_MAX).into(),
+            text: a.lines(neoui_proto::page::TEXT_MAX),
             page: number::messages::THREAD,
-            actions: alloc::vec!["Reply".into(), "Call".into()],
-            ..neoapp::Notification::default()
+            actions,
+            initials: a.contact.map_or_else(String::new, |_| {
+                cut(&initials(&a.title), neoui_proto::page::INITIALS_MAX).into()
+            }),
+            tint: a.contact.map_or(0, tint),
+            time: messages::time(a.utc, offset),
         };
         if let Err(e) = ctx.app.notify(&n) {
             dprintln!("neomsg: entry not posted ({})", e);
@@ -687,15 +811,6 @@ fn post_alerts(ctx: &Ctx) {
         }
     }
     ctx.m.borrow_mut().msgs.posted = want.iter().map(|a| (a.id, a.newest)).collect();
-}
-
-/// `s` cut to at most `max` bytes, on a character boundary.
-fn cut(s: &str, max: usize) -> String {
-    let mut end = s.len().min(max);
-    while !s.is_char_boundary(end) {
-        end -= 1;
-    }
-    String::from(&s[..end])
 }
 
 /// The question open, asked with the UI server's dialog.
@@ -711,6 +826,11 @@ pub fn query(ctx: &Ctx) -> Option<neoapp::Query> {
             "Delete",
         ),
         Query::DeleteThread => ("Delete this conversation?", String::new(), "Delete"),
+        Query::DeleteAll => (
+            "Delete all conversations?",
+            String::from("Every message is deleted from the phone."),
+            "Delete",
+        ),
         Query::ClearBlocked => ("Delete all blocked messages?", String::new(), "Delete"),
         Query::Discard => ("Discard this message?", String::new(), "Discard"),
     };
@@ -747,6 +867,10 @@ pub fn answer(ctx: &Ctx, yes: bool) {
             ctx.go(Page::Messages(MessagesView::List));
             ctx.note("Conversation deleted");
         }
+        Query::DeleteAll => {
+            edit(ctx, st::EDIT_DELETE_ALL, 0);
+            ctx.note("Conversations deleted");
+        }
         Query::ClearBlocked => edit(ctx, st::EDIT_DELETE_BLOCKED, 0),
         Query::Discard => {
             ctx.ui()
@@ -762,10 +886,32 @@ pub fn answer(ctx: &Ctx, yes: bool) {
 
 pub fn chrome(ctx: &Ctx) -> Chrome {
     let m = ctx.m.borrow();
+    let list = matches!(
+        m.page,
+        Page::Messages(MessagesView::List | MessagesView::Archived)
+    );
+    if let (true, Some(sel)) = (list, &m.msgs.selected) {
+        // [✕ N selected · select all, delete]; 0 after ⋮ ▸ Select
+        return Chrome {
+            selected: sel.len() as i32,
+            selecting: true,
+            selection: alloc::vec![
+                (tool::SELECT_ALL, "Select all"),
+                (tool::DELETE, "Delete selected")
+            ],
+            ..Chrome::titled("Messages")
+        };
+    }
     match m.page {
         Page::Messages(MessagesView::Thread) => {
             let (name, _) = messages::who(&m.book, m.order, &m.msgs.open);
-            Chrome::titled(&name).with(tool::CALL, 0, "Call")
+            let c = Chrome::titled(&name);
+            // an alphanumeric sender (a bank, the operator) can't be called
+            if messages::as_number(&m.msgs.open).is_some() {
+                c.with(tool::CALL, 0, "Call")
+            } else {
+                c
+            }
         }
         Page::Messages(MessagesView::Details) => Chrome::titled("Message details"),
         Page::Messages(MessagesView::New) => {
@@ -780,20 +926,10 @@ pub fn chrome(ctx: &Ctx) -> Chrome {
                 c.with(tool::DELETE, 0, "Clear")
             }
         }
-        _ => match &m.msgs.selected {
-            Some(sel) => Chrome {
-                selected: sel.len() as i32,
-                selection: alloc::vec![
-                    (tool::SELECT_ALL, "Select all"),
-                    (tool::DELETE, "Delete selected")
-                ],
-                ..Chrome::titled("Messages")
-            },
-            // [Messages · 🔍 ✎ ⋮]: the search first, as the board has it (the kit's own 🔍 would come after ✎)
-            None => Chrome {
-                more: alloc::vec![(tool::EDIT, "New")],
-                ..Chrome::titled("Messages").with(tool::SEARCH, 0, "Search")
-            },
+        // [Messages · 🔍 ✎ ⋮]: the search first, as the board has it (the kit's own 🔍 would come after ✎)
+        _ => Chrome {
+            more: alloc::vec![(tool::EDIT, "New")],
+            ..Chrome::titled("Messages").with(tool::SEARCH, 0, "Search")
         },
     }
 }
@@ -805,23 +941,31 @@ pub fn options(ctx: &Ctx) -> Vec<&'static str> {
             "Mark all as read",
             "Select",
             "Archived",
+            "Delete conversations",
             "Blocked messages",
             "Settings",
         ],
-        Page::Messages(MessagesView::Thread) => alloc::vec![
-            "Paste",
-            if m.book.lookup(&m.msgs.open).is_some() {
+        Page::Messages(MessagesView::Thread) => {
+            let mut v = Vec::new();
+            // the clipboard's text into the composer, when there is some
+            if ctx.app.clipboard().is_some() {
+                v.push("Paste");
+            }
+            v.push(if m.book.lookup(&m.msgs.open).is_some() {
                 "Contact card"
             } else {
                 "Add to contacts"
-            },
-            "Archive",
-            "Delete conversation",
-            "Block number",
-        ],
-        Page::Messages(MessagesView::New) => alloc::vec!["Paste"],
-        Page::Messages(MessagesView::Blocked) if !messages::blocked(&m.msgs.mirror).is_empty() => {
-            alloc::vec!["Delete all"]
+            });
+            v.push("Archive");
+            v.push("Delete conversation");
+            v.push(
+                if phone_common::block::blocked(&m.block, &m.msgs.open).is_some() {
+                    "Unblock number"
+                } else {
+                    "Block number"
+                },
+            );
+            v
         }
         _ => Vec::new(),
     }
@@ -834,6 +978,7 @@ pub fn option(ctx: &Ctx, item: &str) {
         "New" => return new_message(ctx),
         "Mark all as read" => edit(ctx, st::EDIT_ALL_READ, 0),
         "Select" => ctx.m.borrow_mut().msgs.selected = Some(Vec::new()),
+        "Delete conversations" => ctx.m.borrow_mut().msgs.query = Query::DeleteAll,
         "Select all" => {
             let mut m = ctx.m.borrow_mut();
             let all = m
@@ -844,16 +989,22 @@ pub fn option(ctx: &Ctx, item: &str) {
                 .collect();
             m.msgs.selected = Some(all);
         }
-        "Delete selected" => ctx.m.borrow_mut().msgs.query = Query::DeleteSelected,
+        "Delete selected" => {
+            let mut m = ctx.m.borrow_mut();
+            if m.msgs.selected.as_ref().is_some_and(|s| !s.is_empty()) {
+                m.msgs.query = Query::DeleteSelected;
+            }
+        }
         "Archived" => return ctx.go(Page::Messages(MessagesView::Archived)),
         "Blocked messages" => return ctx.go(Page::Messages(MessagesView::Blocked)),
         // Phone's settings page, at its Messages part
         "Settings" => return ctx.open(Page::Settings(SettingsView::Main), "messages"),
-        // the system clipboard's text goes into the composer (the screen reads it)
         "Paste" => {
-            let ui = ctx.ui();
-            let g = ui.global::<MessagesState>();
-            g.set_paste(g.get_paste().wrapping_add(1));
+            if let Some(clip) = ctx.app.clipboard() {
+                let ui = ctx.ui();
+                let g = ui.global::<MessagesState>();
+                g.set_draft(format!("{}{clip}", g.get_draft()).into());
+            }
         }
         "Contact card" => return ctx.contact(&open),
         "Add to contacts" => return ctx.open(Page::Contacts(ContactsView::Edit), &open),
@@ -862,12 +1013,12 @@ pub fn option(ctx: &Ctx, item: &str) {
                 swiped(ctx, Swiped::Archived(id));
                 edit(ctx, st::EDIT_ARCHIVE_THREAD, id);
                 ctx.go(Page::Messages(MessagesView::List));
-                ctx.note_undo("Conversation archived");
+                note_undo(ctx, "Conversation archived");
             }
         }
         "Delete conversation" => ctx.m.borrow_mut().msgs.query = Query::DeleteThread,
-        "Block number" => ctx.block_number(&open, true, true),
-        "Delete all" => ctx.m.borrow_mut().msgs.query = Query::ClearBlocked,
+        "Block number" => ctx.m.borrow_mut().msgs.block_ask = Some([true, true]),
+        "Unblock number" => ctx.unblock_number(&open),
         _ => {}
     }
     ctx.show();
@@ -890,8 +1041,21 @@ pub fn action(ctx: &Ctx) {
     }
 }
 
-/// Back closes the menu, a query or selection mode first; a new message with something in it asks before it goes.
+/// Back closes the menu, a query or selection mode first; a new message with something in it asks before it goes; a
+/// blocked message's details go back to the blocked messages.
 pub fn back(ctx: &Ctx) -> bool {
+    let blocked_details = {
+        let m = ctx.m.borrow();
+        m.page == Page::Messages(MessagesView::Details)
+            && m.msgs
+                .details
+                .and_then(|id| m.msgs.mirror.get(id))
+                .is_some_and(|msg| msg.entry.state == st::BLOCKED)
+    };
+    if blocked_details && !wants_back(ctx) {
+        ctx.go(Page::Messages(MessagesView::Blocked));
+        return true;
+    }
     if !wants_back(ctx) {
         // a conversation another app opened (a contact's Message, a call's Reply): back to that app
         let opened = ctx.m.borrow().opened;
@@ -906,9 +1070,11 @@ pub fn back(ctx: &Ctx) -> bool {
         let open = m.msgs.held.is_some()
             || m.msgs.held_blocked.is_some()
             || m.msgs.query != Query::None
+            || m.msgs.block_ask.is_some()
             || m.msgs.selected.is_some();
         m.msgs.held = None;
         m.msgs.held_blocked = None;
+        m.msgs.block_ask = None;
         m.msgs.selected = None;
         m.msgs.query = if open { Query::None } else { Query::Discard };
     }
@@ -925,6 +1091,7 @@ pub fn wants_back(ctx: &Ctx) -> bool {
     m.msgs.held.is_some()
         || m.msgs.held_blocked.is_some()
         || m.msgs.query != Query::None
+        || m.msgs.block_ask.is_some()
         || m.msgs.selected.is_some()
         || draft
 }

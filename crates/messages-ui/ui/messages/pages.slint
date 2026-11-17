@@ -9,7 +9,7 @@ import { KeyboardFocus } from "@neoui/components/keyboard/focus.slint";
 import { Alphabets } from "@neoui/components/keyboard/glyphs.slint";
 import { FieldInput } from "@neoui/components/controls.slint";
 import {
-    Avatar, Glyph, Bubble, Composer, RowActions, Menu, SectionHeader, EmptyState, Card
+    Avatar, Glyph, Composer, RowActions, Menu, SectionHeader, EmptyState, Card
 } from "@neoui/kit.slint";
 import { Nav } from "@phone-shared/nav.slint";
 import { MessagesState, ThreadRow } from "state.slint";
@@ -137,7 +137,6 @@ component ThreadLine inherits Rectangle {
             horizontal-stretch: 1;
             Text {
                 text: item.name;
-                font-family: "DejaVu Sans";
                 color: Theme.text;
                 font-size: 16 * Theme.dp;
                 font-weight: item.unread > 0 ? 600 : 500;
@@ -146,7 +145,6 @@ component ThreadLine inherits Rectangle {
 
             Text {
                 text: item.failed ? "⚠ Not sent · tap to retry" : item.snippet;
-                font-family: "DejaVu Sans";
                 color: item.failed ? Theme.danger-text : item.unread > 0 ? Theme.text : Theme.text-secondary;
                 font-size: 13.5 * Theme.dp;
                 overflow: elide;
@@ -197,6 +195,9 @@ component ListView inherits Rectangle {
         VerticalLayout {
             alignment: start;
             padding-top: 4 * Theme.dp;
+            if MessagesState.result != "": SectionHeader {
+                text: MessagesState.result;
+            }
             for t[i] in MessagesState.threads: RowActions {
                 height: 72 * Theme.dp;
                 actions: MessagesState.selecting ? [] : [
@@ -233,11 +234,85 @@ component DayBand inherits Text {
     vertical-alignment: center;
 }
 
-// The composer with its hairline; Send stays in the content (D14).
+// The kit's Bubble (neoui chat.slint), but a failed one shows its own `meta` (why it failed), wrapped.
+// shortcut: a copy of the kit's; drop it once the kit Bubble takes a failed meta.
+component MsgBubble inherits Rectangle {
+    in property <string> text;
+    in property <string> meta;
+    in property <bool> mine;
+    in property <bool> failed;
+    in property <bool> held;
+    callback tapped;
+    callback long-pressed(length, length);
+    property <length> max-w: self.width * 0.76;
+    property <length> pad-x: 12 * Theme.dp;
+    height: box.height;
+    box := Rectangle {
+        x: root.mine ? root.width - self.width : 0;
+        width: min(root.max-w, max(body.preferred-width, info.preferred-width) + 2 * root.pad-x);
+        height: col.preferred-height;
+        border-radius: 18 * Theme.dp;
+        border-bottom-left-radius: root.mine ? 18 * Theme.dp : 6 * Theme.dp;
+        border-bottom-right-radius: root.mine ? 6 * Theme.dp : 18 * Theme.dp;
+        background: root.failed ? Theme.bubble-failed : root.mine ? Theme.bubble-out : Theme.bubble-in;
+        border-width: root.held ? 2 * Theme.dp : root.failed ? max(1px, Theme.dp) : 0;
+        border-color: root.held ? #ffffff8c : #e5484d80;
+        col := VerticalLayout {
+            padding-left: root.pad-x;
+            padding-right: root.pad-x;
+            padding-top: 8 * Theme.dp;
+            padding-bottom: 6 * Theme.dp;
+            spacing: 2 * Theme.dp;
+            body := Text {
+                text: root.text;
+                color: Theme.text;
+                font-size: 15.5 * Theme.dp;
+                wrap: word-wrap;
+            }
+
+            info := Text {
+                text: root.meta;
+                color: root.failed ? Theme.danger-text : #ffffff9e;
+                font-size: 11.5 * Theme.dp;
+                horizontal-alignment: right;
+                wrap: word-wrap;
+            }
+        }
+
+        touch := TouchArea {
+            clicked => {
+                root.tapped();
+            }
+        }
+
+        Timer {
+            interval: 500ms;
+            running: touch.pressed;
+            triggered => {
+                self.running = false;
+                root.long-pressed(box.x + touch.mouse-x, touch.mouse-y);
+            }
+        }
+    }
+}
+
+// The composer with its hairline; Send stays in the content (D14). It takes the focus when the view opens with
+// `autofocus`, or when `autofocus` is set while it shows (Reply into the open thread).
 component ComposerBar inherits VerticalLayout {
     in property <bool> counter: true;
+    property <bool> autofocus: MessagesState.autofocus;
     init => {
-        if MessagesState.autofocus {
+        focus-later.running = MessagesState.autofocus;
+    }
+    changed autofocus => {
+        focus-later.running = MessagesState.autofocus;
+    }
+    // after the frame has left the fields on the view change
+    focus-later := Timer {
+        interval: 1ms;
+        running: false;
+        triggered => {
+            self.running = false;
             MessagesState.autofocus = false;
             composer.focus-field();
         }
@@ -281,16 +356,24 @@ component ThreadView inherits VerticalLayout {
             padding-top: 10 * Theme.dp;
             padding-bottom: 10 * Theme.dp;
             spacing: 6 * Theme.dp;
+            if MessagesState.bubbles.length == 0: Text {
+                text: "No messages yet";
+                color: Theme.text-dim;
+                font-size: 13.5 * Theme.dp;
+                horizontal-alignment: center;
+                height: self.preferred-height + 20 * Theme.dp;
+            }
             for b in MessagesState.bubbles: VerticalLayout {
                 spacing: 6 * Theme.dp;
                 if b.band != "": DayBand {
                     text: b.band;
                 }
-                bubble := Bubble {
+                MsgBubble {
                     text: b.text;
                     meta: b.meta;
                     mine: b.mine;
                     failed: b.failed;
+                    held: b.id == MessagesState.held;
                     tapped => {
                         if b.failed {
                             MessagesState.act("retry", b.id);
@@ -316,7 +399,7 @@ component DetailsView inherits VerticalLayout {
         padding-right: 12 * Theme.dp;
         padding-top: 30 * Theme.dp;
         padding-bottom: 12 * Theme.dp;
-        Bubble {
+        MsgBubble {
             text: MessagesState.details.text;
             meta: MessagesState.details.meta;
             mine: MessagesState.details.mine;
@@ -347,8 +430,7 @@ component DetailsView inherits VerticalLayout {
 
                         Text {
                             text: MessagesState.details-values[i];
-                            font-family: "DejaVu Sans";
-                            color: Theme.text;
+                                        color: Theme.text;
                             font-size: 16 * Theme.dp;
                             wrap: word-wrap;
                         }
@@ -381,7 +463,6 @@ component RecipientChip inherits Rectangle {
         spacing: 4 * Theme.dp;
         Text {
             text: root.text;
-            font-family: "DejaVu Sans";
             color: Theme.text;
             font-size: 14.5 * Theme.dp;
             vertical-alignment: center;
@@ -404,38 +485,48 @@ component RecipientChip inherits Rectangle {
     }
 }
 
-// A new message (p2-msg-new): To with the chosen recipients and the contacts matching what is typed, then the composer.
+// A new message (p2-msg-new): To with the chosen recipients (wrapping to more lines) and the contacts matching what is
+// typed, or "Send to" a typed number no contact has; then the composer. To takes the focus when the view opens.
 component NewView inherits VerticalLayout {
+    // after the frame has left the fields on the view change
+    Timer {
+        interval: 1ms;
+        running: true;
+        triggered => {
+            self.running = false;
+            to.focus();
+        }
+    }
     Rectangle {
-        min-height: 56 * Theme.dp;
-        HorizontalLayout {
+        FlexboxLayout {
             padding-left: 16 * Theme.dp;
             padding-right: 16 * Theme.dp;
             padding-top: 8 * Theme.dp;
             padding-bottom: 8 * Theme.dp;
             spacing: 8 * Theme.dp;
+            alignment: stretch;
+            cross-axis-alignment: center;
+            min-height: 56 * Theme.dp;
             Text {
+                width: self.preferred-width + 4 * Theme.dp;
+                height: 40 * Theme.dp;
+                horizontal-stretch: 0;
                 text: "To";
                 color: Theme.text-secondary;
                 font-size: 14 * Theme.dp;
                 vertical-alignment: center;
             }
 
-            Rectangle {
-                width: 4 * Theme.dp;
-            }
-
-            // shortcut: the chips do not wrap to a second line; enough for a few recipients
-            for r[i] in MessagesState.recipients: VerticalLayout {
-                alignment: center;
-                RecipientChip {
-                    text: r;
-                    removed => {
-                        MessagesState.act("unpick", i);
-                    }
+            for r[i] in MessagesState.recipients: RecipientChip {
+                horizontal-stretch: 0;
+                text: r;
+                removed => {
+                    MessagesState.act("unpick", i);
                 }
             }
             Rectangle {
+                min-width: 96 * Theme.dp;
+                height: 40 * Theme.dp;
                 horizontal-stretch: 1;
                 if MessagesState.to-text == "": Text {
                     width: parent.width;
@@ -445,7 +536,7 @@ component NewView inherits VerticalLayout {
                     vertical-alignment: center;
                     overflow: elide;
                 }
-                FieldInput {
+                to := FieldInput {
                     width: parent.width;
                     height: parent.height;
                     text <=> MessagesState.to-text;
@@ -470,8 +561,9 @@ component NewView inherits VerticalLayout {
             spacing: 14 * Theme.dp;
             VerticalLayout {
                 alignment: center;
-                Avatar {
+                Face {
                     size: 40 * Theme.dp;
+                    known: s.known;
                     initials: s.initials;
                     tint: s.tint;
                 }
@@ -483,7 +575,6 @@ component NewView inherits VerticalLayout {
                 HorizontalLayout {
                     Text {
                         text: s.pre;
-                        font-family: "DejaVu Sans";
                         color: Theme.text;
                         font-size: 16 * Theme.dp;
                         font-weight: 500;
@@ -491,7 +582,6 @@ component NewView inherits VerticalLayout {
 
                     Text {
                         text: s.hit;
-                        font-family: "DejaVu Sans";
                         color: Theme.accent;
                         font-size: 16 * Theme.dp;
                         font-weight: 500;
@@ -499,7 +589,6 @@ component NewView inherits VerticalLayout {
 
                     Text {
                         text: s.post;
-                        font-family: "DejaVu Sans";
                         color: Theme.text;
                         font-size: 16 * Theme.dp;
                         font-weight: 500;
@@ -508,7 +597,7 @@ component NewView inherits VerticalLayout {
                     }
                 }
 
-                Text {
+                if s.detail != "": Text {
                     text: s.detail;
                     color: Theme.text-secondary;
                     font-size: 13.5 * Theme.dp;
@@ -538,7 +627,8 @@ component NewView inherits VerticalLayout {
     }
 }
 
-// The blocked messages (p2-msg-blocked), kept 7 days: a tap or a hold opens Unblock sender · Delete at the finger.
+// The blocked messages (p2-msg-blocked), kept 7 days: a tap shows the whole message, a hold opens Unblock sender ·
+// Delete at the finger.
 component BlockedView inherits Rectangle {
     if MessagesState.blocked.length == 0: EmptyState {
         icon: @image-url("@phone-shared/icons/block.svg");
@@ -557,14 +647,12 @@ component BlockedView inherits Rectangle {
                     background: bt.pressed ? Theme.pressed : transparent;
                     bt := Press {
                         tap => {
-                            MessagesState.menu-x = self.at-x;
-                            MessagesState.menu-y = self.at-y;
                             MessagesState.act("blocked", b.id);
                         }
                         hold => {
                             MessagesState.menu-x = self.at-x;
                             MessagesState.menu-y = self.at-y;
-                            MessagesState.act("blocked", b.id);
+                            MessagesState.act("blocked-hold", b.id);
                         }
                     }
 
@@ -587,8 +675,7 @@ component BlockedView inherits Rectangle {
                             horizontal-stretch: 1;
                             Text {
                                 text: b.title;
-                                font-family: "DejaVu Sans";
-                                color: Theme.text;
+                                                color: Theme.text;
                                 font-size: 16 * Theme.dp;
                                 font-weight: 500;
                                 overflow: elide;
@@ -596,8 +683,7 @@ component BlockedView inherits Rectangle {
 
                             Text {
                                 text: b.snippet;
-                                font-family: "DejaVu Sans";
-                                color: Theme.text;
+                                                color: Theme.text;
                                 font-size: 14 * Theme.dp;
                                 overflow: elide;
                             }
@@ -677,23 +763,6 @@ export component MessagesPage inherits Rectangle {
         if Nav.view == "blocked": BlockedView { }
     }
 
-    // the system clipboard (the UI server's, through Slint's platform): Copy text and Paste go through this field
-    clip := TextInput {
-        visible: false;
-        width: 0;
-        height: 0;
-    }
-
-    property <int> paste: MessagesState.paste;
-    changed paste => {
-        clip.text = "";
-        clip.paste();
-        if clip.text != "" {
-            MessagesState.draft += clip.text;
-            MessagesState.act("draft", MessagesState.draft);
-        }
-    }
-
     // the menu at the finger: above it in the lower half of the page, else below; kept on the page
     property <length> menu-h: MessagesState.menu-items.length * Theme.header-h + 16 * Theme.dp;
     property <length> fx: MessagesState.menu-x - root.absolute-position.x;
@@ -702,17 +771,13 @@ export component MessagesPage inherits Rectangle {
         x: 0;
         y: 0;
         right-aligned: false;
-        at-x: max(12 * Theme.dp, min(root.fx - Theme.menu-w + 48 * Theme.dp, root.width - Theme.menu-w - 12 * Theme.dp));
+        // its right edge a little right of the finger, 24 dp in from the page's at most (p2-msg-options)
+        at-x: max(12 * Theme.dp, min(root.fx - Theme.menu-w + 54 * Theme.dp, root.width - Theme.menu-w - 24 * Theme.dp));
         at-y: max(8 * Theme.dp, min(root.height - root.menu-h - 8 * Theme.dp,
             root.fy > root.height / 2 ? root.fy - root.menu-h - 24 * Theme.dp : root.fy + 24 * Theme.dp));
         items: MessagesState.menu-items;
         destructive: MessagesState.menu-destructive;
         picked(i) => {
-            if MessagesState.menu-items[i] == "Copy text" {
-                clip.text = MessagesState.menu-text;
-                clip.select-all();
-                clip.copy();
-            }
             MessagesState.act("menu", MessagesState.menu-items[i]);
         }
     }
@@ -730,6 +795,114 @@ export component MessagesPage inherits Rectangle {
         if !self.menu-shown && MessagesState.menu-open {
             MessagesState.menu-open = false;
             MessagesState.act("dismiss", "");
+        }
+    }
+}
+
+// Block number's query over the whole app (Contacts' block query): the question, which of Calls and Messages to block,
+// the red Block and Cancel. A tap outside cancels.
+export component BlockDialog inherits Rectangle {
+    visible: MessagesState.block-open;
+    Rectangle {
+        background: Theme.scrim;
+        TouchArea {
+            clicked => {
+                MessagesState.act("block-cancel", "");
+            }
+        }
+    }
+
+    Rectangle {
+        x: 24 * Theme.dp;
+        width: parent.width - 48 * Theme.dp;
+        height: box.preferred-height;
+        y: (parent.height - self.height) / 2;
+        border-radius: Theme.radius + 4 * Theme.dp;
+        background: Theme.sheet;
+        border-width: max(1px, Theme.dp / 2);
+        border-color: Theme.card-border;
+        drop-shadow-blur: 32 * Theme.dp;
+        drop-shadow-offset-y: 12 * Theme.dp;
+        drop-shadow-color: #000000cc;
+        TouchArea { }
+
+        box := VerticalLayout {
+            padding: 20 * Theme.dp;
+            spacing: 12 * Theme.dp;
+            Text {
+                text: MessagesState.block-question;
+                color: Theme.text;
+                font-size: 17 * Theme.dp;
+                font-weight: 600;
+                wrap: word-wrap;
+            }
+
+            Text {
+                text: "Blocked calls are rejected as busy and never ring. Blocked messages never alert and are kept 7 days.";
+                color: Theme.text-secondary;
+                font-size: 14 * Theme.dp;
+                wrap: word-wrap;
+            }
+
+            for c[i] in ["Calls", "Messages"]: Rectangle {
+                property <bool> on: i == 0 ? MessagesState.block-calls : MessagesState.block-messages;
+                height: 40 * Theme.dp;
+                HorizontalLayout {
+                    spacing: 12 * Theme.dp;
+                    VerticalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 24 * Theme.dp;
+                            height: self.width;
+                            border-radius: 6 * Theme.dp;
+                            background: on ? Theme.accent : transparent;
+                            border-width: on ? 0 : 2 * Theme.dp;
+                            border-color: Theme.text-dim;
+                            if on: Glyph {
+                                source: @image-url("@neoui/icons/sys/check.svg");
+                                size: 16 * Theme.dp;
+                            }
+                        }
+                    }
+
+                    Text {
+                        text: c;
+                        color: Theme.text;
+                        font-size: Theme.font-body;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                    }
+                }
+
+                TouchArea {
+                    clicked => {
+                        MessagesState.act("block-check", i);
+                    }
+                }
+            }
+            HorizontalLayout {
+                alignment: end;
+                padding-top: 6 * Theme.dp;
+                spacing: 8 * Theme.dp;
+                for b[i] in ["Block", "Cancel"]: Rectangle {
+                    width: max(80 * Theme.dp, t.preferred-width + 32 * Theme.dp);
+                    height: 40 * Theme.dp;
+                    border-radius: self.height / 2;
+                    background: i == 0 ? (touch.pressed ? Theme.danger.darker(20%) : Theme.danger) : touch.pressed ? Theme.pressed : Theme.dialog-button;
+                    t := Text {
+                        text: b;
+                        color: Theme.text;
+                        font-size: 14 * Theme.dp;
+                        font-weight: 600;
+                    }
+
+                    touch := TouchArea {
+                        clicked => {
+                            MessagesState.act(i == 0 ? "block-confirm" : "block-cancel", "");
+                        }
+                    }
+                }
+            }
         }
     }
 }
