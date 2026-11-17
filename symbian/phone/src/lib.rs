@@ -80,6 +80,7 @@ fn run() -> Result<(), i32> {
         call_opened: false,
         speed_opened: false,
         settings_opened: false,
+        waiting_until: None,
     };
     let ctx = Rc::new(Ctx::new(app, &ui, model));
     prefs::reload(&ctx);

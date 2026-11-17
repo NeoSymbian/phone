@@ -68,13 +68,19 @@ fn phone_menu() {
     nav.on_header(move |kind, i| sink.borrow_mut().push((kind.into(), i)));
     s.tap(360.0 - 4.0 - 24.0, 24.0); // ⋮
     s.shoot("p2-phone-menu");
-    // ⋮ ▸ Settings (the fourth item: 8 dp + 3.5 rows of 48 dp under the header) reaches the app
-    s.tap(360.0 - 4.0 - 110.0, 48.0 + 8.0 + 3.5 * 48.0);
-    assert_eq!(
-        taps.borrow().last(),
-        Some(&("option".into(), 3)),
-        "⋮ ▸ Settings"
-    );
+    // each item (8 dp, then rows of 48 dp under the header) reaches the app: Speed dial, Call voicemail, Clear list
+    // (the app asks first), Settings
+    for i in 0..4 {
+        if i > 0 {
+            s.tap(360.0 - 4.0 - 24.0, 24.0);
+        }
+        s.tap(360.0 - 4.0 - 110.0, 48.0 + 8.0 + (i as f32 + 0.5) * 48.0);
+        assert_eq!(
+            taps.borrow().last(),
+            Some(&("option".into(), i)),
+            "⋮ item {i}"
+        );
+    }
     // a form's ✓ is the view's action ("save"), whatever its style
     nav.set_form(true);
     nav.set_title("Voicemail number".into());

@@ -14,7 +14,7 @@ export struct BlockRow {
 
 export global SettingsState {
     // Calls: caller ID (modem_ipc::clir 0 network, 1 hide, 2 show), call waiting (modem_ipc::waiting: 0 unknown,
-    // 1 busy, 2 on, 3 off, 4 error), the local switches, the voicemail number
+    // 1 busy, 2 on, 3 off, 4 error; the app shows 1 while it asks, 4 when no answer came), the local switches, the voicemail number
     in property <int> clir;
     in property <int> waiting;
     in property <bool> summary;
@@ -56,7 +56,8 @@ export global SettingsState {
 
     // "opened" (the main view appeared: close what was left open, ask the network about call waiting),
     // "clir" | "log" | "order" | "label" + the picked index, "waiting" | "summary" | "duration" | "smart-dial" |
-    // "private" | "unknown" | "reports" + "1" | "0", "blocked" (open Blocked numbers), "remove" + the row index,
+    // "private" | "unknown" | "reports" + "1" | "0",
+    // "waiting-check" (ask the network again), "blocked" (open Blocked numbers), "remove" + the row index,
     // "remove-all", "alert" + the picked index, "replies" (open Quick replies), "remove-reply" + index
     callback act(string, string);
 }

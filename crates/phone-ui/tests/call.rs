@@ -118,6 +118,14 @@ fn call() {
     c.set_keypad(true);
     c.set_tones("12#".into());
     shot("p2-call-keypad");
+    // one tone per press, tapped or held
+    s.take_acts();
+    s.tap(180.0, 418.0); // 5
+    s.hold(180.0, 534.0); // 0
+    assert_eq!(
+        s.take_acts(),
+        [("dtmf".into(), "5".into()), ("dtmf".into(), "0".into())]
+    );
     c.set_keypad(false);
 
     c.set_screen("ended".into());

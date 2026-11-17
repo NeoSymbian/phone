@@ -56,6 +56,41 @@ impl Filter {
     }
 }
 
+/// What Recents asks before it deletes or blocks (the shell's destructive QUERY): ⋮ ▸ Clear list for a chip, and
+/// selection mode's Delete and Block for `n` rows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Ask {
+    Clear(Filter),
+    Delete(usize),
+    Block(usize),
+}
+
+impl Ask {
+    /// The question, the line under it, the red button.
+    pub fn text(self) -> (String, &'static str, &'static str) {
+        let s = |n: usize| if n == 1 { "" } else { "s" };
+        match self {
+            Ask::Clear(f) => (
+                "Clear the call list?".into(),
+                match f {
+                    Filter::All => "Every call in Recents is deleted.",
+                    Filter::Missed => "The missed calls are deleted.",
+                    Filter::Received => "The received calls are deleted.",
+                    Filter::Dialled => "The dialled calls are deleted.",
+                    Filter::Blocked => "The blocked calls are deleted.",
+                },
+                "Clear",
+            ),
+            Ask::Delete(n) => (format!("Delete {n} call{}?", s(n)), "", "Delete"),
+            Ask::Block(n) => (
+                format!("Block {n} number{}?", s(n)),
+                "Their calls and messages won't come through.",
+                "Block",
+            ),
+        }
+    }
+}
+
 /// A day band.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Section {
@@ -143,6 +178,15 @@ pub fn new_missed(log: &[LogEntry], seen: u32) -> u32 {
 /// The newest entry's id (seeing Recents marks the missed calls up to it as seen).
 pub fn newest(log: &[LogEntry]) -> u32 {
     log.iter().map(|e| e.id).max().unwrap_or(0)
+}
+
+/// The number dialled last (the log is newest first): Call on an empty dialer puts it in the field (N8).
+pub fn last_dialled(log: &[LogEntry]) -> Option<&str> {
+    log.iter()
+        .filter(|e| e.kind == log::DIALLED)
+        .max_by_key(|e| e.id)
+        .map(|e| e.number.as_str())
+        .filter(|n| !n.is_empty())
 }
 
 /// Every call of the row `id` belongs to (the same number), newest first: the details' list.
@@ -271,6 +315,27 @@ mod tests {
             e(4, log::RECEIVED, "+15550142", 30),
             e(3, log::RECEIVED, "+15550188", 100),
         ]
+    }
+
+    #[test]
+    fn questions() {
+        assert_eq!(
+            Ask::Clear(Filter::All).text(),
+            (
+                "Clear the call list?".into(),
+                "Every call in Recents is deleted.",
+                "Clear"
+            )
+        );
+        assert_eq!(Ask::Delete(1).text().0, "Delete 1 call?");
+        assert_eq!(Ask::Delete(3).text().0, "Delete 3 calls?");
+        assert_eq!(Ask::Block(2).text().0, "Block 2 numbers?");
+    }
+
+    #[test]
+    fn last_dialled_number() {
+        assert_eq!(last_dialled(&log()), Some("+15550123"));
+        assert_eq!(last_dialled(&log()[..4]), None);
     }
 
     #[test]

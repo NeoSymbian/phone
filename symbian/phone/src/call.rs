@@ -326,61 +326,8 @@ pub fn chrome(ctx: &Ctx) -> Chrome {
     }
 }
 
-pub fn options(ctx: &Ctx) -> Vec<&'static str> {
-    let screen = screen(ctx);
-    if !matches!(
-        screen,
-        Screen::Calling(_) | Screen::Active(_) | Screen::Two { .. }
-    ) {
-        return Vec::new();
-    }
-    let audio = ctx.m.borrow().status.map(|s| s.audio).unwrap_or_default();
-    let mut items = Vec::new();
-    items.push(if audio.muted { "Unmute" } else { "Mute" });
-    items.push(if audio.speaker {
-        "Speaker off"
-    } else {
-        "Speaker on"
-    });
-    if let Screen::Active(c) = screen {
-        items.push(if c.state == st::HOLD {
-            "Resume"
-        } else {
-            "Hold"
-        });
-    }
-    items.push("End all calls");
-    items
-}
-
-pub fn option(ctx: &Ctx, item: &str) {
-    match item {
-        "Mute" | "Unmute" => act(ctx, "mute", ""),
-        "Speaker on" | "Speaker off" => act(ctx, "speaker", ""),
-        "Hold" | "Resume" => act(ctx, "hold", ""),
-        "End all calls" => {
-            let ids: Vec<u8> = {
-                let m = ctx.m.borrow();
-                m.status
-                    .iter()
-                    .flat_map(|s| s.calls.as_slice().iter().filter(|c| calls::shown(c)))
-                    .map(|c| c.id)
-                    .collect()
-            };
-            for id in ids {
-                let r = ctx.m.borrow_mut().modem.hangup(id);
-                if r < 0 {
-                    ctx.note(&format!("Action failed ({r})"));
-                }
-            }
-        }
-        _ => {}
-    }
-}
-
 pub fn action(_ctx: &Ctx) {}
 
-/// Back leaves the call running (the UI server goes home; the status bar shows the call).
 /// Back on the call screen hides it: the call goes on and the green bar under the header returns to it.
 pub fn back(ctx: &Ctx) -> bool {
     let before = ctx.m.borrow().before_call;

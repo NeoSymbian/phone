@@ -61,23 +61,52 @@ fn settings() {
     fill(&s);
     nav.set_page(4);
     nav.set_view("".into());
-    let main = Header {
-        title: "Phone & Contacts",
+    let main = || Header {
+        title: "Settings",
         sub: true,
         ..Header::default()
     };
-    sh.header(main);
+    sh.header(main());
     sh.shoot("p2-phone-settings");
     assert_eq!(sh.take_acts()[0].0, "opened");
+
+    // every row and switch asks the app (rows: Calls at 82 dp, then 72 dp each, Blocked numbers 56)
+    sh.tap(180.0, 190.0); // Call waiting, on
+    s.set_waiting(0);
+    sh.tap(180.0, 190.0); // unknown: a tap checks
+    s.set_waiting(1);
+    sh.tap(180.0, 190.0); // checking: no tap
+    s.set_waiting(4);
+    sh.tap(180.0, 190.0); // couldn't check: again
+    sh.tap(180.0, 262.0); // Summary after call, on
+    sh.tap(180.0, 334.0); // Voicemail number
+    sh.tap(180.0, 398.0); // Blocked numbers
+    assert_eq!(
+        sh.take_acts(),
+        [
+            ("waiting".into(), "0".into()),
+            ("waiting-check".into(), String::new()),
+            ("waiting-check".into(), String::new()),
+            ("summary".into(), "0".into()),
+            ("form".into(), "voicemail".into()),
+            ("blocked".into(), String::new()),
+        ]
+    );
+    s.set_waiting(0);
+    sh.shoot("p2-phone-settings-waiting");
+    s.set_waiting(2);
 
     s.set_picker("clir".into());
     sh.shoot("p2-phone-settings-clir");
     sh.tap(180.0, 679.0 - 12.0 - 28.0); // Shown
     assert_eq!(sh.take_acts(), [("clir".into(), "2".into())]);
     assert_eq!(s.get_picker(), "");
-    s.set_picker("log".into());
+    sh.tap(180.0, 496.0); // Keep call log
+    assert_eq!(s.get_picker(), "log");
     sh.shoot("p2-phone-settings-log");
-    s.set_picker("".into());
+    sh.tap(180.0, 679.0 - 12.0 - 28.0); // 30 days
+    assert_eq!(sh.take_acts(), [("log".into(), "3".into())]);
+    assert_eq!(s.get_picker(), "");
 
     // the voicemail number's form
     s.set_form("voicemail".into());
@@ -88,6 +117,16 @@ fn settings() {
         ..Header::default()
     });
     sh.shoot("p2-phone-settings-voicemail");
+    // each form's ✓ is the view's action: the app saves the draft
+    for form in ["voicemail", "smsc", "block", "reply"] {
+        s.set_form(form.into());
+        sh.tap(360.0 - 24.0, 24.0);
+        assert_eq!(
+            sh.take_acts(),
+            [("header-save".into(), "0".into())],
+            "{form}'s ✓"
+        );
+    }
     s.set_form("".into());
 
     // Quick replies

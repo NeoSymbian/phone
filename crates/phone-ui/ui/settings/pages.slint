@@ -1,30 +1,55 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Settings (NEOPHONE v2 p2-phone-settings, p2-msg-settings: Calls, Log, Contacts, Messages), Blocked numbers
+// Settings (NEOPHONE v2 p2-phone-settings: Calls, Log, Contacts; p2-msg-settings from Messages: Messages, Blocking,
+// caller ID), Blocked numbers
 // (p2-phone-blocked), Quick replies (p2-phone-settings-replies), the forms under a [✕ title ✓] header (Voicemail number,
 // Message centre, Block a number, a new reply) and the pickers (p2-phone-settings-clir, -log).
 import { Theme, NeoList, SectionHeader, ListRow, TextField, Glyph, Alphabets } from "@neoui/kit.slint";
 import { Nav } from "@phone-shared/nav.slint";
-import { Face, SwitchRow, RadioSheet } from "../parts.slint";
+import { Face, SwitchRow, RadioSheet, ValueRow } from "../parts.slint";
 import { SettingsState } from "state.slint";
+
+// The pickers' choices, as the rows show them.
+global Names {
+    out property <[string]> clir: ["Network", "Hidden", "Shown"];
+    out property <[string]> log: ["Don't keep", "1 day", "10 days", "30 days"];
+    out property <[string]> order: ["First Last", "Last First"];
+    out property <[string]> alerts: ["Tone + vibrate", "Vibrate", "Silent"];
+}
 
 component Note inherits HorizontalLayout {
     in property <string> text;
+    in property <length> size: Theme.font-label;
     padding-left: 16 * Theme.dp;
     padding-right: 16 * Theme.dp;
     padding-top: 14 * Theme.dp;
     padding-bottom: 14 * Theme.dp;
     Text {
         text: root.text;
-        font-family: "DejaVu Sans";
         color: Theme.text-secondary;
-        font-size: 13 * Theme.dp;
+        font-size: root.size;
         wrap: word-wrap;
     }
 }
 
-component Main inherits NeoList {
-    property <[string]> clir-names: ["Network", "Hidden", "Shown"];
-    property <[string]> alerts: ["Tone + vibrate", "Vibrate", "Silent"];
+// Call waiting: the network's answer; unknown or unanswered, a tap asks again (the switch only flips a known state).
+component WaitingRow inherits SwitchRow {
+    property <int> w: SettingsState.waiting;
+    title: "Call waiting";
+    subtitle: w == 0 ? "Unknown · tap to check" : w == 1 ? "Checking with network…"
+        : w == 4 ? "Couldn't check" : "Checked with network";
+    on: w == 2;
+    busy: w == 1;
+    toggled(v) => {
+        if w == 0 || w == 4 {
+            SettingsState.act("waiting-check", "");
+        } else {
+            SettingsState.act("waiting", v ? "1" : "0");
+        }
+    }
+}
+
+// The settings opened from Phone (p2-phone-settings): Calls, Log, Contacts; from Contacts it opens at Contacts.
+component PhoneMain inherits NeoList {
     init => {
         self.arrive();
     }
@@ -32,16 +57,10 @@ component Main inherits NeoList {
     changed opens => {
         self.arrive();
     }
-    // opened (again): read what may have changed, and the section asked for on top (from Messages or Contacts)
+    // opened (again): read what may have changed, and Contacts on top when Contacts asked for it
     function arrive() {
         SettingsState.act("opened", "");
-        if SettingsState.section == "messages" {
-            self.content-y = -messages.y;
-        } else if SettingsState.section == "contacts" {
-            self.content-y = -contacts.y;
-        } else {
-            self.content-y = 0;
-        }
+        self.content-y = SettingsState.section == "contacts" ? -contacts.y : 0;
     }
     VerticalLayout {
         alignment: start;
@@ -51,23 +70,14 @@ component Main inherits NeoList {
 
         ListRow {
             title: "Send my caller ID";
-            subtitle: clir-names[SettingsState.clir];
+            subtitle: Names.clir[SettingsState.clir];
             chevron: true;
             clicked => {
                 SettingsState.picker = "clir";
             }
         }
 
-        SwitchRow {
-            title: "Call waiting";
-            subtitle: SettingsState.waiting == 1 ? "Checking with network…"
-                : SettingsState.waiting == 4 ? "Couldn't check" : "Checked with network";
-            on: SettingsState.waiting == 2;
-            busy: SettingsState.waiting == 1;
-            toggled(v) => {
-                SettingsState.act("waiting", v ? "1" : "0");
-            }
-        }
+        WaitingRow { }
 
         SwitchRow {
             title: "Summary after call";
@@ -87,10 +97,9 @@ component Main inherits NeoList {
             }
         }
 
-        ListRow {
+        ValueRow {
             title: "Blocked numbers";
             value: SettingsState.blocked-count;
-            chevron: true;
             clicked => {
                 SettingsState.act("blocked", "");
             }
@@ -135,12 +144,32 @@ component Main inherits NeoList {
             title: "Default number type";
             subtitle: SettingsState.labels[SettingsState.default-label];
             chevron: true;
+            divider: false;
             clicked => {
                 SettingsState.picker = "label";
             }
         }
 
-        messages := SectionHeader {
+        // room under Contacts, so the page can open with it on top
+        if SettingsState.section == "contacts": Rectangle {
+            height: max(0px, root.height - Theme.section-h - 2 * Theme.list-row-double-h - Theme.list-row-h);
+        }
+    }
+}
+
+// The same settings opened from Messages (p2-msg-settings): Messages, Blocking, then Calls' caller ID.
+component MessagesMain inherits NeoList {
+    init => {
+        SettingsState.act("opened", "");
+    }
+    property <int> opens: SettingsState.opens;
+    changed opens => {
+        SettingsState.act("opened", "");
+        self.content-y = 0;
+    }
+    VerticalLayout {
+        alignment: start;
+        SectionHeader {
             text: "Messages";
         }
 
@@ -153,57 +182,63 @@ component Main inherits NeoList {
             }
         }
 
-        ListRow {
+        ValueRow {
             title: "Message centre";
             subtitle: "From the SIM";
             value: SettingsState.smsc == "" ? "Unknown" : SettingsState.smsc;
-            chevron: true;
             clicked => {
                 SettingsState.act("form", "smsc");
             }
         }
 
-        ListRow {
+        ValueRow {
             title: "Quick replies";
             value: SettingsState.replies.length;
-            chevron: true;
             clicked => {
                 SettingsState.act("replies", "");
             }
         }
 
-        ListRow {
+        ValueRow {
             title: "New message alert";
-            value: alerts[SettingsState.sms-alert];
-            chevron: true;
+            value: Names.alerts[SettingsState.sms-alert];
             divider: false;
             clicked => {
                 SettingsState.picker = "alert";
             }
         }
 
-        // blocking applies to messages too (p2-msg-settings)
         SectionHeader {
             text: "Blocking";
         }
 
-        ListRow {
+        ValueRow {
             title: "Blocked numbers";
             value: SettingsState.blocked-count;
-            chevron: true;
             divider: false;
             clicked => {
                 SettingsState.act("blocked", "");
             }
         }
 
-        note := Note {
+        Note {
             text: "Blocked numbers apply to messages when their Messages box is ticked.";
+            size: 13 * Theme.dp;
+            padding-top: 8 * Theme.dp;
+            padding-bottom: 4 * Theme.dp;
         }
 
-        // room under the last section, so the page can open with Messages on top
-        Rectangle {
-            height: max(0px, root.height - 2 * Theme.section-h - 2 * Theme.list-row-double-h - 3 * Theme.list-row-h - note.preferred-height);
+        SectionHeader {
+            text: "Calls";
+        }
+
+        ValueRow {
+            title: "Send my caller ID";
+            value: Names.clir[SettingsState.clir];
+            divider: false;
+            clicked => {
+                SettingsState.picker = "clir";
+            }
         }
     }
 }
@@ -245,7 +280,6 @@ component Replies inherits NeoList {
                 spacing: 12 * Theme.dp;
                 Text {
                     text: r;
-                    font-family: "DejaVu Sans";
                     color: Theme.text;
                     font-size: Theme.font-body;
                     vertical-alignment: center;
@@ -327,7 +361,6 @@ component Blocked inherits NeoList {
                     horizontal-stretch: 1;
                     Text {
                         text: r.title;
-                        font-family: "DejaVu Sans";
                         color: Theme.text;
                         font-size: Theme.font-body;
                         font-weight: 500;
@@ -423,7 +456,8 @@ export component SettingsPage inherits Rectangle {
     // bakes in the glyphs of contacts' names (Armenian, Cyrillic) for the blocked rows
     Alphabets { }
     if SettingsState.form != "": Form { }
-    if SettingsState.form == "" && Nav.view == "": Main { }
+    if SettingsState.form == "" && Nav.view == "" && SettingsState.section != "messages": PhoneMain { }
+    if SettingsState.form == "" && Nav.view == "" && SettingsState.section == "messages": MessagesMain { }
     if SettingsState.form == "" && Nav.view == "blocked": Blocked { }
     if SettingsState.form == "" && Nav.view == "replies": Replies { }
     // made open (the kit sheet keeps its own `open`): `picker` shows and hides it, and Back closes it in the app
@@ -431,10 +465,8 @@ export component SettingsPage inherits Rectangle {
         open: true;
         heading: picker == "clir" ? "Send my caller ID" : picker == "log" ? "Keep call log"
             : picker == "order" ? "Name display" : picker == "alert" ? "New message alert" : "Default number type";
-        choices: picker == "clir" ? ["Network", "Hidden", "Shown"]
-            : picker == "log" ? ["Don't keep", "1 day", "10 days", "30 days"]
-            : picker == "order" ? ["First Last", "Last First"]
-            : picker == "alert" ? ["Tone + vibrate", "Vibrate", "Silent"] : SettingsState.labels;
+        choices: picker == "clir" ? Names.clir : picker == "log" ? Names.log : picker == "order" ? Names.order
+            : picker == "alert" ? Names.alerts : SettingsState.labels;
         current: picker == "clir" ? SettingsState.clir
             : picker == "log" ? (SettingsState.log-days == 0 ? 0 : SettingsState.log-days == 1 ? 1
                 : SettingsState.log-days == 10 ? 2 : 3)

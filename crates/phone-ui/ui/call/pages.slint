@@ -34,7 +34,6 @@ component CallAvatar inherits Rectangle {
         background: party.initials == "" ? #2b3038 : party.tint;
         if party.initials != "": Text {
             text: party.initials;
-            font-family: "DejaVu Sans";
             color: white;
             font-size: root.size * 0.365;
             font-weight: 600;
@@ -76,7 +75,6 @@ component Who inherits VerticalLayout {
 
     Text {
         text: party.name;
-        font-family: "DejaVu Sans";
         color: Theme.text;
         font-size: 26 * Theme.dp;
         font-weight: 600;
@@ -497,7 +495,6 @@ component Waiting inherits Rectangle {
 
                     Text {
                         text: CallState.other.name;
-                        font-family: "DejaVu Sans";
                         color: Theme.text;
                         font-size: 18 * Theme.dp;
                         font-weight: 600;
@@ -581,7 +578,6 @@ component Two inherits VerticalLayout {
                     horizontal-stretch: 1;
                     Text {
                         text: CallState.other.name;
-                        font-family: "DejaVu Sans";
                         color: Theme.text;
                         font-size: 15 * Theme.dp;
                         font-weight: 600;
@@ -669,7 +665,6 @@ component Keypad inherits VerticalLayout {
 
         Text {
             text: CallState.main.name;
-            font-family: "DejaVu Sans";
             color: Theme.text;
             font-size: 16 * Theme.dp;
             font-weight: 600;
@@ -819,7 +814,6 @@ component ReplySheet inherits Sheet {
 
         Text {
             text: "Rejects the call and sends the text to " + CallState.main.name;
-            font-family: "DejaVu Sans";
             color: Theme.text-secondary;
             font-size: 13 * Theme.dp;
             overflow: elide;
@@ -844,7 +838,6 @@ component ReplySheet inherits Sheet {
 
             Text {
                 text: r;
-                font-family: "DejaVu Sans";
                 color: Theme.text;
                 font-size: Theme.font-body;
                 vertical-alignment: center;

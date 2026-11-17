@@ -67,7 +67,7 @@ export global DialState {
     in property <int> blocked-count;
     in property <[LogRow]> rows;
     in property <bool> selecting;
-    // the header's search is on: no rows matched it
+    // the header's search has text: `rows` are what it found (a count line replaces the chips)
     in property <bool> searching;
     // call details (the name is the header's title)
     in property <string> detail-number;

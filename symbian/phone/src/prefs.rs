@@ -28,6 +28,8 @@ pub use phone_common::prefs::State;
 
 /// The days "Keep call log" offers, in the picker's order.
 const LOG_DAYS: [i32; 4] = [0, 1, 10, 30];
+/// How long Call waiting shows "Checking with network…" before "Couldn't check".
+const WAITING_MS: u64 = 15_000;
 
 pub fn bind(ctx: &Rc<Ctx>, ui: &PhoneApp) {
     let ctx = Rc::downgrade(ctx);
@@ -48,7 +50,7 @@ fn act(ctx: &Ctx, action: &str, value: &str) {
             let s = ui.global::<SettingsState>();
             s.set_picker(SharedString::new());
             s.set_query(false);
-            let _ = ctx.m.borrow_mut().modem.waiting(None);
+            ask_waiting(ctx, None);
             // the message centre may have come from the SIM since
             crate::ctx::load_sms(ctx);
         }
@@ -73,12 +75,8 @@ fn act(ctx: &Ctx, action: &str, value: &str) {
         }
         "form" => return open_form(ctx, value),
         "smart-dial" => save(ctx, keys::PHONE_SMART_DIAL, on),
-        "waiting" => {
-            let r = ctx.m.borrow_mut().modem.waiting(Some(on));
-            if r != 0 {
-                ctx.note(&format!("Call waiting: not available ({r})"));
-            }
-        }
+        "waiting" => ask_waiting(ctx, Some(on)),
+        "waiting-check" => ask_waiting(ctx, None),
         "blocked" => ctx.go(Page::Settings(SettingsView::Blocked)),
         "replies" => ctx.go(Page::Settings(SettingsView::Replies)),
         "reports" | "alert" => {
@@ -136,6 +134,31 @@ fn act(ctx: &Ctx, action: &str, value: &str) {
         _ => {}
     }
     ctx.show();
+}
+
+/// Ask the network about call waiting (or set it): the row shows "Checking…" until the answer comes as
+/// `Status::waiting`, or "Couldn't check" after [`WAITING_MS`].
+fn ask_waiting(ctx: &Ctx, set: Option<bool>) {
+    let r = ctx.m.borrow_mut().modem.waiting(set);
+    let now = e32::time::millis();
+    // not sent: "Couldn't check" at once
+    ctx.m.borrow_mut().waiting_until = Some(if r == 0 { now + WAITING_MS } else { now });
+}
+
+/// Call waiting as the row shows it (modem_ipc::waiting, 1 while asking, 4 when no answer came in time).
+fn waiting_shown(ctx: &Ctx) -> i32 {
+    let m = ctx.m.borrow();
+    let w = m.status.as_ref().map_or(0, |s| i32::from(s.waiting));
+    match m.waiting_until {
+        Some(t) if matches!(w, 0 | 1) => {
+            if e32::time::millis() < t {
+                1
+            } else {
+                4
+            }
+        }
+        _ => w,
+    }
 }
 
 /// Write a setting and read them all back (a note if the UI server refused it).
@@ -241,10 +264,10 @@ pub fn show(ctx: &Ctx) {
     let ui = ctx.ui();
     let s = ui.global::<SettingsState>();
     let rows = rows(ctx);
+    s.set_waiting(waiting_shown(ctx));
     let m = ctx.m.borrow();
     let p = &m.prefs;
     s.set_clir(p.clir.clamp(0, 2));
-    s.set_waiting(m.status.as_ref().map_or(0, |st| i32::from(st.waiting)));
     s.set_summary(p.summary);
     s.set_show_duration(p.show_duration);
     s.set_voicemail(p.voicemail.as_str().into());
@@ -291,9 +314,8 @@ pub fn chrome(ctx: &Ctx) -> Chrome {
         Page::Settings(SettingsView::Blocked) => {
             Chrome::titled("Blocked numbers").with(tool::ADD, 0, "Add")
         }
-        // the shared page, as Messages names it
-        _ if s.get_section() == "messages" => Chrome::titled("Settings"),
-        _ => Chrome::titled("Phone & Contacts"),
+        // one name from every route (the system Settings row is "Calls & Messages")
+        _ => Chrome::titled("Settings"),
     }
 }
 
@@ -455,7 +477,12 @@ pub fn wants_back(ctx: &Ctx) -> bool {
 
 /// Read the settings (`phone.*`, `contacts.*`) into the model.
 pub fn reload(ctx: &Ctx) {
-    let (state, order) = phone_common::prefs::read(&ctx.app);
+    let (mut state, order) = phone_common::prefs::read(&ctx.app);
+    // Summary after call is on until it is switched off (phone_common's default says off)
+    if ctx.app.setting(keys::PHONE_SUMMARY).is_err() {
+        state.summary = true;
+        state.show_duration = true;
+    }
     let mut m = ctx.m.borrow_mut();
     m.prefs = state;
     m.order = order;
@@ -468,15 +495,38 @@ pub fn save_speed(ctx: &Ctx, speed: &[String; 8]) -> Result<(), i32> {
     Ok(())
 }
 
-/// MODEMD's status changed: the Call waiting row follows the network's answer.
+/// MODEMD's status changed: the Call waiting row follows the network's answer (an answer ends the wait; MODEMD
+/// asking on its own starts one).
 pub fn on_status(ctx: &Ctx) {
-    let w = ctx
-        .m
-        .borrow()
-        .status
-        .as_ref()
-        .map_or(0, |s| i32::from(s.waiting));
-    ctx.ui().global::<SettingsState>().set_waiting(w);
+    {
+        let mut m = ctx.m.borrow_mut();
+        let w = m.status.as_ref().map_or(0, |s| s.waiting);
+        match w {
+            1 if m.waiting_until.is_none() => {
+                m.waiting_until = Some(e32::time::millis() + WAITING_MS)
+            }
+            2..=4 => m.waiting_until = None,
+            _ => {}
+        }
+    }
+    ctx.ui()
+        .global::<SettingsState>()
+        .set_waiting(waiting_shown(ctx));
+}
+
+/// The Call waiting check's deadline, while Settings shows.
+pub fn next_wake(ctx: &Ctx) -> Option<u64> {
+    let m = ctx.m.borrow();
+    let t = m.waiting_until?;
+    (matches!(m.page, Page::Settings(_)) && t > e32::time::millis()).then_some(t)
+}
+
+pub fn tick(ctx: &Ctx) {
+    if let Page::Settings(_) = ctx.page() {
+        ctx.ui()
+            .global::<SettingsState>()
+            .set_waiting(waiting_shown(ctx));
+    }
 }
 
 /// Block `number` (calls and/or messages) in MODEMD's blocklist, with a note.

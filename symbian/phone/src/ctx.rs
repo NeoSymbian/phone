@@ -59,6 +59,8 @@ pub struct Model {
     pub speed_opened: bool,
     /// another app opened Settings (OPEN): Back from its top goes back there (DONE)
     pub settings_opened: bool,
+    /// Call waiting was asked of the network: "Checking…" until this (`e32::time::millis`), then "Couldn't check"
+    pub waiting_until: Option<u64>,
 }
 
 pub struct Ctx {
@@ -198,7 +200,8 @@ impl Ctx {
             // another app's pages (go() opens them there)
             Page::Contacts(_) | Page::Messages(_) => Vec::new(),
             Page::Phone(_) => dial::options(self),
-            Page::Call => call::options(self),
+            // full screen: no header, no ⋮
+            Page::Call => Vec::new(),
             Page::Settings(_) => prefs::options(self),
         }
     }
@@ -213,9 +216,8 @@ impl Ctx {
     pub fn option(&self, item: &str) {
         match self.page() {
             // another app's pages (go() opens them there)
-            Page::Contacts(_) | Page::Messages(_) => {}
+            Page::Contacts(_) | Page::Messages(_) | Page::Call => {}
             Page::Phone(_) => dial::option(self, item),
-            Page::Call => call::option(self, item),
             Page::Settings(_) => prefs::option(self, item),
         }
     }
@@ -255,8 +257,10 @@ impl Ctx {
     /// The UI server's dialog was answered: `yes` is its first (confirming) button.
     pub fn answer(&self, yes: bool) {
         *self.asked.borrow_mut() = None; // the UI server closed it
-        if let Page::Settings(_) = self.page() {
-            prefs::answer(self, yes);
+        match self.page() {
+            Page::Settings(_) => prefs::answer(self, yes),
+            Page::Phone(_) => dial::answer(self, yes),
+            _ => {}
         }
     }
 
@@ -302,6 +306,7 @@ impl Ctx {
         }
         let query = match self.page() {
             Page::Settings(_) => prefs::query(self),
+            Page::Phone(_) => dial::query(self),
             _ => None,
         };
         if *self.asked.borrow() != query {
@@ -314,23 +319,35 @@ impl Ctx {
             }
             *self.asked.borrow_mut() = query;
         }
-        // a field took the focus (or was tapped after the keyboard was put away): ask for its keyboard (letters,
-        // number pad, phone pad); none focused: hide it
+        self.keyboard(&ui);
+        self.app.draw()?;
+        // a form that just appeared focused its field while it was drawn (Call voicemail opens Settings and the
+        // voicemail form in one step): its keyboard now, not at the next event
+        if self.keyboard(&ui) {
+            self.app.draw()?;
+        }
+        Ok(())
+    }
+
+    /// A field took the focus (or was tapped after the keyboard was put away): ask for its keyboard (letters, number
+    /// pad, phone pad); none focused: hide it. True when it asked.
+    fn keyboard(&self, ui: &PhoneApp) -> bool {
         let kf = ui.global::<KeyboardFocus>();
         let want = (kf.get_open(), kf.get_seq(), kf.get_mode());
         let had = self.keyboard.get();
-        if want.0 != had.0 || (want.0 && (want.1, want.2) != (had.1, had.2)) {
-            self.keyboard.set(want);
-            let mode = if want.0 {
-                want.2.max(1)
-            } else {
-                proto::KEYBOARD_HIDDEN
-            };
-            // how much of the surface it covers: Messages keeps its composer above it
-            let h = self.app.keyboard(mode).unwrap_or(0);
-            kf.set_text_h(h as f32);
+        if want.0 == had.0 && (!want.0 || (want.1, want.2) == (had.1, had.2)) {
+            return false;
         }
-        self.app.draw()
+        self.keyboard.set(want);
+        let mode = if want.0 {
+            want.2.max(1)
+        } else {
+            proto::KEYBOARD_HIDDEN
+        };
+        // how much of the surface it covers: Messages keeps its composer above it
+        let h = self.app.keyboard(mode).unwrap_or(0);
+        kf.set_text_h(h as f32);
+        true
     }
 
     /// The view's kit header (Nav), from its [`Chrome`]: the title; ← on a page with somewhere to go up to; a form's
@@ -483,17 +500,23 @@ impl Ctx {
     pub fn tick(&self) {
         call::tick(self);
         dial::tick(self);
+        prefs::tick(self);
     }
 
     pub fn next_wake_us(&self) -> i32 {
         let now = e32::time::millis();
         // the Return to call bar's clock, every second
         let bar = self.m.borrow().call_bar.live().then_some(now + 1000);
-        let at = [call::next_wake(self), dial::next_wake(self), bar]
-            .into_iter()
-            .flatten()
-            .min()
-            .unwrap_or(now + 60_000);
+        let at = [
+            call::next_wake(self),
+            dial::next_wake(self),
+            prefs::next_wake(self),
+            bar,
+        ]
+        .into_iter()
+        .flatten()
+        .min()
+        .unwrap_or(now + 60_000);
         let own = i32::try_from(at.saturating_sub(now).max(20) * 1000).unwrap_or(i32::MAX);
         phone_common::wait_us(&self.app, own)
     }

@@ -110,6 +110,25 @@ fn phone() {
     s.shoot_at("p2-phone-recents-buttons", BUTTONS);
     s.shoot("p2-phone-recents");
 
+    // the header's search: a count in place of the chips
+    d.set_searching(true);
+    d.set_rows(model(recents()[..2].to_vec()));
+    s.shoot("p2-phone-search");
+    d.set_rows(model(Vec::new()));
+    s.shoot("p2-phone-search-none");
+    d.set_searching(false);
+
+    // an empty list per chip
+    for (i, name) in ["all", "missed", "received", "dialled", "blocked"]
+        .iter()
+        .enumerate()
+    {
+        d.set_filter(i as i32);
+        s.shoot(&format!("p2-phone-empty-{name}"));
+    }
+    d.set_filter(0);
+    d.set_rows(model(recents()));
+
     // Blocked: the chips scroll so it shows; why each call was blocked
     d.set_filter(4);
     d.set_rows(model(vec![
@@ -149,8 +168,15 @@ fn phone() {
     ]));
     s.shoot("p2-phone-recents-blocked");
 
-    // selection mode: two rows ticked, [✕ 2 selected · block · delete], no footer, no Fab
+    // a long press on a row starts selection mode (the row's id)
     d.set_filter(0);
+    d.set_rows(model(recents()));
+    s.settle();
+    s.take_acts();
+    s.hold(180.0, 48.0 + 52.0 + 34.0 + 36.0); // Ava
+    assert_eq!(s.take_acts(), [("row-hold".into(), "9".into())]);
+
+    // selection mode: two rows ticked, [✕ 2 selected · block · delete · ⋮], no footer, no Fab
     let mut rows = recents();
     rows[0].checked = true;
     rows[2].checked = true;
@@ -159,10 +185,28 @@ fn phone() {
     s.header(Header {
         title: "Phone",
         selected: 2,
+        selecting: true,
         selection: &[(BLOCK, "Block"), (DELETE, "Delete")],
+        selection_menu: &["Select all"],
         ..Header::default()
     });
     s.shoot("p2-phone-select");
+    // a row toggles; the header's Block, Delete (the app asks first) and ⋮ ▸ Select all reach the app
+    s.tap(180.0, 48.0 + 52.0 + 34.0 + 72.0 + 36.0); // Ani
+    s.tap(360.0 - 4.0 - 24.0 - 96.0, 24.0); // Block
+    s.tap(360.0 - 4.0 - 24.0 - 48.0, 24.0); // Delete
+    s.tap(360.0 - 4.0 - 24.0, 24.0); // ⋮
+    s.shoot("p2-phone-select-menu");
+    s.tap(360.0 - 4.0 - 110.0, 48.0 + 8.0 + 24.0); // Select all
+    assert_eq!(
+        s.take_acts(),
+        [
+            ("row".into(), "8".into()),
+            ("header-selection".into(), "0".into()),
+            ("header-selection".into(), "1".into()),
+            ("header-selection-option".into(), "0".into()),
+        ]
+    );
     d.set_selecting(false);
     d.set_rows(model(recents()));
 
@@ -177,6 +221,25 @@ fn phone() {
         s.take_acts(),
         [("key".into(), "1".into()), ("call".into(), String::new())]
     );
+    // held: 1 voicemail, 2-9 speed dial, 0 "+" (one act each, no typed key after it)
+    let key = |col: f32, row: f32| {
+        (
+            180.0 + (col - 1.0) * 115.0,
+            679.0 - 428.0 + 16.0 + 56.0 + 31.0 + row * 68.0,
+        )
+    };
+    for (k, (x, y)) in [
+        ("1", key(0.0, 0.0)),
+        ("5", key(1.0, 1.0)),
+        ("0", key(1.0, 3.0)),
+    ] {
+        s.hold(x, y);
+        assert_eq!(
+            s.take_acts(),
+            [("key-long".into(), k.into())],
+            "holding {k}"
+        );
+    }
     let mut a = MatchRow {
         id: 1,
         label: "Mobile".into(),

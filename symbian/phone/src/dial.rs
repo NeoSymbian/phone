@@ -13,10 +13,10 @@ use alloc::vec::Vec;
 use contacts::recents::{duration, when_long};
 use modem_ipc::{LogEntry, call, log};
 use neoui_proto::settings::keys;
-use phone_common::ui::{Chrome, model, tool};
+use phone_common::ui::{Chrome, ask, model, tool};
 use phone_core::dial::{Dialer, Long, Tones, matches};
 use phone_core::page::{Page, PhoneView};
-use phone_core::recents::{self, Filter};
+use phone_core::recents::{self, Ask, Filter};
 use phone_core::speed;
 use phone_rules::caller::{caller_line, presentation};
 use phone_rules::dial::{Action, Flags, Kind, classify};
@@ -42,6 +42,10 @@ pub struct State {
     /// selection mode on Recents: the rows picked (their newest entry's id)
     selecting: bool,
     selected: Vec<u32>,
+    /// the rows Recents shows (their newest entry's id): Select all
+    shown: Vec<u32>,
+    /// the open query
+    ask: Option<Ask>,
     /// the header's search on Recents
     query: String,
     /// an assigned speed-dial key's sheet (Change, Remove)
@@ -198,7 +202,17 @@ fn call_typed(ctx: &Ctx) {
         (m.dial.dialer.number.clone(), m.dial.dialer.single_key())
     };
     if n.is_empty() {
-        return;
+        // nothing typed: the last dialled number comes into the field, a second Call dials it (N8)
+        let last = recents::last_dialled(&ctx.m.borrow().log).map(String::from);
+        match last {
+            Some(last) => {
+                let mut m = ctx.m.borrow_mut();
+                m.dial.dialer.clear();
+                m.dial.dialer.number = last;
+            }
+            None => ctx.note("No number to call"),
+        }
+        return ctx.show();
     }
     match key {
         Some(k) => speed_dial(ctx, k),
@@ -323,6 +337,24 @@ fn assign(ctx: &Ctx, k: usize, n: &str) {
         }
         Err(e) => ctx.note(&format!("Not saved ({e})")),
     }
+}
+
+/// The open query (the shell draws it).
+pub fn query(ctx: &Ctx) -> Option<neoapp::Query> {
+    let (text, detail, button) = ctx.m.borrow().dial.ask?.text();
+    Some(ask(&text, detail, button))
+}
+
+/// The query was answered: `yes` does what it asked.
+pub fn answer(ctx: &Ctx, yes: bool) {
+    let asked = ctx.m.borrow_mut().dial.ask.take();
+    match asked {
+        Some(Ask::Clear(_)) if yes => clear_filter(ctx),
+        Some(Ask::Delete(_)) if yes => on_selected(ctx, false),
+        Some(Ask::Block(_)) if yes => on_selected(ctx, true),
+        _ => {}
+    }
+    ctx.show();
 }
 
 /// Selection mode's Block: every picked row's number is blocked (calls and messages); Delete: their calls go.
@@ -502,7 +534,7 @@ fn show_recents(ctx: &Ctx, now: i64, offset: i32) {
             m.dial.filter = Filter::All;
         }
     }
-    let (rows, filter, missed, blocked, newest, searching) = {
+    let (rows, filter, missed, blocked, newest, searching, shown) = {
         let m = ctx.m.borrow();
         let filter = m.dial.filter;
         let rows: Vec<LogRow> = recents::rows(&m.log, filter, now, offset)
@@ -529,6 +561,7 @@ fn show_recents(ctx: &Ctx, now: i64, offset: i32) {
                 recents::found(&r.title, n, &m.dial.query)
             })
             .collect();
+        let shown = rows.iter().map(|r| r.id as u32).collect();
         let blocked = m.log.iter().filter(|e| e.kind == log::BLOCKED).count();
         let missed = recents::new_missed(&m.log, m.prefs.missed_seen);
         let newest = recents::newest(&m.log);
@@ -542,8 +575,10 @@ fn show_recents(ctx: &Ctx, now: i64, offset: i32) {
             blocked,
             seen,
             !m.dial.query.trim().is_empty(),
+            shown,
         )
     };
+    ctx.m.borrow_mut().dial.shown = shown;
     // seeing the list marks its missed calls seen (the count shows this once)
     if let Some(id) = newest {
         ctx.m.borrow_mut().prefs.missed_seen = id;
@@ -650,7 +685,9 @@ pub fn chrome(ctx: &Ctx) -> Chrome {
             let mut c = Chrome::titled("Phone");
             if m.dial.selecting {
                 c.selected = m.dial.selected.len() as i32;
+                c.selecting = true;
                 c.selection = alloc::vec![(tool::BLOCK, "Block"), (tool::DELETE, "Delete")];
+                c.selection_menu = alloc::vec!["Select all"];
             } else {
                 c.search = Some("Search calls");
             }
@@ -684,16 +721,28 @@ pub fn option(ctx: &Ctx, item: &str) {
         "Call voicemail" => call_voicemail(ctx),
         "Settings" => prefs::open_at(ctx, ""),
         "Clear list" => {
-            clear_filter(ctx);
-            ctx.show();
+            let mut m = ctx.m.borrow_mut();
+            m.dial.ask = Some(Ask::Clear(m.dial.filter));
         }
         "Delete from log" => act(ctx, "detail-delete", ""),
         "Block" | "Delete" => {
-            on_selected(ctx, item == "Block");
-            ctx.show();
+            let mut m = ctx.m.borrow_mut();
+            let n = m.dial.selected.len();
+            if n > 0 {
+                m.dial.ask = Some(if item == "Block" {
+                    Ask::Block(n)
+                } else {
+                    Ask::Delete(n)
+                });
+            }
+        }
+        "Select all" => {
+            let mut m = ctx.m.borrow_mut();
+            m.dial.selected = m.dial.shown.clone();
         }
         _ => {}
     }
+    ctx.show();
 }
 
 /// No Phone view has a header action (Call is in the keypad sheet).
@@ -704,7 +753,10 @@ pub fn back(ctx: &Ctx) -> bool {
     let closed = {
         let mut m = ctx.m.borrow_mut();
         let d = &mut m.dial;
-        if d.key.is_some() || d.pick.is_some() || d.selecting {
+        if d.ask.is_some() {
+            d.ask = None;
+            true
+        } else if d.key.is_some() || d.pick.is_some() || d.selecting {
             d.key = None;
             d.pick = None;
             d.selecting = false;
@@ -723,7 +775,7 @@ pub fn back(ctx: &Ctx) -> bool {
 
 pub fn wants_back(ctx: &Ctx) -> bool {
     let d = &ctx.m.borrow().dial;
-    d.key.is_some() || d.pick.is_some() || d.selecting
+    d.ask.is_some() || d.key.is_some() || d.pick.is_some() || d.selecting
 }
 
 /// The tones after a dialled number: start them when the call connects, send each when due, drop them when the call

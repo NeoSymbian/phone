@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Phone's own small parts (NEOPHONE v2 boards), on top of the neoui kit: the avatar palette and a face for numbers
-// without a contact, the call direction glyph, the details' pills, a switch row the app's state drives, a sheet of
-// radio choices with its heading on the left, a dashed tile border.
+// without a contact, the call direction glyph, the details' pills, a switch row the app's state drives, a row with a
+// light value, a sheet of radio choices with its heading on the left, a dashed tile border.
 import { Theme, Glyph, ListRow, Switch, Sheet } from "@neoui/kit.slint";
 
 // The avatar palette (phone_core::calls::TINTS, same order): stable per contact or number.
@@ -22,7 +22,6 @@ export component Face inherits Rectangle {
     background: tint >= 0 ? Tints.all[Math.mod(tint, 8)] : #2b3038;
     if tint >= 0: Text {
         text: root.initials;
-        font-family: "DejaVu Sans";
         color: white;
         font-size: root.size * 0.38;
         font-weight: 600;
@@ -111,6 +110,38 @@ export component SwitchRow inherits Rectangle {
         enabled: !root.busy;
         clicked => {
             root.toggled(!root.on);
+        }
+    }
+}
+
+// A row with its value before the chevron in the boards' light grey (the kit's ListRow dims it): the message centre,
+// counts, the alert.
+export component ValueRow inherits Rectangle {
+    in property <string> title;
+    in property <string> subtitle;
+    in property <string> value;
+    in property <bool> divider: true;
+    callback clicked;
+    height: subtitle == "" ? Theme.list-row-h : Theme.list-row-double-h;
+    ListRow {
+        title: root.title;
+        subtitle: root.subtitle;
+        chevron: true;
+        divider: root.divider;
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    // the kit row's right padding, chevron and gap
+    HorizontalLayout {
+        padding-right: (16 + 18 + 14) * Theme.dp;
+        alignment: end;
+        Text {
+            text: root.value;
+            color: Theme.text-secondary;
+            font-size: 14.5 * Theme.dp;
+            vertical-alignment: center;
         }
     }
 }

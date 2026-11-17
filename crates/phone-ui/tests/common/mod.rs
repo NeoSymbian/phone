@@ -100,7 +100,9 @@ pub struct Header<'a> {
     pub options: &'a [&'a str],
     pub footer: bool,
     pub selected: i32,
+    pub selecting: bool,
     pub selection: &'a [(i32, &'a str)],
+    pub selection_menu: &'a [&'a str],
 }
 
 impl Shot {
@@ -111,6 +113,8 @@ impl Shot {
         nav.set_sub(h.sub);
         nav.set_form(h.form);
         nav.set_has_action(h.form);
+        // a form's ✓ (ui.rs tool::CHECK)
+        nav.set_action_tool(if h.form { 5 } else { 0 });
         nav.set_pill(false);
         nav.set_full(false);
         let acts = |v: &[(i32, &str)]| {
@@ -127,7 +131,9 @@ impl Shot {
         nav.set_missed(2);
         nav.set_unread(3);
         nav.set_selected(h.selected);
+        nav.set_selecting(h.selecting);
         nav.set_selection_actions(acts(h.selection));
+        nav.set_selection_menu(strings(h.selection_menu));
     }
 
     /// The acts sent since the last call.
@@ -152,10 +158,41 @@ impl Shot {
         self.settle();
     }
 
+    /// A finger held at (x, y) dp for two seconds (long presses fire), then lifted.
+    pub fn hold(&self, x: f32, y: f32) {
+        let position = LogicalPosition::new(x * DP, y * DP);
+        let w = self.window.window();
+        w.dispatch_event(WindowEvent::PointerMoved { position });
+        w.dispatch_event(WindowEvent::PointerPressed {
+            position,
+            button: PointerEventButton::Left,
+        });
+        self.settle();
+        self.settle();
+        w.dispatch_event(WindowEvent::PointerReleased {
+            position,
+            button: PointerEventButton::Left,
+        });
+        w.dispatch_event(WindowEvent::PointerExited);
+        self.settle();
+    }
+
     /// Let timers and animations run a second on.
     pub fn settle(&self) {
         NOW.set(NOW.get() + core::time::Duration::from_secs(1));
         slint::platform::update_timers_and_animations();
+    }
+
+    /// Draw the app as the app's loop does (timers, then a frame), without saving it.
+    pub fn draw(&self) -> Vec<u32> {
+        let h = self.window.size().height;
+        self.settle();
+        self.window.request_redraw();
+        let mut px = vec![Px(0); (W * h) as usize];
+        self.window.draw_if_needed(|r| {
+            r.render(&mut px, W as usize);
+        });
+        px.into_iter().map(|p| p.0).collect()
     }
 
     /// Draw the app `h_dp` high and save `snapshots/<name>.png`; returns the pixels for checks.
@@ -164,12 +201,7 @@ impl Shot {
         if self.window.size().height != h {
             self.window.set_size(slint::PhysicalSize::new(W, h));
         }
-        self.settle();
-        self.window.request_redraw();
-        let mut px = vec![Px(0); (W * h) as usize];
-        self.window.draw_if_needed(|r| {
-            r.render(&mut px, W as usize);
-        });
+        let px = self.draw();
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../snapshots");
         std::fs::create_dir_all(&root).unwrap();
         let file = std::fs::File::create(root.join(format!("{name}.png"))).unwrap();
@@ -179,10 +211,10 @@ impl Shot {
         let mut w = enc.write_header().unwrap();
         let rgb: Vec<u8> = px
             .iter()
-            .flat_map(|p| [(p.0 >> 16) as u8, (p.0 >> 8) as u8, p.0 as u8])
+            .flat_map(|p| [(p >> 16) as u8, (p >> 8) as u8, *p as u8])
             .collect();
         w.write_image_data(&rgb).unwrap();
-        px.into_iter().map(|p| p.0).collect()
+        px
     }
 
     /// The app area in Gestures mode.

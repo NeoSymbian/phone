@@ -84,7 +84,6 @@ component LogLine inherits Rectangle {
             horizontal-stretch: 1;
             Text {
                 text: r.title + (r.count > 1 ? " (" + r.count + ")" : "");
-                font-family: "DejaVu Sans";
                 color: r.kind == 3 ? Theme.danger : Theme.text;
                 font-size: Theme.font-body;
                 font-weight: 500;
@@ -133,13 +132,11 @@ component Lit inherits HorizontalLayout {
     in property <string> pre;
     in property <string> hit;
     in property <string> post;
-    in property <string> font;
     in property <length> size;
     in property <color> color;
     in property <int> weight: 400;
     Text {
         text: pre;
-        font-family: font;
         font-size: size;
         font-weight: weight;
         color: color;
@@ -147,7 +144,6 @@ component Lit inherits HorizontalLayout {
 
     Text {
         text: hit;
-        font-family: font;
         font-size: size;
         font-weight: weight;
         color: Theme.accent;
@@ -155,7 +151,6 @@ component Lit inherits HorizontalLayout {
 
     Text {
         text: post;
-        font-family: font;
         font-size: size;
         font-weight: weight;
         color: color;
@@ -196,7 +191,6 @@ component MatchLine inherits Rectangle {
                 pre: m.name-pre;
                 hit: m.name-hit;
                 post: m.name-post;
-                font: "DejaVu Sans";
                 size: Theme.font-body;
                 weight: 500;
                 color: Theme.text;
@@ -277,7 +271,19 @@ component Chips inherits Flickable {
 // Recents (p2-phone-recents, -recents-blocked, -select), or the matches while a number is typed (p2-phone-typing).
 component RecentsList inherits VerticalLayout {
     property <bool> typing: Nav.view == "dial" && DialState.number != "";
-    if !typing: Chips { }
+    property <int> n: DialState.rows.length;
+    if !typing && !DialState.searching: Chips { }
+    // the search's result count in place of the chips (the prototype's resultText)
+    if !typing && DialState.searching: HorizontalLayout {
+        height: 34 * Theme.dp;
+        padding-left: 16 * Theme.dp;
+        Text {
+            text: n == 1 ? "1 call" : "\{n} calls";
+            color: Theme.text-dim;
+            font-size: Theme.font-label;
+            vertical-alignment: center;
+        }
+    }
     if !typing: NeoList {
         vertical-stretch: 1;
         VerticalLayout {
@@ -304,7 +310,9 @@ component RecentsList inherits VerticalLayout {
                 height: 360 * Theme.dp;
                 icon: @image-url("@neoui/icons/sys/call.svg");
                 title: DialState.searching ? "No matches" : DialState.filter == 1 ? "No missed calls"
+                    : DialState.filter == 2 ? "No received calls" : DialState.filter == 3 ? "No dialled calls"
                     : DialState.filter == 4 ? "No blocked calls" : "No calls yet";
+                reason: DialState.filter == 4 && !DialState.searching ? "Blocked calls don't ring, vibrate or count as missed." : "";
             }
             // the last row clears the Fab
             Rectangle {
@@ -728,7 +736,6 @@ component SpeedDial inherits NeoList {
 
                     Text {
                         text: t.key == 1 ? "Voicemail" : empty ? "Assign" : t.name;
-                        font-family: t.key != 1 && !empty ? "DejaVu Sans" : "";
                         color: empty ? Theme.text-secondary : Theme.text;
                         font-size: Theme.font-label;
                         horizontal-alignment: center;
@@ -795,7 +802,6 @@ component PickSheet inherits Sheet {
                         horizontal-stretch: 1;
                         Text {
                             text: p.title;
-                            font-family: "DejaVu Sans";
                             color: Theme.text;
                             font-size: Theme.font-body;
                             font-weight: 500;
