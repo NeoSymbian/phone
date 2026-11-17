@@ -27,8 +27,8 @@ impl Default for State {
     fn default() -> Self {
         Self {
             clir: 0,
-            show_duration: false,
-            summary: false,
+            show_duration: true,
+            summary: true,
             log_days: 30,
             smart_dial: true,
             voicemail: String::new(),

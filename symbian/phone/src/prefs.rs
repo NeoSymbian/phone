@@ -339,10 +339,15 @@ pub fn option(ctx: &Ctx, item: &str) {
 pub fn open_at(ctx: &Ctx, section: &str) {
     let ui = ctx.ui();
     let s = ui.global::<SettingsState>();
-    s.set_section(section.into());
+    // "blocked": straight to Blocked numbers (a blocked message's note), with Messages' page under it
+    let blocked = section == "blocked";
+    s.set_section(if blocked { "messages" } else { section }.into());
     s.set_opens(s.get_opens().wrapping_add(1));
     s.set_form(SharedString::new());
     ctx.go(Page::Settings(SettingsView::Main));
+    if blocked {
+        ctx.go(Page::Settings(SettingsView::Blocked));
+    }
 }
 
 /// Open a form: "voicemail" and "smsc" start from the number set, "block" and "reply" empty.
@@ -477,12 +482,8 @@ pub fn wants_back(ctx: &Ctx) -> bool {
 
 /// Read the settings (`phone.*`, `contacts.*`) into the model.
 pub fn reload(ctx: &Ctx) {
-    let (mut state, order) = phone_common::prefs::read(&ctx.app);
-    // Summary after call is on until it is switched off (phone_common's default says off)
-    if ctx.app.setting(keys::PHONE_SUMMARY).is_err() {
-        state.summary = true;
-        state.show_duration = true;
-    }
+    // Summary after call is on until it is switched off (neoui's registry default)
+    let (state, order) = phone_common::prefs::read(&ctx.app);
     let mut m = ctx.m.borrow_mut();
     m.prefs = state;
     m.order = order;

@@ -131,7 +131,7 @@ pub fn notified(ctx: &Ctx, id: u32, action: u16) {
 /// The toast's button: Undo (an archive is taken back, a held delete is never sent), or Settings.
 pub fn undo(ctx: &Ctx) {
     if core::mem::take(&mut ctx.m.borrow_mut().msgs.note_settings) {
-        return ctx.open(Page::Settings(SettingsView::Main), "messages");
+        return ctx.open(Page::Settings(SettingsView::Main), "blocked");
     }
     let last = ctx.m.borrow_mut().msgs.undo.undo();
     if let Some(Swiped::Archived(id)) = last {
