@@ -800,6 +800,7 @@ fn post_alerts(ctx: &Ctx, offset: i32) {
             }),
             tint: a.contact.map_or(0, tint),
             time: messages::time(a.utc, offset),
+            progress: None,
         };
         if let Err(e) = ctx.app.notify(&n) {
             dprintln!("neomsg: entry not posted ({})", e);
