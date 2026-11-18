@@ -341,6 +341,7 @@ fn boards() {
                 tint: Color::from_argb_encoded(0xff00_0000 | rgb),
                 time: time.into(),
                 expanded,
+                progress: -1.0,
             }
         };
     s.ui.set_missed(2);
