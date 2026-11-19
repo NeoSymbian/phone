@@ -24,9 +24,9 @@ phone-ui = { path = "crates/phone-ui" }
 contacts-ui = { path = "crates/contacts-ui" }
 messages-ui = { path = "crates/messages-ui" }
 # NeoSymbian/neohw (Apache-2.0): the NeoModem contract, dial rules, number matching, the blocklist
-modem-ipc = { git = "https://github.com/NeoSymbian/neohw", rev = "4095a4b7f34359fe8df25cd0e18e81c15be719c9" }
-phone-rules = { git = "https://github.com/NeoSymbian/neohw", rev = "4095a4b7f34359fe8df25cd0e18e81c15be719c9" }
-sms = { git = "https://github.com/NeoSymbian/neohw", rev = "4095a4b7f34359fe8df25cd0e18e81c15be719c9" }
+modem-ipc = { git = "https://github.com/NeoSymbian/neohw", rev = "06b03ddb4c16e8609328e1ca4814df00daab78bb" }
+phone-rules = { git = "https://github.com/NeoSymbian/neohw", rev = "06b03ddb4c16e8609328e1ca4814df00daab78bb" }
+sms = { git = "https://github.com/NeoSymbian/neohw", rev = "06b03ddb4c16e8609328e1ca4814df00daab78bb" }
 # NeoSymbian/neoui: the kit (the shared theme, fonts and components, as a build helper)
 neoui-kit = { git = "https://github.com/NeoSymbian/neoui", rev = "a73ace8f2b9c8252c8bd63a0c39f1b9d92b6dc29" }
 # the same Slint as neoui (one copy in the ROM, no_std)
