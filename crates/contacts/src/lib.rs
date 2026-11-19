@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The contacts model (docs/telephony.md C8): the store and its file, names and sorting, search, caller-name lookup
+//! The contacts model (docs/hardware/modem.md C8): the store and its file, names and sorting, search, caller-name lookup
 //! ([`Book::lookup`]), smart dialling ([`t9`]), the list's sections and side index ([`index`]) and vCard import/export
 //! ([`vcard`]). Pure logic, tested on the host;
 //! the shell (SYSSTART) keeps the book in `C:\private\e0002001\contacts.dat` and draws it.
