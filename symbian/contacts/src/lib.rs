@@ -221,14 +221,15 @@ fn run() -> Result<(), i32> {
     })
 }
 
-/// Phone or Messages opened Contacts on a page with a number: its card (or a new contact), a new contact; else the
-/// page.
+/// Phone or Messages opened Contacts on a page with a number: its card (or a new contact), a new contact; Files on
+/// IMPORT with a .vcf path; else the page.
 pub(crate) fn opened(ctx: &Ctx, n: u16, p: Page, arg: &str) {
     use phone_core::page::number::contacts;
     match n {
         contacts::CARD | contacts::NEW if !arg.is_empty() => {
             people::opened_on(ctx, arg, n == contacts::NEW);
         }
+        contacts::IMPORT if !arg.is_empty() => people::import_file(ctx, arg),
         _ => ctx.go(p),
     }
 }

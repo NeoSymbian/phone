@@ -31,6 +31,8 @@ pub mod number {
         pub const CARD: u16 = 1;
         /// arg: the new contact's number
         pub const NEW: u16 = 2;
+        /// arg: the path of a .vcf file whose contacts are added (Files' Add to Contacts); the list shows after
+        pub const IMPORT: u16 = 3;
     }
     pub mod messages {
         pub const LIST: u16 = 0;
@@ -103,6 +105,7 @@ impl Page {
             (app::CONTACTS, contacts::LIST) => Page::Contacts(ContactsView::List),
             (app::CONTACTS, contacts::CARD) => Page::Contacts(ContactsView::Card),
             (app::CONTACTS, contacts::NEW) => Page::Contacts(ContactsView::Edit),
+            (app::CONTACTS, contacts::IMPORT) => Page::Contacts(ContactsView::List),
             (app::MESSAGES, messages::LIST) => Page::Messages(MessagesView::List),
             (app::MESSAGES, messages::THREAD | messages::WRITE) => {
                 Page::Messages(MessagesView::Thread)
@@ -221,6 +224,10 @@ mod tests {
         );
         assert_eq!(Page::from_number(app::PHONE, 9), None);
         assert_eq!(Page::from_number(app::CONTACTS, 4), None);
+        assert_eq!(
+            Page::from_number(app::CONTACTS, number::contacts::IMPORT),
+            Some(Page::Contacts(ContactsView::List))
+        );
         // every page opens in its own app at its own number
         for p in [
             Page::Phone(PhoneView::Dial),

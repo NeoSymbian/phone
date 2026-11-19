@@ -257,11 +257,7 @@ pub fn share_text(c: &Contact, order: NameOrder, max: usize) -> String {
 pub fn merge(book: &mut Book, found: Vec<Contact>) -> (usize, usize) {
     let (mut added, mut skipped) = (0, 0);
     for c in found {
-        let dup = book.contacts.iter().any(|x| {
-            x.title(NameOrder::FirstLast) == c.title(NameOrder::FirstLast)
-                && x.numbers.first() == c.numbers.first()
-        });
-        if dup || book.add(c).is_err() {
+        if book.has_same(&c) || book.add(c).is_err() {
             skipped += 1;
         } else {
             added += 1;
