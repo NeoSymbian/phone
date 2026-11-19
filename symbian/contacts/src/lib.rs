@@ -173,6 +173,8 @@ fn run() -> Result<(), i32> {
                     ctx.m.borrow_mut().visible = v;
                     if v {
                         ctx.show();
+                    } else {
+                        people::hidden(&ctx);
                     }
                 }
                 Some(AppEvent::Open { page }) => {

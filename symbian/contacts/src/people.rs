@@ -638,20 +638,35 @@ pub fn import_file(ctx: &Ctx, path: &str) {
         }
     };
     let found = vcard::import(&String::from_utf8_lossy(&bytes));
-    let (added, skipped) = logic::merge(&mut ctx.m.borrow_mut().book, found.contacts);
-    let skipped = skipped + found.skipped;
-    dprintln!("neocont: {} imported {} ({} skipped)", path, added, skipped);
+    let (added, known) = logic::merge(&mut ctx.m.borrow_mut().book, found.contacts);
+    let unreadable = found.skipped;
+    dprintln!(
+        "neocont: {} imported {} ({} known, {} unreadable)",
+        path,
+        added,
+        known,
+        unreadable
+    );
     changed(ctx);
     let ok = added == 0 || save(ctx);
     send_known(ctx);
     ctx.show();
     if ok {
-        ctx.note(&match (added, skipped) {
+        let mut text = match (added, known) {
             (1, 0) => String::from("1 contact added"),
             (a, 0) => format!("{a} contacts added"),
-            (a, s) => format!("{a} added · {s} already in Contacts"),
-        });
+            (a, k) => format!("{a} added · {k} already in Contacts"),
+        };
+        if unreadable > 0 {
+            text.push_str(&format!(" · {unreadable} unreadable"));
+        }
+        ctx.note(&text);
     }
+}
+
+/// The app went to the background: an IMPORT's way back is over (a later visit to the list stays in Contacts).
+pub fn hidden(ctx: &Ctx) {
+    ctx.m.borrow_mut().people.list_from = None;
 }
 
 pub fn show(ctx: &Ctx) {
