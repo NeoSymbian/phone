@@ -72,6 +72,8 @@ pub struct State {
     editing: Who,
     /// where Back from the card goes when it was opened from outside Contacts (call details)
     card_from: Option<Page>,
+    /// where Back from the list goes after another app's IMPORT (Files' Add to Contacts)
+    list_from: Option<Page>,
     /// where the editor's Cancel goes
     edit_from: Page,
     dialog: Dialog,
@@ -101,6 +103,7 @@ impl Default for State {
             card: Who::Mine,
             editing: Who::New,
             card_from: None,
+            list_from: None,
             edit_from: Page::Contacts(ContactsView::List),
             dialog: Dialog::None,
             checks: [true, true],
@@ -618,6 +621,52 @@ fn import(ctx: &Ctx) {
     if ok {
         ctx.note(&format!("{added} added"));
     }
+}
+
+/// Another app opened Contacts on IMPORT with a .vcf `path` (Files' Add to Contacts): its contacts join the book
+/// (the ones it has are skipped, [`contacts::Book::has_same`]), the list shows with a note, and Back returns to that
+/// app.
+pub fn import_file(ctx: &Ctx, path: &str) {
+    ctx.go(Page::Contacts(ContactsView::List));
+    ctx.m.borrow_mut().people.list_from = Some(Page::Phone(PhoneView::Recents));
+    let bytes = match Fs::connect().and_then(|fs| store::read(&fs, path)) {
+        Ok(b) => b,
+        Err(e) => {
+            dprintln!("neocont: {} not read ({})", path, e);
+            ctx.note(&format!("Can't read the vCard ({e})"));
+            return;
+        }
+    };
+    let found = vcard::import(&String::from_utf8_lossy(&bytes));
+    let (added, known) = logic::merge(&mut ctx.m.borrow_mut().book, found.contacts);
+    let unreadable = found.skipped;
+    dprintln!(
+        "neocont: {} imported {} ({} known, {} unreadable)",
+        path,
+        added,
+        known,
+        unreadable
+    );
+    changed(ctx);
+    let ok = added == 0 || save(ctx);
+    send_known(ctx);
+    ctx.show();
+    if ok {
+        let mut text = match (added, known) {
+            (1, 0) => String::from("1 contact added"),
+            (a, 0) => format!("{a} contacts added"),
+            (a, k) => format!("{a} added · {k} already in Contacts"),
+        };
+        if unreadable > 0 {
+            text.push_str(&format!(" · {unreadable} unreadable"));
+        }
+        ctx.note(&text);
+    }
+}
+
+/// The app went to the background: an IMPORT's way back is over (a later visit to the list stays in Contacts).
+pub fn hidden(ctx: &Ctx) {
+    ctx.m.borrow_mut().people.list_from = None;
 }
 
 pub fn show(ctx: &Ctx) {
@@ -1163,6 +1212,16 @@ pub fn back(ctx: &Ctx) -> bool {
         // opened from another app's page (Phone's call details): back there
         Some(ContactsView::Card) => {
             let from = ctx.m.borrow_mut().people.card_from.take();
+            match from {
+                Some(p) => {
+                    ctx.back_to(p);
+                    true
+                }
+                None => false,
+            }
+        }
+        Some(ContactsView::List) => {
+            let from = ctx.m.borrow_mut().people.list_from.take();
             match from {
                 Some(p) => {
                     ctx.back_to(p);

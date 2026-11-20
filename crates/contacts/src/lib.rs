@@ -205,6 +205,14 @@ impl Book {
         self.contacts.iter().find(|c| c.id == id)
     }
 
+    /// Whether the book has a contact like `c` (the same name and first number): what an import skips.
+    pub fn has_same(&self, c: &Contact) -> bool {
+        let title = c.title(NameOrder::FirstLast);
+        self.contacts.iter().any(|x| {
+            x.title(NameOrder::FirstLast) == title && x.numbers.first() == c.numbers.first()
+        })
+    }
+
     /// Add `c` (tidied); its new id.
     pub fn add(&mut self, mut c: Contact) -> Result<u32, Refused> {
         if !c.tidy() {
