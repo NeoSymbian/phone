@@ -29,7 +29,7 @@ writes the book and bumps the `contacts.rev` setting; Phone and Messages read it
 
 ```sh
 cargo fmt --all --check && cargo clippy --all-targets -- -D warnings && cargo test   # host; snapshots/*.png
-cd symbian && cargo fmt --all --check && cargo arm   # target/armv5te-none-eabi/release/lib{neophone,neocont,neomsg}.a
+cd symbian && cargo fmt --all --check && cargo arm   # target/armv8a-neosymbian-eabi/release/lib{neophone,neocont,neomsg}.a
 ```
 
 For a ROM, copy `symbian/exes.txt`'s three lines and the three staticlibs into NeoSymbian/build's `rust/`. The pins (e32, Slint,
