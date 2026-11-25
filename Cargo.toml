@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # The host workspace of Phone, Contacts and Messages: the pure parts (contacts, phone-core: Apache-2.0) and each
 # app's Slint UI (phone-ui, contacts-ui, messages-ui: GPL-3.0, they link Slint), tested on the host. The app EXEs are
-# the separate symbian/ workspace (armv5te, nightly build-std).
+# the separate symbian/ workspace (ARMv8, nightly build-std).
 [workspace]
 resolver = "3"
 members = [

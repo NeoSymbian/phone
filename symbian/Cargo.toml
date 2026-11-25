@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-only
-# NEOPHONE.EXE, NEOCONT.EXE and NEOMSG.EXE (Phone, Contacts, Messages): built only for armv5te-none-eabi with a
+# NEOPHONE.EXE, NEOCONT.EXE and NEOMSG.EXE (Phone, Contacts, Messages): built only for targets/armv8a-neosymbian-eabi.json with a
 # pinned nightly (build-std), like neoui/symbian. GPL-3.0
 # because it links Slint under GPL-3.0 (NeoSymbian decision 2026-11-06). The pins must match neoui's: one e32 (it
 # defines the global allocator) and one Slint in the ROM.
