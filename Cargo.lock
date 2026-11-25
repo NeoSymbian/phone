@@ -2435,7 +2435,7 @@ dependencies = [
 [[package]]
 name = "modem-ipc"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/neohw?rev=06b03ddb4c16e8609328e1ca4814df00daab78bb#06b03ddb4c16e8609328e1ca4814df00daab78bb"
+source = "git+https://github.com/NeoSymbian/neohw?rev=9b3853bdc56c0bef6bcf34cbc5cf0c1f18e39fb5#9b3853bdc56c0bef6bcf34cbc5cf0c1f18e39fb5"
 
 [[package]]
 name = "moxcms"
@@ -2588,7 +2588,7 @@ dependencies = [
 [[package]]
 name = "neoui-kit"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/neoui?rev=a73ace8f2b9c8252c8bd63a0c39f1b9d92b6dc29#a73ace8f2b9c8252c8bd63a0c39f1b9d92b6dc29"
+source = "git+https://github.com/NeoSymbian/neoui?rev=222c43f8116a6dba9ff170997ae7dc0feef055a0#222c43f8116a6dba9ff170997ae7dc0feef055a0"
 dependencies = [
  "slint-build",
 ]
@@ -3135,7 +3135,7 @@ dependencies = [
 [[package]]
 name = "phone-rules"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/neohw?rev=06b03ddb4c16e8609328e1ca4814df00daab78bb#06b03ddb4c16e8609328e1ca4814df00daab78bb"
+source = "git+https://github.com/NeoSymbian/neohw?rev=9b3853bdc56c0bef6bcf34cbc5cf0c1f18e39fb5#9b3853bdc56c0bef6bcf34cbc5cf0c1f18e39fb5"
 
 [[package]]
 name = "phone-ui"
@@ -3894,7 +3894,7 @@ dependencies = [
 [[package]]
 name = "sms"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/neohw?rev=06b03ddb4c16e8609328e1ca4814df00daab78bb#06b03ddb4c16e8609328e1ca4814df00daab78bb"
+source = "git+https://github.com/NeoSymbian/neohw?rev=9b3853bdc56c0bef6bcf34cbc5cf0c1f18e39fb5#9b3853bdc56c0bef6bcf34cbc5cf0c1f18e39fb5"
 
 [[package]]
 name = "snafu"
