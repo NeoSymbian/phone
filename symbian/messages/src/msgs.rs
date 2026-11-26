@@ -17,6 +17,7 @@ use messages_ui::{
     BlockedMessage, Bubble, KeyboardFocus, MessagesApp, MessagesState, Nav, Suggestion, ThreadRow,
 };
 use modem_ipc::sms as st;
+use neoapp::card;
 use phone_common::ui::{Chrome, model, strings, tool};
 use phone_core::messages::{self as messages, Mirror, Swiped, Thread, Undo, cut};
 use phone_core::page::{ContactsView, MessagesView, Page, SettingsView, number};
@@ -107,8 +108,10 @@ pub fn on_status(ctx: &Ctx) {
     }
 }
 
-/// The user tapped our shade entry `id` (`action` 0), its Reply (1) or its Call (2).
+/// The user tapped our card `id` (`action` 0) or one of its actions (`messages::alert_action`: Reply, Mark read,
+/// Call). Mark read comes in place: the app stays where it is (maybe hidden).
 pub fn notified(ctx: &Ctx, id: u32, action: u16) {
+    use messages::alert_action as act;
     settle(ctx);
     let number = ctx
         .m
@@ -119,12 +122,22 @@ pub fn notified(ctx: &Ctx, id: u32, action: u16) {
         .find(|t| messages::alert_id(&t.number) == id)
         .map(|t| t.number.clone());
     let Some(number) = number else {
-        return ctx.go(Page::Messages(MessagesView::List));
+        if action != act::MARK_READ {
+            ctx.go(Page::Messages(MessagesView::List));
+        }
+        return;
     };
+    if action == act::MARK_READ {
+        if let Some(newest) = newest_of(ctx, &number) {
+            edit(ctx, st::EDIT_THREAD_READ, newest);
+        }
+        // the card and the badge go
+        return ctx.show();
+    }
     ctx.m.borrow_mut().opened = false;
     match action {
-        2 => ctx.call(&number),
-        _ => open_thread(ctx, &number, action == 1),
+        act::CALL => ctx.call(&number),
+        _ => open_thread(ctx, &number, action == act::REPLY),
     }
 }
 
@@ -785,22 +798,31 @@ fn post_alerts(ctx: &Ctx, offset: i32) {
         return;
     }
     for a in post {
-        let mut actions = alloc::vec![String::from("Reply")];
-        if messages::as_number(&a.number).is_some() {
-            actions.push("Call".into());
-        }
+        let actions = messages::alert_actions(&a.number);
         let n = neoapp::Notification {
             id: a.id,
             title: cut(&a.title, neoui_proto::ipc::TITLE_MAX).into(),
             text: a.lines(neoui_proto::page::TEXT_MAX),
             page: number::messages::THREAD,
-            actions,
+            actions: actions.iter().map(|a| String::from(*a)).collect(),
             initials: a.contact.map_or_else(String::new, |_| {
                 cut(&initials(&a.title), neoui_proto::page::INITIALS_MAX).into()
             }),
             tint: a.contact.map_or(0, tint),
             time: messages::time(a.utc, offset),
             progress: None,
+            flags: 0,
+            style: card::style::CONVERSATION,
+            channel: 0,
+            group: messages::ALERT_GROUP.into(),
+            when: a.utc.max(0) as u64,
+            // Reply (drawn as the main one; TP4 makes it inline), Mark read where the user is, Call
+            action_kinds: alloc::vec![
+                card::action::REPLY,
+                card::action::IN_PLACE,
+                card::action::BUTTON
+            ][..actions.len()]
+                .into(),
         };
         if let Err(e) = ctx.app.notify(&n) {
             dprintln!("neomsg: entry not posted ({})", e);

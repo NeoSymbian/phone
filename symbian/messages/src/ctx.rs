@@ -394,6 +394,7 @@ impl Ctx {
                 || msgs::wants_back(self)
                 || ui.global::<Kit>().get_layers() > 0,
             full: false,
+            awake: false,
         }
     }
 

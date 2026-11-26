@@ -11,6 +11,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use e32::time::millis;
 use modem_ipc::{Call, call as st};
+use neoapp::card;
 use phone_common::ui::{Chrome, tool};
 use phone_core::calls::{self, Screen, Tracker};
 use phone_core::page::{ContactsView, Page, PhoneView};
@@ -33,7 +34,12 @@ pub struct State {
     silenced: Option<u8>,
     /// the parties shown, by call id, number and presentation: one contact lookup per call
     who: Vec<(u8, String, u8, Party)>,
+    /// the shade's ongoing call card as posted: the call and its line (None: no card)
+    card: Option<(u8, &'static str)>,
 }
+
+/// The ongoing call card's id (the missed-calls card is [`crate::ctx::MISSED_CARD`]).
+pub const CALL_CARD: u32 = 2;
 
 pub fn bind(ctx: &Rc<Ctx>, ui: &PhoneApp) {
     let ctx = Rc::downgrade(ctx);
@@ -173,6 +179,63 @@ fn act(ctx: &Ctx, action: &str, value: &str) {
         ctx.note(&format!("Action failed ({r})"));
     }
     show(ctx);
+}
+
+/// The shade card's End (an in-place action: the user stays where they are).
+pub fn end(ctx: &Ctx) {
+    act(ctx, "end", "");
+}
+
+/// The shade's ongoing call card (top-panel TP2b, Live section): the caller, "Calling…" or "Call in progress" since
+/// the call connected, and End; it goes when the call ends or rings (the incoming screen shows then).
+fn sync_card(ctx: &Ctx) {
+    let (main, _) = calls_of(screen(ctx));
+    let want = main.and_then(|c| match screen(ctx) {
+        Screen::Calling(_) => Some((c, "Calling…")),
+        Screen::Active(_)
+        | Screen::Waiting { .. }
+        | Screen::Two { .. }
+        | Screen::Conference { .. } => Some((c, "Call in progress")),
+        _ => None,
+    });
+    if want.map(|(c, t)| (c.id, t)) == ctx.m.borrow().call.card {
+        return;
+    }
+    let r = match want {
+        Some((c, text)) => {
+            let p = party(ctx, &c);
+            let since = ctx
+                .m
+                .borrow()
+                .call
+                .calls
+                .seconds(c.id, millis())
+                .unwrap_or(0);
+            ctx.app.notify(&neoapp::Notification {
+                id: CALL_CARD,
+                title: phone_core::messages::cut(&p.name, neoui_proto::ipc::TITLE_MAX).into(),
+                text: text.into(),
+                page: phone_core::page::number::phone::CALL,
+                actions: alloc::vec!["End".into()],
+                initials: p.initials.as_str().into(),
+                tint: if p.initials.is_empty() {
+                    0
+                } else {
+                    p.tint.as_argb_encoded() & 0xff_ffff
+                },
+                flags: card::NOTIFY_ONGOING,
+                style: card::style::CALL,
+                when: (neoapp::wall_ms() - i64::from(since) * 1000).max(0) as u64,
+                action_kinds: alloc::vec![card::action::IN_PLACE],
+                ..Default::default()
+            })
+        }
+        None => ctx.app.cancel_notify(CALL_CARD),
+    };
+    match r {
+        Ok(()) => ctx.m.borrow_mut().call.card = want.map(|(c, t)| (c.id, t)),
+        Err(e) => e32::dprintln!("neophone: call card not posted ({})", e),
+    }
 }
 
 /// The caller line and avatar for `c` (looked up once per call); a conference's call: "Conference" over its
@@ -428,6 +491,7 @@ pub fn on_status(ctx: &Ctx) {
     if u.all_ended && (!summary || ctx.page() != Page::Call) {
         close(ctx);
     }
+    sync_card(ctx);
 }
 
 pub fn tick(ctx: &Ctx) {

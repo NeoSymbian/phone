@@ -239,6 +239,8 @@ fn run() -> Result<(), i32> {
                     kf.set_text_h(h as f32);
                 }
                 Some(AppEvent::Answer { i }) => ctx.answer(i == 0),
+                // a tap on a card's action in the shade (Call back, Message, End)
+                Some(AppEvent::Notified { id, action }) => ctx.notified(id, action),
                 // the navigation mode changed the app's height (Buttons 639 dp, Gestures 679 dp)
                 Some(e @ AppEvent::Area { .. }) => ctx.app.handle(&e),
                 Some(AppEvent::Input(input)) => match input {

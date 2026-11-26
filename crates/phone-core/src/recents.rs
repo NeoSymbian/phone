@@ -175,6 +175,68 @@ pub fn new_missed(log: &[LogEntry], seen: u32) -> u32 {
         .count() as u32
 }
 
+/// The shade's missed-calls card (top-panel TP2b): "2 missed calls" over its callers.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MissedCard {
+    pub title: String,
+    /// the callers, newest first, a repeated one once with its count: "Ben Okafor (2), +1 555 0123"
+    pub text: String,
+    /// the newest caller's number, for Call back and Message ("" when hidden)
+    pub number: String,
+    /// the newest missed call's id (a newer one posts the card again) and time
+    pub newest: u32,
+    pub utc: i64,
+}
+
+/// The card for the missed calls newer than `seen` (None: no card). `title_of` names a call's caller as Recents does
+/// (a contact, the number, "Private number"); the text is cut to `max` bytes.
+pub fn missed_card(
+    log: &[LogEntry],
+    seen: u32,
+    title_of: impl Fn(&LogEntry) -> String,
+    max: usize,
+) -> Option<MissedCard> {
+    let new: Vec<&LogEntry> = log
+        .iter()
+        .filter(|e| e.kind == log::MISSED && e.id > seen)
+        .collect();
+    let last = *new.iter().max_by_key(|e| e.id)?;
+    let mut who: Vec<(String, u32)> = Vec::new();
+    for e in &new {
+        let t = title_of(e);
+        match who.iter_mut().find(|(w, _)| *w == t) {
+            Some((_, n)) => *n += 1,
+            None => who.push((t, 1)),
+        }
+    }
+    let text: Vec<String> = who
+        .iter()
+        .map(|(w, n)| {
+            if *n > 1 {
+                format!("{w} ({n})")
+            } else {
+                w.clone()
+            }
+        })
+        .collect();
+    let hidden = last.presentation == phone_rules::caller::presentation::RESTRICTED;
+    Some(MissedCard {
+        title: format!(
+            "{} missed call{}",
+            new.len(),
+            if new.len() == 1 { "" } else { "s" }
+        ),
+        text: crate::messages::cut(&text.join(", "), max).into(),
+        number: if hidden {
+            String::new()
+        } else {
+            last.number.as_str().into()
+        },
+        newest: last.id,
+        utc: last.utc,
+    })
+}
+
 /// The newest entry's id (seeing Recents marks the missed calls up to it as seen).
 pub fn newest(log: &[LogEntry]) -> u32 {
     log.iter().map(|e| e.id).max().unwrap_or(0)
@@ -385,6 +447,69 @@ mod tests {
         assert!(!found("Ava Lindqvist", "+15550142", "boris"));
         assert!(found("Борис", "", "бор"));
         assert_eq!(tint(None, "+15550142", 8), tint(None, "15550142", 8));
+    }
+
+    #[test]
+    fn the_missed_calls_card() {
+        let name = |e: &LogEntry| match e.number.as_str() {
+            "+15550171" => String::from("Ben Okafor"),
+            "" => String::from("Private number"),
+            n => String::from(n),
+        };
+        let l = log();
+        // one caller
+        let c = missed_card(&l, 0, name, 160).unwrap();
+        assert_eq!(
+            (
+                c.title.as_str(),
+                c.text.as_str(),
+                c.number.as_str(),
+                c.newest,
+                c.utc
+            ),
+            ("1 missed call", "Ben Okafor", "+15550171", 8, l[1].utc)
+        );
+        // seen: no card
+        assert_eq!(missed_card(&l, 8, name, 160), None);
+        // two callers, newest first (top-panel.md's example)
+        let mut l = log();
+        l.insert(0, e(10, log::MISSED, "+1 555 0123", 0));
+        let c = missed_card(&l, 0, name, 160).unwrap();
+        assert_eq!(
+            (c.title.as_str(), c.text.as_str(), c.number.as_str()),
+            ("2 missed calls", "+1 555 0123, Ben Okafor", "+1 555 0123")
+        );
+        // many: a repeated caller once with its count, a hidden one without a number, the text cut to fit
+        l.insert(0, e(11, log::MISSED, "+15550171", 0));
+        let mut p = e(12, log::MISSED, "", 0);
+        p.presentation = phone_rules::caller::presentation::RESTRICTED;
+        l.insert(0, p);
+        let c = missed_card(&l, 0, name, 160).unwrap();
+        assert_eq!(
+            (
+                c.title.as_str(),
+                c.text.as_str(),
+                c.number.as_str(),
+                c.newest
+            ),
+            (
+                "4 missed calls",
+                "Private number, Ben Okafor (2), +1 555 0123",
+                "",
+                12
+            )
+        );
+        assert_eq!(
+            missed_card(&l, 0, name, 20).unwrap().text,
+            "Private number, Ben "
+        );
+        // rejected and other calls don't count
+        assert_eq!(
+            missed_card(&l, 0, name, 160).unwrap().title,
+            "4 missed calls"
+        );
+        l.insert(0, e(13, log::REJECTED, "+15550188", 0));
+        assert_eq!(missed_card(&l, 12, name, 160), None);
     }
 
     #[test]

@@ -75,7 +75,12 @@ pub struct Ctx {
     keyboard: Cell<(bool, i32, i32)>,
     /// the launcher badge last sent (BADGE; u32::MAX: none yet)
     badge: Cell<u32>,
+    /// the missed-calls card as posted: its newest call's id (0: no card; u32::MAX: none sent yet)
+    missed_card: Cell<u32>,
 }
+
+/// The shade's missed-calls card's id (the ongoing call's is [`call::CALL_CARD`]).
+pub const MISSED_CARD: u32 = 1;
 
 impl Ctx {
     pub fn new(app: App, ui: &PhoneApp, m: Model) -> Self {
@@ -87,6 +92,7 @@ impl Ctx {
             asked: RefCell::new(None),
             keyboard: Cell::new((false, 0, 0)),
             badge: Cell::new(u32::MAX),
+            missed_card: Cell::new(u32::MAX),
         }
     }
 
@@ -293,8 +299,72 @@ impl Ctx {
         }
     }
 
+    /// The shade's "N missed calls" card (top-panel TP2b): posted again when a call is missed, gone once Recents shows
+    /// them (`phone.missed_seen`).
+    pub fn sync_missed_card(&self) {
+        let card = self.missed_card_now();
+        let newest = card.as_ref().map_or(0, |c| c.newest);
+        if self.missed_card.get() == newest {
+            return;
+        }
+        let r = match card {
+            Some(c) => self.app.notify(&neoapp::Notification {
+                id: MISSED_CARD,
+                title: c.title,
+                text: c.text,
+                page: number::phone::RECENTS,
+                actions: if c.number.is_empty() {
+                    Vec::new()
+                } else {
+                    alloc::vec!["Call back".into(), "Message".into()]
+                },
+                when: c.utc.max(0) as u64,
+                ..Default::default()
+            }),
+            None => self.app.cancel_notify(MISSED_CARD),
+        };
+        match r {
+            Ok(()) => self.missed_card.set(newest),
+            Err(e) => dprintln!("neophone: missed-calls card not posted ({})", e),
+        }
+    }
+
+    fn missed_card_now(&self) -> Option<phone_core::recents::MissedCard> {
+        let m = self.m.borrow();
+        phone_core::recents::missed_card(
+            &m.log,
+            m.prefs.missed_seen,
+            |e| {
+                let n = e.number.as_str();
+                let name = phone_common::name_of(&m.book, m.order, n);
+                phone_rules::caller::caller_line(name.as_deref(), n, e.presentation, false).0
+            },
+            neoui_proto::page::TEXT_MAX,
+        )
+    }
+
+    /// A tap on one of our cards' actions (`action` 0, the card itself, came with its page): the missed calls' Call
+    /// back (1) and Message (2), the ongoing call's End (1).
+    pub fn notified(&self, id: u32, action: u16) {
+        match (id, action) {
+            (MISSED_CARD, 1 | 2) => {
+                let Some(c) = self.missed_card_now().filter(|c| !c.number.is_empty()) else {
+                    return;
+                };
+                if action == 1 {
+                    dial::place_call(self, &c.number);
+                } else {
+                    self.message(&c.number, true);
+                }
+            }
+            (call::CALL_CARD, 1) => call::end(self),
+            _ => {}
+        }
+    }
+
     pub fn show(&self) {
         self.sync_badge();
+        self.sync_missed_card();
         match self.page() {
             // another app's pages (go() opens them there)
             Page::Contacts(_) | Page::Messages(_) => {}
@@ -475,6 +545,7 @@ impl Ctx {
                 || self.wants_back()
                 || ui.global::<Kit>().get_layers() > 0,
             full: self.page() == Page::Call,
+            awake: false,
         }
     }
 

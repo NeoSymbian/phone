@@ -300,6 +300,26 @@ impl Alert {
     }
 }
 
+/// The group every conversation card stacks under (protocol 1.18 `group`): the shade shows "N new messages".
+pub const ALERT_GROUP: &str = "messages";
+
+/// A card's actions by number (`Notified { action }`; 0 is a tap on the card).
+pub mod alert_action {
+    pub const REPLY: u16 = 1;
+    pub const MARK_READ: u16 = 2;
+    pub const CALL: u16 = 3;
+}
+
+/// A conversation card's actions (top-panel TP2b): Reply and Mark read, plus Call for a real number, in the order of
+/// [`alert_action`].
+pub fn alert_actions(number: &str) -> &'static [&'static str] {
+    if as_number(number).is_some() {
+        &["Reply", "Mark read", "Call"]
+    } else {
+        &["Reply", "Mark read"]
+    }
+}
+
 /// `s` cut to at most `max` bytes, on a character boundary.
 pub fn cut(s: &str, max: usize) -> &str {
     let mut end = s.len().min(max);
@@ -779,6 +799,36 @@ mod tests {
         let (post, cancel) = alert_changes(&posted, &a);
         assert_eq!(post, [&a[0]]);
         assert_eq!(cancel, [7]);
+        // a number gets Call, a sender name doesn't; the action numbers follow the order
+        assert_eq!(alert_actions(&a[0].number), ["Reply", "Mark read", "Call"]);
+        assert_eq!(alert_actions(&a[1].number), ["Reply", "Mark read"]);
+        assert_eq!(
+            alert_actions(&a[0].number)[usize::from(alert_action::MARK_READ - 1)],
+            "Mark read"
+        );
+    }
+
+    #[test]
+    fn a_read_thread_clears_its_card() {
+        let mut m = mirror();
+        let t = threads(&m, &book(), NameOrder::FirstLast);
+        let a = alerts(&m, &t, None);
+        let posted: Vec<(u32, u32)> = a.iter().map(|a| (a.id, a.newest)).collect();
+        // Mark read on Ava's thread: MODEMD sends its messages back read
+        let ava: Vec<u32> = thread(&m, &a[0].number)
+            .into_iter()
+            .map(|i| m.msgs[i].entry.id)
+            .collect();
+        for i in 0..m.msgs.len() {
+            if ava.contains(&m.msgs[i].entry.id) && m.msgs[i].entry.state == st::UNREAD {
+                m.msgs[i].entry.state = st::READ;
+            }
+        }
+        let t = threads(&m, &book(), NameOrder::FirstLast);
+        let now = alerts(&m, &t, None);
+        let (post, cancel) = alert_changes(&posted, &now);
+        assert!(post.is_empty());
+        assert_eq!(cancel, [a[0].id]);
     }
 
     #[test]
