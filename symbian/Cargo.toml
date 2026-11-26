@@ -8,13 +8,13 @@ resolver = "3"
 members = ["common", "phone", "contacts", "messages"]
 
 [workspace.dependencies]
-e32 = { git = "https://github.com/NeoSymbian/e32-rs", rev = "8084b94f9e8264384113e7ea6fa52adf70944cc5", features = ["critical-section"] }
-neoui-proto = { git = "https://github.com/NeoSymbian/neoui", rev = "21868a7aeb7d8507e08ae218676a870a70a06a73" }
-neoapp = { git = "https://github.com/NeoSymbian/neoui", rev = "21868a7aeb7d8507e08ae218676a870a70a06a73" }
+e32 = { git = "https://github.com/NeoSymbian/e32-rs", rev = "41e0af1b9c0c741cc9619ebd749905661d2bab4f", features = ["critical-section"] }
+neoui-proto = { git = "https://github.com/NeoSymbian/neoui", rev = "616f0de8182518f3b00906e06bce9947dcb9a22c" }
+neoapp = { git = "https://github.com/NeoSymbian/neoui", rev = "616f0de8182518f3b00906e06bce9947dcb9a22c" }
 slint = { version = "=1.18.1", default-features = false, features = ["compat-1-2", "unsafe-single-threaded", "libm", "renderer-software"] }
-modem-ipc = { git = "https://github.com/NeoSymbian/neohw", rev = "a11fa906f35bbd1dcec979495210dcdab3dc8651" }
-phone-rules = { git = "https://github.com/NeoSymbian/neohw", rev = "a11fa906f35bbd1dcec979495210dcdab3dc8651" }
-sms = { git = "https://github.com/NeoSymbian/neohw", rev = "a11fa906f35bbd1dcec979495210dcdab3dc8651" }
+modem-ipc = { git = "https://github.com/NeoSymbian/neohw", rev = "7186c36b8d6b5d90bc983bcf5fb000ec16b492e4" }
+phone-rules = { git = "https://github.com/NeoSymbian/neohw", rev = "7186c36b8d6b5d90bc983bcf5fb000ec16b492e4" }
+sms = { git = "https://github.com/NeoSymbian/neohw", rev = "7186c36b8d6b5d90bc983bcf5fb000ec16b492e4" }
 contacts = { path = "../crates/contacts" }
 phone-core = { path = "../crates/phone-core" }
 phone-ui = { path = "../crates/phone-ui" }
