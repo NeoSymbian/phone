@@ -8,6 +8,7 @@
 extern crate alloc;
 
 pub mod block;
+pub mod channels;
 pub mod modem;
 pub mod prefs;
 pub mod store;

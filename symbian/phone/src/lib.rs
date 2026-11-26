@@ -48,6 +48,7 @@ fn main() -> i32 {
 fn run() -> Result<(), i32> {
     let app = App::connect()?;
     dprintln!("neophone: surface {}x{} mapped", app.width, app.height());
+    phone_common::channels::declare_phone(&app);
     let ui = PhoneApp::new().map_err(|_| -2)?;
     ui.global::<Theme>().set_dp(app.dp);
     ui.show().map_err(|_| -2)?;

@@ -225,6 +225,7 @@ fn sync_card(ctx: &Ctx) {
                 },
                 flags: card::NOTIFY_ONGOING,
                 style: card::style::CALL,
+                channel: phone_common::channels::phone::CALLS,
                 when: (neoapp::wall_ms() - i64::from(since) * 1000).max(0) as u64,
                 action_kinds: alloc::vec![card::action::IN_PLACE],
                 ..Default::default()

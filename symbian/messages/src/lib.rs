@@ -44,6 +44,7 @@ fn main() -> i32 {
 fn run() -> Result<(), i32> {
     let app = App::connect()?;
     dprintln!("neomsg: connected, {}x{}", app.width, app.height());
+    phone_common::channels::declare_messages(&app);
     let ui = MessagesApp::new().map_err(|_| -2)?;
     ui.global::<Theme>().set_dp(app.dp);
     ui.show().map_err(|_| -2)?;

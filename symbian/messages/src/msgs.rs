@@ -813,7 +813,7 @@ fn post_alerts(ctx: &Ctx, offset: i32) {
             progress: None,
             flags: 0,
             style: card::style::CONVERSATION,
-            channel: 0,
+            channel: phone_common::channels::messages::CONVERSATIONS,
             group: messages::ALERT_GROUP.into(),
             when: a.utc.max(0) as u64,
             // Reply (drawn as the main one; TP4 makes it inline), Mark read where the user is, Call

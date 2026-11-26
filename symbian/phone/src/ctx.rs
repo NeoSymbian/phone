@@ -319,6 +319,7 @@ impl Ctx {
                     alloc::vec!["Call back".into(), "Message".into()]
                 },
                 when: c.utc.max(0) as u64,
+                channel: phone_common::channels::phone::MISSED,
                 ..Default::default()
             }),
             None => self.app.cancel_notify(MISSED_CARD),
