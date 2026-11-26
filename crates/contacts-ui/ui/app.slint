@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // NEOCONT.EXE (Contacts): the list with search, favourites and the letter strip, the card, the editor, selection mode
 // (Phone and Messages are apps of their own; the footer and the card's Call and Message open them). The number-type
-// sheet and the Block query cover the whole app, header too.
+// sheet, the birthday sheet and the Block query cover the whole app, header too.
 import "@neoui/fonts/NeoSans-Regular.ttf";
 import "@neoui/fonts/NeoSans-Medium.ttf";
 import "@neoui/fonts/NeoSans-SemiBold.ttf";
@@ -13,7 +13,7 @@ import { AppFrame } from "@phone-shared/frame.slint";
 import { Icons } from "@phone-shared/icons.slint";
 import { ContactsState } from "contacts/state.slint";
 import { ContactsPage } from "contacts/pages.slint";
-import { Dialog, TypeSheet } from "contacts/parts.slint";
+import { BirthdaySheet, Dialog, TypeSheet } from "contacts/parts.slint";
 
 export { Theme, Scroll, KeyboardFocus, Kit, Nav, Icons, ContactsState }
 
@@ -57,6 +57,16 @@ export component ContactsApp inherits Window {
         }
         chosen(i) => {
             ContactsState.act("choice", i);
+        }
+    }
+
+    property <bool> dating: ContactsState.dating;
+    changed dating => {
+        bday.open = self.dating;
+    }
+    bday := BirthdaySheet {
+        dismissed => {
+            ContactsState.dating = false;
         }
     }
 

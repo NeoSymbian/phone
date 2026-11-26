@@ -245,6 +245,9 @@ fn editor(s: &common::Shot) {
     c.set_edit_company("Example Co".into());
     c.set_edit_email("ava@example.org".into());
     c.set_edit_note("Met at the Yerevan meetup".into());
+    c.set_edit_bday_day(14);
+    c.set_edit_bday_month(3);
+    c.set_edit_bday_year(1990);
     c.set_edit_numbers(model(vec![
         ContactEditNumber {
             kind: 0,
@@ -381,7 +384,9 @@ fn contacts() {
     c.set_card_email("ava@example.org".into());
     c.set_card_note("Met at the Yerevan meetup".into());
     c.set_card_speed(2);
+    c.set_card_birthday("14 March · 36 years".into());
     s.shoot("p2-contacts-card");
+    c.set_card_birthday("".into());
 
     // Delete: on the device the shell's QUERY asks; the app's query draws the same box here
     c.set_dialog_question("Delete Ava Lindqvist?".into());
@@ -434,6 +439,29 @@ fn contacts() {
     c.set_picking(1);
     s.shoot("p2-contacts-type");
     c.set_picking(-1);
+
+    // the birthday sheet: › on the day, ‹ twice on the month, Set
+    c.set_dating(true);
+    s.shoot("p2-contacts-birthday");
+    // its rows from the bottom: the buttons (8 + 44 + 12), then 56 per stepper (year, month, day)
+    let at = |k: f32| 679.0 - 64.0 - 56.0 * k - 28.0;
+    let (prev, next) = (360.0 - 12.0 - 48.0 - 124.0 - 24.0, 360.0 - 12.0 - 24.0);
+    s.press(next, at(2.0), true);
+    s.press(prev, at(1.0), true);
+    s.press(prev, at(1.0), true);
+    s.press(360.0 - 16.0 - 30.0, 679.0 - 12.0 - 22.0, true);
+    s.pixels();
+    assert!(!c.get_dating());
+    assert_eq!(
+        (
+            c.get_edit_bday_day(),
+            c.get_edit_bday_month(),
+            c.get_edit_bday_year()
+        ),
+        (15, 1, 1990)
+    );
+    c.set_edit_bday_day(14);
+    c.set_edit_bday_month(3);
 
     // an empty book
     nav.set_view("".into());

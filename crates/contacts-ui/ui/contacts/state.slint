@@ -77,6 +77,8 @@ export global ContactsState {
     in property <int> card-speed;
     // what blocks it ("Calls and messages", "Calls", "Messages"; "" not blocked)
     in property <string> card-blocked;
+    // "14 March · 36 years" ("": none)
+    in property <string> card-birthday;
 
     // the editor (view "edit"), filled when it opens and read back on Save
     in-out property <string> edit-first;
@@ -85,6 +87,15 @@ export global ContactsState {
     in-out property <string> edit-email;
     in-out property <string> edit-note;
     in-out property <[ContactEditNumber]> edit-numbers;
+    // the birthday: day 1-31 (0: none), month 1-12, year (0: not known); the birthday sheet is open while `dating`
+    in-out property <int> edit-bday-day;
+    in-out property <int> edit-bday-month: 1;
+    in-out property <int> edit-bday-year;
+    in-out property <bool> dating;
+    out property <[string]> months: [
+        "January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
+        "November", "December"
+    ];
     // the number-type sheet: the row it is open for (-1: closed); the label texts in contacts::Label order (the
     // app fills them; the chips show the short ones)
     in property <int> picking: -1;
