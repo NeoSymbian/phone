@@ -6,7 +6,7 @@ import { Theme, Glyph, Avatar, NeoList, ListRow, Alphabets } from "@neoui/kit.sl
 import { Nav } from "@phone-shared/nav.slint";
 import { ContactsState } from "state.slint";
 import {
-    Band, BlockedBanner, CardPill, Favourites, GlyphButton, HitRow, IconButton, InfoRow, LetterStrip, MyCardRow,
+    Band, BirthdayRow, BlockedBanner, CardPill, Favourites, GlyphButton, HitRow, IconButton, InfoRow, LetterStrip, MyCardRow,
     Field, PhotoSlot, RowAction, TypeChip
 } from "parts.slint";
 
@@ -321,6 +321,11 @@ component CardView inherits NeoList {
             value: ContactsState.card-note;
             size: 15 * Theme.dp;
         }
+        if ContactsState.card-birthday != "": InfoRow {
+            label: "Birthday";
+            value: ContactsState.card-birthday;
+            size: 15 * Theme.dp;
+        }
         if ContactsState.card-speed > 0: InfoRow {
             label: "Speed dial";
             value: "Key " + ContactsState.card-speed;
@@ -433,6 +438,8 @@ component EditView inherits NeoList {
                 placeholder: "Note";
                 text <=> ContactsState.edit-note;
             }
+
+            BirthdayRow { }
         }
     }
 }
