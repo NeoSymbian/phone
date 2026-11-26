@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! vCard 2.1 and 3.0 (docs/symbian-phone-sources.md §14): import as the Nokia phones wrote them (2.1, UTF-8 in
 //! quoted-printable for anything non-ASCII) and as most other software does (3.0, folded lines, `TYPE=` parameters),
-//! export as 2.1 so an old Nokia reads the file back. Unknown properties are skipped; a broken card is skipped and
-//! counted, never a panic.
+//! export as 2.1 so an old Nokia reads the file back. `BDAY` also takes 4.0's `--MMDD` (a birthday with no year).
+//! Unknown properties are skipped; a broken card is skipped and counted, never a panic.
 
-use crate::{Contact, Label, NUMBERS_MAX};
+use crate::{Birthday, Contact, Label, NUMBERS_MAX};
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt::Write;
@@ -104,6 +104,24 @@ fn label(params: &[String]) -> Label {
     }
 }
 
+/// `BDAY`: `YYYY-MM-DD` or `YYYYMMDD` (2.1, 3.0, 4.0; a time after `T` ignored), `--MMDD` or `--MM-DD` (4.0, no
+/// year). Anything else, or a day that isn't one, is no birthday.
+fn birthday(v: &str) -> Option<Birthday> {
+    let v = v.trim();
+    let date = v.split_once('T').map_or(v, |(d, _)| d);
+    let (no_year, date) = date.strip_prefix("--").map_or((false, date), |d| (true, d));
+    let digits: String = date.chars().filter(|c| *c != '-').collect();
+    if !digits.bytes().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    let num = |r: core::ops::Range<usize>| digits.get(r)?.parse::<u16>().ok();
+    match (no_year, digits.len()) {
+        (true, 4) => Birthday::new(num(0..2)? as u8, num(2..4)? as u8, None),
+        (false, 8) => Birthday::new(num(4..6)? as u8, num(6..8)? as u8, Some(num(0..4)?)),
+        _ => None,
+    }
+}
+
 pub fn import(text: &str) -> Import {
     let mut out = Import::default();
     let mut card: Option<Contact> = None;
@@ -160,6 +178,7 @@ pub fn import(text: &str) -> Import {
                     }
                     "EMAIL" if c.email.is_empty() => c.email = value.trim().into(),
                     "NOTE" => c.note = parts.join(";"),
+                    "BDAY" => c.birthday = birthday(&value),
                     "X-FAVORITE" => c.favourite = !matches!(value.trim(), "" | "0" | "false"),
                     _ => {}
                 }
@@ -228,6 +247,24 @@ pub fn export<'a>(contacts: impl IntoIterator<Item = &'a Contact>) -> String {
         }
         if !c.note.is_empty() {
             property(&mut out, "NOTE", &c.note);
+        }
+        match c.birthday {
+            Some(Birthday {
+                month,
+                day,
+                year: Some(y),
+            }) => {
+                let _ = write!(out, "BDAY:{y:04}{month:02}{day:02}\r\n");
+            }
+            // 4.0's form: 2.1 has none for a date with no year
+            Some(Birthday {
+                month,
+                day,
+                year: None,
+            }) => {
+                let _ = write!(out, "BDAY:--{month:02}{day:02}\r\n");
+            }
+            None => {}
         }
         if c.favourite {
             out.push_str("X-FAVORITE:1\r\n");
@@ -322,5 +359,52 @@ mod tests {
         assert!(text.contains("TEL;CELL;WORK:+37491234567\r\n"));
         let back = import(&text);
         assert_eq!(back.contacts, cards);
+    }
+
+    #[test]
+    fn birthdays_in_and_out() {
+        let card = |bday: &str| {
+            let r = import(&alloc::format!("BEGIN:VCARD\nFN:A\n{bday}\nEND:VCARD\n"));
+            r.contacts[0].birthday
+        };
+        let b = |m, d, y| Birthday::new(m, d, y);
+        assert_eq!(card("BDAY:1990-03-14"), b(3, 14, Some(1990)));
+        assert_eq!(card("BDAY:19900314"), b(3, 14, Some(1990)));
+        assert_eq!(
+            card("BDAY;VALUE=date:1990-03-14T00:00:00Z"),
+            b(3, 14, Some(1990))
+        );
+        assert_eq!(card("BDAY:--0314"), b(3, 14, None));
+        assert_eq!(card("BDAY:--03-14"), b(3, 14, None));
+        assert_eq!(card("BDAY:2000-02-29"), b(2, 29, Some(2000)));
+        assert_eq!(card("BDAY:--0229"), b(2, 29, None));
+        for bad in [
+            "BDAY:1999-02-29",
+            "BDAY:--1314",
+            "BDAY:1990",
+            "BDAY:circa 1990",
+            "BDAY:",
+            "BDAY:1990-3-14",
+            "BDAY:--+1+1",
+        ] {
+            assert_eq!(card(bad), None, "{bad}");
+        }
+
+        let cards = vec![
+            Contact {
+                first: "Ani".into(),
+                birthday: b(3, 14, Some(1990)),
+                ..Default::default()
+            },
+            Contact {
+                first: "Leap".into(),
+                birthday: b(2, 29, None),
+                ..Default::default()
+            },
+        ];
+        let text = export(&cards);
+        assert!(text.contains("BDAY:19900314\r\n"));
+        assert!(text.contains("BDAY:--0229\r\n"));
+        assert_eq!(import(&text).contacts, cards);
     }
 }
