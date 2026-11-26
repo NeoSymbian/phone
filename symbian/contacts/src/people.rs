@@ -10,7 +10,7 @@ use alloc::rc::Rc;
 use alloc::string::String;
 use alloc::vec::Vec;
 use contacts::index::{self, Script};
-use contacts::{Contact, Label, NUMBERS_MAX, NameOrder, Refused, vcard};
+use contacts::{Birthday, Contact, Label, NUMBERS_MAX, NameOrder, Refused, vcard};
 use contacts_ui::{
     ContactEditNumber, ContactHit, ContactMark, ContactNumber, ContactRow, ContactSection,
     ContactsApp, ContactsState, KeyboardFocus, Nav,
@@ -337,6 +337,11 @@ fn edit(ctx: &Ctx, who: Who, number: &str) {
     st.set_edit_email(c.email.as_str().into());
     st.set_edit_note(c.note.as_str().into());
     st.set_edit_numbers(model(rows));
+    let b = c.birthday;
+    st.set_edit_bday_day(b.map_or(0, |b| i32::from(b.day)));
+    st.set_edit_bday_month(b.map_or(1, |b| i32::from(b.month)));
+    st.set_edit_bday_year(b.and_then(|b| b.year).map_or(0, i32::from));
+    st.set_dating(false);
     ctx.m.borrow_mut().people.start = form(ctx);
     ctx.go(Page::Contacts(ContactsView::Edit));
 }
@@ -359,6 +364,15 @@ fn form(ctx: &Ctx) -> Contact {
                 (l.unwrap_or_default(), String::from(e.number.as_str()))
             })
             .collect(),
+        birthday: (st.get_edit_bday_day() > 0)
+            .then(|| {
+                let year = u16::try_from(st.get_edit_bday_year())
+                    .ok()
+                    .filter(|y| *y > 0);
+                let (m, d) = (st.get_edit_bday_month(), st.get_edit_bday_day());
+                Birthday::new(u8::try_from(m).ok()?, u8::try_from(d).ok()?, year)
+            })
+            .flatten(),
         ..Default::default()
     }
 }
@@ -836,6 +850,19 @@ fn show_card(ctx: &Ctx) {
     st.set_card_email(c.email.as_str().into());
     st.set_card_note(c.note.as_str().into());
     st.set_card_speed(speed.map_or(0, i32::from));
+    let now = e32::time::now();
+    let today = (
+        u16::try_from(now.year).unwrap_or(0),
+        now.month as u8,
+        now.day as u8,
+    );
+    st.set_card_birthday(
+        c.birthday
+            .map(|b| logic::birthday_text(&b, today))
+            .unwrap_or_default()
+            .as_str()
+            .into(),
+    );
     st.set_card_blocked(blocked.map_or("", |(a, b)| logic::block_text(a, b)).into());
 }
 

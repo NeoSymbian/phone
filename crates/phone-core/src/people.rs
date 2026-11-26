@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The Contacts page without UI (NEOPHONE v2 p2-contacts-*): avatars, the list's section offsets and the letter
 //! strip's spans, search hits, the card's
-//! speed-dial key and block line, the editor's checks, vCard merging and the known-number hashes MODEMD gets.
+//! speed-dial key, block and birthday lines, the editor's checks, vCard merging and the known-number hashes MODEMD gets.
 
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 use contacts::index::{Mark, Section};
-use contacts::{Book, Contact, Label, NameOrder};
+use contacts::{Birthday, Book, Contact, Label, NameOrder};
 use phone_rules::number;
 
 /// A section band's and a row's height on the list (dp), for scrolling to a section.
@@ -187,6 +187,17 @@ pub fn block_text(calls: bool, messages: bool) -> &'static str {
         (true, true) => "Calls and messages",
         (true, false) => "Calls",
         _ => "Messages",
+    }
+}
+
+/// The card's birthday line on `today` (year, month, day): "14 March", with the age when the year is known
+/// ("14 March · 36 years").
+pub fn birthday_text(b: &Birthday, today: (u16, u8, u8)) -> String {
+    let date = Birthday { year: None, ..*b }.text();
+    match b.age(today) {
+        Some(1) => format!("{date} · 1 year"),
+        Some(n) if n > 0 => format!("{date} · {n} years"),
+        _ => date,
     }
 }
 
@@ -472,5 +483,13 @@ mod tests {
         assert!(k.windows(2).all(|w| w[0] < w[1]));
         assert_eq!(block_text(true, true), "Calls and messages");
         assert_eq!(block_text(true, false), "Calls");
+        let b = Birthday::new(3, 14, Some(1990)).unwrap();
+        assert_eq!(birthday_text(&b, (2026, 11, 26)), "14 March · 36 years");
+        assert_eq!(birthday_text(&b, (1991, 3, 14)), "14 March · 1 year");
+        assert_eq!(birthday_text(&b, (1990, 12, 1)), "14 March");
+        // the clock not set yet (before the year): no age
+        assert_eq!(birthday_text(&b, (1980, 1, 1)), "14 March");
+        let leap = Birthday::new(2, 29, None).unwrap();
+        assert_eq!(birthday_text(&leap, (2026, 11, 26)), "29 February");
     }
 }
