@@ -2,7 +2,7 @@
 //! The contacts model (docs/hardware/modem.md C8): the store and its file, names and sorting, search, caller-name lookup
 //! ([`Book::lookup`]), smart dialling ([`t9`]), the list's sections and side index ([`index`]) and vCard import/export
 //! ([`vcard`]). Pure logic, tested on the host;
-//! the shell (SYSSTART) keeps the book in `C:\private\e0002001\contacts.dat` and draws it.
+//! NEOCONT keeps the book in `C:\private\e0005001\contacts.dat`; Calendar reads the birthdays from it ([`birthdays`]).
 //! Field set and limits follow the Symbian^3 phonebook (docs/symbian-phone-sources.md §13).
 #![no_std]
 
@@ -103,6 +103,81 @@ pub struct Contact {
     pub email: String,
     pub note: String,
     pub favourite: bool,
+    pub birthday: Option<Birthday>,
+}
+
+/// The months' names, January first.
+pub const MONTHS: [&str; 12] = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+];
+
+/// A birthday: the day and month, the year when it is known (vCard 4.0's `--MMDD` has none). 29 February is valid
+/// (in a leap year, or with no year).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Birthday {
+    /// 1-12
+    pub month: u8,
+    /// 1-31
+    pub day: u8,
+    pub year: Option<u16>,
+}
+
+fn leap(y: u16) -> bool {
+    (y.is_multiple_of(4) && !y.is_multiple_of(100)) || y.is_multiple_of(400)
+}
+
+impl Birthday {
+    /// A real date, else `None`.
+    pub fn new(month: u8, day: u8, year: Option<u16>) -> Option<Self> {
+        let b = Birthday { month, day, year };
+        b.valid().then_some(b)
+    }
+
+    pub fn valid(&self) -> bool {
+        let days = match self.month {
+            2 if self.year.is_some_and(|y| !leap(y)) => 28,
+            2 => 29,
+            4 | 6 | 9 | 11 => 30,
+            1..=12 => 31,
+            _ => 0,
+        };
+        (1..=days).contains(&self.day) && self.year.is_none_or(|y| (1..=9999).contains(&y))
+    }
+
+    /// "14 March", "14 March 1990".
+    pub fn text(&self) -> String {
+        let mut t = alloc::format!(
+            "{} {}",
+            self.day,
+            MONTHS[usize::from(self.month.clamp(1, 12) - 1)]
+        );
+        if let Some(y) = self.year {
+            t.push_str(&alloc::format!(" {y}"));
+        }
+        t
+    }
+
+    /// The age on `today` (year, month, day), when the year is known and not after today.
+    pub fn age(&self, today: (u16, u8, u8)) -> Option<u16> {
+        let (y, m, d) = today;
+        let years = y.checked_sub(self.year?)?;
+        if (m, d) < (self.month, self.day) {
+            years.checked_sub(1)
+        } else {
+            Some(years)
+        }
+    }
 }
 
 fn clip(s: &mut String, max: usize) {
@@ -135,6 +210,7 @@ impl Contact {
         }
         self.numbers.retain(|(_, n)| !n.is_empty());
         self.numbers.truncate(NUMBERS_MAX);
+        self.birthday = self.birthday.filter(Birthday::valid);
         !(self.first.is_empty()
             && self.last.is_empty()
             && self.company.is_empty()
@@ -298,7 +374,8 @@ impl Book {
         self.get(id)
     }
 
-    /// `contacts.dat`: "NCT1", next id, the count, a my-card flag, then the contacts (my card first).
+    /// `contacts.dat`: "NCT2", next id, the count, a my-card flag, then the contacts (my card first). NCT1 is the same
+    /// without each contact's birthday (month, day: 0 none; year, u16: 0 unknown) after its numbers.
     pub fn encode(&self) -> Vec<u8> {
         let mut b = Vec::new();
         b.extend_from_slice(MAGIC);
@@ -323,16 +400,24 @@ impl Book {
                 b.push(*l as u8);
                 put(&mut b, n);
             }
+            let bd = c
+                .birthday
+                .map_or((0, 0, 0), |d| (d.month, d.day, d.year.unwrap_or(0)));
+            b.extend_from_slice(&[bd.0, bd.1]);
+            b.extend_from_slice(&bd.2.to_le_bytes());
         }
         b
     }
 
-    /// A saved book; `None` when the file is not one (the shell then keeps the file aside, never overwrites it).
+    /// A saved book (NCT1 or NCT2); `None` when the file is not one (NEOCONT then keeps the file aside, never
+    /// overwrites it).
     pub fn decode(b: &[u8]) -> Option<Self> {
         let mut r = Reader { b, at: 0 };
-        if r.take(4)? != MAGIC {
-            return None;
-        }
+        let v2 = match r.take(4)? {
+            m if m == MAGIC => true,
+            b"NCT1" => false,
+            _ => return None,
+        };
         let next_id = r.u32()?;
         let n = usize::from(r.u16()?);
         let mine = r.u8()? != 0;
@@ -360,6 +445,12 @@ impl Book {
                 let l = Label::from_u8(r.u8()?)?;
                 c.numbers.push((l, r.string()?));
             }
+            if v2 {
+                let (month, day, year) = (r.u8()?, r.u8()?, r.u16()?);
+                if month != 0 {
+                    c.birthday = Some(Birthday::new(month, day, (year != 0).then_some(year))?);
+                }
+            }
             if mine && i == 0 {
                 book.my_card = Some(c);
             } else {
@@ -371,7 +462,15 @@ impl Book {
     }
 }
 
-const MAGIC: &[u8; 4] = b"NCT1";
+/// Every contact's birthday (my card's not included), in book order: its id, its name ("First Last") and the date.
+/// What Calendar shows; it reads the book NEOCONT writes and never writes it.
+pub fn birthdays(book: &Book) -> impl Iterator<Item = (u32, String, Birthday)> + '_ {
+    book.contacts
+        .iter()
+        .filter_map(|c| Some((c.id, c.title(NameOrder::FirstLast), c.birthday?)))
+}
+
+const MAGIC: &[u8; 4] = b"NCT2";
 
 fn put(b: &mut Vec<u8>, s: &str) {
     b.extend_from_slice(&(s.len() as u16).to_le_bytes());
@@ -523,5 +622,114 @@ mod tests {
         let mut bad = bytes.clone();
         bad.push(0);
         assert_eq!(Book::decode(&bad), None);
+    }
+
+    /// An NCT1 file as the old encoder wrote it: no birthdays after the numbers.
+    fn nct1(b: &Book) -> Vec<u8> {
+        let mut v = Vec::from(&b"NCT1"[..]);
+        v.extend_from_slice(&b.next_id.to_le_bytes());
+        v.extend_from_slice(&(b.contacts.len() as u16).to_le_bytes());
+        v.push(b.my_card.is_some() as u8);
+        for c in b.my_card.iter().chain(&b.contacts) {
+            v.extend_from_slice(&c.id.to_le_bytes());
+            v.push(c.favourite as u8);
+            for s in [
+                &c.first,
+                &c.last,
+                &c.company,
+                &c.nickname,
+                &c.email,
+                &c.note,
+            ] {
+                put(&mut v, s);
+            }
+            v.push(c.numbers.len() as u8);
+            for (l, n) in &c.numbers {
+                v.push(*l as u8);
+                put(&mut v, n);
+            }
+        }
+        v
+    }
+
+    #[test]
+    fn nct1_reads_and_saves_as_nct2() {
+        let mut b = book();
+        b.set_my_card(Some(person("Me", "", &["+37477777777"])));
+        let old = Book::decode(&nct1(&b)).unwrap();
+        assert_eq!(old, b);
+        let mut new = old.clone();
+        let mut ani = new.get(1).unwrap().clone();
+        ani.birthday = Birthday::new(3, 14, Some(1990));
+        new.update(ani).unwrap();
+        let mut zara = new.get(3).unwrap().clone();
+        zara.birthday = Birthday::new(2, 29, None);
+        new.update(zara).unwrap();
+        let bytes = new.encode();
+        assert_eq!(&bytes[..4], b"NCT2");
+        assert_eq!(Book::decode(&bytes).unwrap(), new);
+        assert_eq!(
+            birthdays(&new).collect::<Vec<_>>(),
+            [
+                (
+                    1,
+                    String::from("Ani Petrosyan"),
+                    Birthday::new(3, 14, Some(1990)).unwrap()
+                ),
+                (3, String::from("Zara"), Birthday::new(2, 29, None).unwrap()),
+            ]
+        );
+    }
+
+    #[test]
+    fn corrupt_books_never_panic() {
+        let mut b = book();
+        let mut ani = b.get(1).unwrap().clone();
+        ani.birthday = Birthday::new(12, 31, Some(2001));
+        b.update(ani).unwrap();
+        let good = b.encode();
+        // every cut, and every byte changed to a few values: decode says no or reads something, never panics
+        for n in 0..good.len() {
+            assert_eq!(Book::decode(&good[..n]), None);
+            for x in [0, 1, 0x7f, 0xff] {
+                let mut bad = good.clone();
+                bad[n] = x;
+                let _ = Book::decode(&bad);
+            }
+        }
+        // a birthday that isn't a date (31 February) is corrupt
+        let at = good.len() - 4;
+        let mut bad = good.clone();
+        bad[at..at + 2].copy_from_slice(&[2, 31]);
+        assert_eq!(Book::decode(&bad), None);
+    }
+
+    #[test]
+    fn birthday_dates() {
+        assert!(Birthday::new(2, 29, Some(2024)).is_some());
+        assert!(Birthday::new(2, 29, Some(2000)).is_some());
+        assert!(Birthday::new(2, 29, None).is_some());
+        assert_eq!(Birthday::new(2, 29, Some(1900)), None);
+        assert_eq!(Birthday::new(4, 31, None), None);
+        assert_eq!(Birthday::new(0, 1, None), None);
+        assert_eq!(Birthday::new(13, 1, None), None);
+        assert_eq!(Birthday::new(1, 1, Some(0)), None);
+        let b = Birthday::new(3, 14, Some(1990)).unwrap();
+        assert_eq!(b.text(), "14 March 1990");
+        assert_eq!(Birthday { year: None, ..b }.text(), "14 March");
+        assert_eq!(b.age((2026, 3, 13)), Some(35));
+        assert_eq!(b.age((2026, 3, 14)), Some(36));
+        assert_eq!(b.age((1989, 1, 1)), None);
+        assert_eq!(b.age((1990, 1, 1)), None);
+        assert_eq!(Birthday { year: None, ..b }.age((2026, 3, 14)), None);
+        // tidy drops a birthday that isn't a date
+        let mut c = person("A", "", &[]);
+        c.birthday = Some(Birthday {
+            month: 2,
+            day: 30,
+            year: None,
+        });
+        c.tidy();
+        assert_eq!(c.birthday, None);
     }
 }
