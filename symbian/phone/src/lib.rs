@@ -251,6 +251,8 @@ fn run() -> Result<(), i32> {
                 },
                 _ => {}
             }
+            // the kit's controls and the dial pad's keys (CONTROL_FEEDBACK): a pulse, a key's tone, as the profile says
+            neoapp::kit_feedback!(ctx.ui(), ctx.app);
             ctx.sync()?;
         }
     })
