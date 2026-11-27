@@ -75,7 +75,13 @@ pub struct Ctx {
     keyboard: Cell<(bool, i32, i32)>,
     /// the launcher badge last sent (BADGE; u32::MAX: none yet)
     badge: Cell<u32>,
+    /// the missed-calls card as posted (`Some(None)`: no card; `None`: none sent yet); its actions act on this card,
+    /// never on one recomputed at tap time
+    missed_card: RefCell<Option<Option<phone_core::recents::MissedCard>>>,
 }
+
+/// The shade's missed-calls card's id (the ongoing call's is [`call::CALL_CARD`]).
+pub const MISSED_CARD: u32 = 1;
 
 impl Ctx {
     pub fn new(app: App, ui: &PhoneApp, m: Model) -> Self {
@@ -87,6 +93,7 @@ impl Ctx {
             asked: RefCell::new(None),
             keyboard: Cell::new((false, 0, 0)),
             badge: Cell::new(u32::MAX),
+            missed_card: RefCell::new(None),
         }
     }
 
@@ -293,8 +300,75 @@ impl Ctx {
         }
     }
 
+    /// The shade's "N missed calls" card (top-panel TP2b): posted again when a call is missed, gone once Recents shows
+    /// them (`phone.missed_seen`).
+    pub fn sync_missed_card(&self) {
+        // only from MODEMD's log: before it is read (a restart) the card the shell keeps stays as it is
+        if self.m.borrow().log_revision.is_none() {
+            return;
+        }
+        let card = self.missed_card_now();
+        if self.missed_card.borrow().as_ref() == Some(&card) {
+            return;
+        }
+        let r = match card.clone() {
+            Some(c) => self.app.notify(&neoapp::Notification {
+                id: MISSED_CARD,
+                title: c.title,
+                text: c.text,
+                page: number::phone::RECENTS,
+                actions: if c.number.is_empty() {
+                    Vec::new()
+                } else {
+                    alloc::vec!["Call back".into(), "Message".into()]
+                },
+                when: c.utc.max(0) as u64,
+                channel: phone_common::channels::phone::MISSED,
+                ..Default::default()
+            }),
+            None => self.app.cancel_notify(MISSED_CARD),
+        };
+        match r {
+            Ok(()) => *self.missed_card.borrow_mut() = Some(card),
+            Err(e) => dprintln!("neophone: missed-calls card not posted ({})", e),
+        }
+    }
+
+    fn missed_card_now(&self) -> Option<phone_core::recents::MissedCard> {
+        let m = self.m.borrow();
+        phone_core::recents::missed_card(
+            &m.log,
+            m.prefs.missed_seen,
+            |e| {
+                let n = e.number.as_str();
+                let name = phone_common::name_of(&m.book, m.order, n);
+                phone_rules::caller::caller_line(name.as_deref(), n, e.presentation, false).0
+            },
+            neoui_proto::page::TEXT_MAX,
+        )
+    }
+
+    /// A tap on one of our cards' actions (`action` 0, the card itself, came with its page): the missed calls' Call
+    /// back (1) and Message (2), the ongoing call's End (1).
+    pub fn notified(&self, id: u32, action: u16) {
+        match (id, action) {
+            (MISSED_CARD, 1 | 2) => {
+                // the caller the card named when it was posted
+                let posted = self.missed_card.borrow().clone().flatten();
+                match phone_core::recents::missed_action(posted.as_ref(), action) {
+                    Some((true, n)) => dial::place_call(self, n),
+                    Some((false, n)) => self.message(n, true),
+                    None => dprintln!("neophone: a stale missed-calls action"),
+                }
+            }
+            (call::CALL_CARD, 1) => call::end_posted(self),
+            _ => {}
+        }
+    }
+
     pub fn show(&self) {
         self.sync_badge();
+        self.sync_missed_card();
         match self.page() {
             // another app's pages (go() opens them there)
             Page::Contacts(_) | Page::Messages(_) => {}
@@ -475,6 +549,7 @@ impl Ctx {
                 || self.wants_back()
                 || ui.global::<Kit>().get_layers() > 0,
             full: self.page() == Page::Call,
+            awake: false,
         }
     }
 

@@ -328,41 +328,66 @@ fn boards() {
     nav.set_actions(acts(&[(14, "Search"), (4, "New")]));
     nav.set_options(options);
     m.set_threads(model(threads()));
-    // as the shell draws Messages' entries (neoui render set_notes): the newest expanded with its avatar, time, two
-    // lines and Reply / Call; the older one a row
-    let note =
-        |title: &str, earlier: &str, text: &str, initials: &str, rgb: u32, time: &str, expanded| {
-            ShadeNote {
-                title: title.into(),
-                earlier: earlier.into(),
-                text: text.into(),
-                actions: strings(&["Reply", "Call"]),
-                initials: initials.into(),
-                tint: Color::from_argb_encoded(0xff00_0000 | rgb),
-                time: time.into(),
-                expanded,
-                progress: -1.0,
+    // as the shell draws the cards (neoui-render lay_out_notes, top-panel TP2b): Messages' conversations grouped
+    // under CONVERSATIONS (the newest with the count, Reply · Mark read · Call), Phone's missed calls under ALERTS
+    // (the shell's own missed-calls row is gone)
+    let kinds = |k: &[i32]| ModelRc::from(Rc::new(VecModel::from(k.to_vec())));
+    let note = |app: (&str, &str), section: &str, count, title: &str, earlier: &str, text: &str| {
+        ShadeNote {
+            app_key: app.0.into(),
+            app: app.1.into(),
+            group: if app.0 == "messages" { "messages" } else { "" }.into(),
+            title: title.into(),
+            earlier: earlier.into(),
+            text: text.into(),
+            actions: if app.0 == "messages" {
+                strings(&["Reply", "Mark read", "Call"])
+            } else {
+                strings(&["Call back", "Message"])
+            },
+            kinds: if app.0 == "messages" {
+                kinds(&[1, 3, 0])
+            } else {
+                kinds(&[0, 0])
+            },
+            initials: if app.0 == "messages" { "AL" } else { "" }.into(),
+            tint: Color::from_argb_encoded(
+                0xff00_0000 | if app.0 == "messages" { 0x22b46a } else { 0 },
+            ),
+            time: if app.0 == "messages" {
+                "2 min"
+            } else {
+                "09:12"
             }
-        };
-    s.ui.set_missed(2);
+            .into(),
+            expanded: true,
+            progress: -1.0,
+            section: section.into(),
+            count,
+            open: false,
+            member: false,
+            ongoing: false,
+        }
+    };
+    s.ui.set_missed(0);
+    // Ava's two conversations and Phone's card
+    s.ui.set_cards(3);
     s.ui.set_notes(model(vec![
         note(
+            ("messages", "Messages"),
+            "CONVERSATIONS",
+            2,
             "Ava Lindqvist",
             "Perfect. I'll book a table.",
             "Running late, see you at 7?",
-            "AL",
-            0x22b46a,
-            "10:05",
-            true,
         ),
         note(
-            "Ben Okafor",
+            ("phone", "Phone"),
+            "ALERTS",
+            1,
+            "2 missed calls",
             "",
-            "The build passed on the phone!",
-            "",
-            0,
-            "09:48",
-            false,
+            "Ben Okafor, +1 555 0123",
         ),
     ]));
     s.shoot("p2-msg-notify");

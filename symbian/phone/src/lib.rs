@@ -48,6 +48,7 @@ fn main() -> i32 {
 fn run() -> Result<(), i32> {
     let app = App::connect()?;
     dprintln!("neophone: surface {}x{} mapped", app.width, app.height());
+    phone_common::channels::declare_phone(&app);
     let ui = PhoneApp::new().map_err(|_| -2)?;
     ui.global::<Theme>().set_dp(app.dp);
     ui.show().map_err(|_| -2)?;
@@ -239,6 +240,8 @@ fn run() -> Result<(), i32> {
                     kf.set_text_h(h as f32);
                 }
                 Some(AppEvent::Answer { i }) => ctx.answer(i == 0),
+                // a tap on a card's action in the shade (Call back, Message, End)
+                Some(AppEvent::Notified { id, action }) => ctx.notified(id, action),
                 // the navigation mode changed the app's height (Buttons 639 dp, Gestures 679 dp)
                 Some(e @ AppEvent::Area { .. }) => ctx.app.handle(&e),
                 Some(AppEvent::Input(input)) => match input {
@@ -248,6 +251,8 @@ fn run() -> Result<(), i32> {
                 },
                 _ => {}
             }
+            // the kit's controls and the dial pad's keys (CONTROL_FEEDBACK): a pulse, a key's tone, as the profile says
+            neoapp::kit_feedback!(ctx.ui(), ctx.app);
             ctx.sync()?;
         }
     })
