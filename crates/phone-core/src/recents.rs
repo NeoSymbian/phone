@@ -188,6 +188,19 @@ pub struct MissedCard {
     pub utc: i64,
 }
 
+/// A tap on the missed-calls card's action with the card as it was posted (never recomputed at tap time: a newer
+/// missed call may have come since): action 1 Call back, 2 Message, to the number the card named. `None` for no card
+/// posted, a hidden number or another action.
+#[must_use]
+pub fn missed_action(posted: Option<&MissedCard>, action: u16) -> Option<(bool, &str)> {
+    let c = posted.filter(|c| !c.number.is_empty())?;
+    match action {
+        1 => Some((true, c.number.as_str())),
+        2 => Some((false, c.number.as_str())),
+        _ => None,
+    }
+}
+
 /// The card for the missed calls newer than `seen` (None: no card). `title_of` names a call's caller as Recents does
 /// (a contact, the number, "Private number"); the text is cut to `max` bytes.
 pub fn missed_card(
@@ -356,6 +369,26 @@ mod tests {
 
     const NOW: i64 = 1_794_690_180_000; // 2026-11-14 21:03 UTC
     const H: i64 = 3_600_000;
+
+    #[test]
+    fn missed_actions_use_the_card_as_posted() {
+        let card = MissedCard {
+            title: "2 missed calls".into(),
+            text: "Ben, Ava".into(),
+            number: "+15550123".into(),
+            newest: 7,
+            utc: 0,
+        };
+        assert_eq!(missed_action(Some(&card), 1), Some((true, "+15550123")));
+        assert_eq!(missed_action(Some(&card), 2), Some((false, "+15550123")));
+        assert_eq!(missed_action(Some(&card), 3), None);
+        assert_eq!(missed_action(None, 1), None);
+        let hidden = MissedCard {
+            number: String::new(),
+            ..card
+        };
+        assert_eq!(missed_action(Some(&hidden), 1), None);
+    }
 
     fn e(id: u32, kind: u8, n: &str, ago_h: i64) -> LogEntry {
         LogEntry {

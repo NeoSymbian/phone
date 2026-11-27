@@ -75,8 +75,9 @@ pub struct Ctx {
     keyboard: Cell<(bool, i32, i32)>,
     /// the launcher badge last sent (BADGE; u32::MAX: none yet)
     badge: Cell<u32>,
-    /// the missed-calls card as posted: its newest call's id (0: no card; u32::MAX: none sent yet)
-    missed_card: Cell<u32>,
+    /// the missed-calls card as posted (`Some(None)`: no card; `None`: none sent yet); its actions act on this card,
+    /// never on one recomputed at tap time
+    missed_card: RefCell<Option<Option<phone_core::recents::MissedCard>>>,
 }
 
 /// The shade's missed-calls card's id (the ongoing call's is [`call::CALL_CARD`]).
@@ -92,7 +93,7 @@ impl Ctx {
             asked: RefCell::new(None),
             keyboard: Cell::new((false, 0, 0)),
             badge: Cell::new(u32::MAX),
-            missed_card: Cell::new(u32::MAX),
+            missed_card: RefCell::new(None),
         }
     }
 
@@ -302,12 +303,15 @@ impl Ctx {
     /// The shade's "N missed calls" card (top-panel TP2b): posted again when a call is missed, gone once Recents shows
     /// them (`phone.missed_seen`).
     pub fn sync_missed_card(&self) {
-        let card = self.missed_card_now();
-        let newest = card.as_ref().map_or(0, |c| c.newest);
-        if self.missed_card.get() == newest {
+        // only from MODEMD's log: before it is read (a restart) the card the shell keeps stays as it is
+        if self.m.borrow().log_revision.is_none() {
             return;
         }
-        let r = match card {
+        let card = self.missed_card_now();
+        if self.missed_card.borrow().as_ref() == Some(&card) {
+            return;
+        }
+        let r = match card.clone() {
             Some(c) => self.app.notify(&neoapp::Notification {
                 id: MISSED_CARD,
                 title: c.title,
@@ -325,7 +329,7 @@ impl Ctx {
             None => self.app.cancel_notify(MISSED_CARD),
         };
         match r {
-            Ok(()) => self.missed_card.set(newest),
+            Ok(()) => *self.missed_card.borrow_mut() = Some(card),
             Err(e) => dprintln!("neophone: missed-calls card not posted ({})", e),
         }
     }
@@ -349,16 +353,15 @@ impl Ctx {
     pub fn notified(&self, id: u32, action: u16) {
         match (id, action) {
             (MISSED_CARD, 1 | 2) => {
-                let Some(c) = self.missed_card_now().filter(|c| !c.number.is_empty()) else {
-                    return;
-                };
-                if action == 1 {
-                    dial::place_call(self, &c.number);
-                } else {
-                    self.message(&c.number, true);
+                // the caller the card named when it was posted
+                let posted = self.missed_card.borrow().clone().flatten();
+                match phone_core::recents::missed_action(posted.as_ref(), action) {
+                    Some((true, n)) => dial::place_call(self, n),
+                    Some((false, n)) => self.message(n, true),
+                    None => dprintln!("neophone: a stale missed-calls action"),
                 }
             }
-            (call::CALL_CARD, 1) => call::end(self),
+            (call::CALL_CARD, 1) => call::end_posted(self),
             _ => {}
         }
     }

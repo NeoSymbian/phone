@@ -34,8 +34,12 @@ pub struct State {
     silenced: Option<u8>,
     /// the parties shown, by call id, number and presentation: one contact lookup per call
     who: Vec<(u8, String, u8, Party)>,
-    /// the shade's ongoing call card as posted: the call and its line (None: no card)
+    /// the shade's ongoing call card as posted: the call and its line (None: no card), and the call it names (End
+    /// acts on that one only)
     card: Option<(u8, &'static str)>,
+    card_call: Option<phone_core::calls::CardCall>,
+    /// the card was reconciled with a MODEMD status since the app started (a restart may have left one in the shade)
+    card_synced: bool,
 }
 
 /// The ongoing call card's id (the missed-calls card is [`crate::ctx::MISSED_CARD`]).
@@ -181,9 +185,23 @@ fn act(ctx: &Ctx, action: &str, value: &str) {
     show(ctx);
 }
 
-/// The shade card's End (an in-place action: the user stays where they are).
-pub fn end(ctx: &Ctx) {
-    act(ctx, "end", "");
+/// The shade card's End (an in-place action: the user stays where they are): the call the card was posted for, if
+/// it is still that call; a stale End (that call is gone, its id reused) does nothing.
+pub fn end_posted(ctx: &Ctx) {
+    let id = {
+        let m = ctx.m.borrow();
+        let calls = m.status.as_ref().map_or(&[][..], |s| s.calls.as_slice());
+        m.call.card_call.as_ref().and_then(|c| c.now_in(calls))
+    };
+    let Some(id) = id else {
+        e32::dprintln!("neophone: a stale End");
+        return;
+    };
+    let r = ctx.m.borrow_mut().modem.hangup(id);
+    if r < 0 {
+        ctx.note(&format!("Action failed ({r})"));
+    }
+    show(ctx);
 }
 
 /// The shade's ongoing call card (top-panel TP2b, Live section): the caller, "Calling…" or "Call in progress" since
@@ -198,8 +216,15 @@ fn sync_card(ctx: &Ctx) {
         | Screen::Conference { .. } => Some((c, "Call in progress")),
         _ => None,
     });
-    if want.map(|(c, t)| (c.id, t)) == ctx.m.borrow().call.card {
-        return;
+    // the first status after a start reconciles whatever the shade still has, even with no call
+    {
+        let m = ctx.m.borrow();
+        if m.call.card_synced
+            && want.map(|(c, t)| (c.id, t)) == m.call.card
+            && want.map(|(c, _)| phone_core::calls::CardCall::of(&c)) == m.call.card_call
+        {
+            return;
+        }
     }
     let r = match want {
         Some((c, text)) => {
@@ -234,7 +259,12 @@ fn sync_card(ctx: &Ctx) {
         None => ctx.app.cancel_notify(CALL_CARD),
     };
     match r {
-        Ok(()) => ctx.m.borrow_mut().call.card = want.map(|(c, t)| (c.id, t)),
+        Ok(()) => {
+            let mut m = ctx.m.borrow_mut();
+            m.call.card = want.map(|(c, t)| (c.id, t));
+            m.call.card_call = want.map(|(c, _)| phone_core::calls::CardCall::of(&c));
+            m.call.card_synced = true;
+        }
         Err(e) => e32::dprintln!("neophone: call card not posted ({})", e),
     }
 }

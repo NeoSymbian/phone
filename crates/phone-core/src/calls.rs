@@ -252,6 +252,40 @@ pub const TINTS: [u32; 8] = [
     0x15803d, 0xbe185d, 0xc2410c, 0x6d28d9, 0x0e7490, 0x2f80ed, 0x8b5cf6, 0x14a3a3,
 ];
 
+/// The call the shade's ongoing card was posted for (top-panel TP4): MODEMD reuses an id once its call ends, so the
+/// card's End acts only on a call that is still the same one (id, number, direction).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CardCall {
+    pub id: u8,
+    pub number: String,
+    pub incoming: bool,
+}
+
+impl CardCall {
+    #[must_use]
+    pub fn of(c: &Call) -> Self {
+        Self {
+            id: c.id,
+            number: String::from(c.number.as_str()),
+            incoming: c.incoming,
+        }
+    }
+
+    /// The id to end now: the posted call if it is still in MODEMD's list and live; `None` for a stale action.
+    #[must_use]
+    pub fn now_in(&self, calls: &[Call]) -> Option<u8> {
+        calls
+            .iter()
+            .find(|c| {
+                c.id == self.id
+                    && c.incoming == self.incoming
+                    && c.number.as_str() == self.number
+                    && shown(c)
+            })
+            .map(|c| c.id)
+    }
+}
+
 /// An avatar's colour (0xRRGGBB) that stays with the contact.
 pub fn tint(contact_id: u32) -> u32 {
     TINTS[contact_id as usize % TINTS.len()]
@@ -271,6 +305,25 @@ mod tests {
             presentation: 0,
             ..Call::default()
         }
+    }
+
+    #[test]
+    fn the_card_ends_only_the_call_it_was_posted_for() {
+        let posted = CardCall::of(&call(1, st::CONVERSATION, false));
+        assert_eq!(posted.now_in(&[call(1, st::CONVERSATION, false)]), Some(1));
+        // the call ended and MODEMD reused its id for another caller: stale
+        let mut other = call(1, st::INCOMING, true);
+        other.number = Text::new("+15550199");
+        assert_eq!(posted.now_in(&[other]), None);
+        // the same id, now incoming: another call
+        assert_eq!(posted.now_in(&[call(1, st::CONVERSATION, true)]), None);
+        // gone
+        assert_eq!(posted.now_in(&[]), None);
+        // a second call alongside doesn't move it
+        assert_eq!(
+            posted.now_in(&[call(2, st::CONVERSATION, false), call(1, st::HOLD, false)]),
+            Some(1)
+        );
     }
 
     fn status(calls: &[Call]) -> Status {
